@@ -1,0 +1,267 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject ServerList Servers
+@inject Workbench Bench
+@inject DialogService Dialogs
+@inject RunService Runs
+@inject ConnectionService Connections
+
+@* The server list, as GS.Point3DWeb's sidebar: add (blank, Alpaca discovery or an ASCOM driver), connect or
+   disconnect, save, delete; double-click or F2 to edit; drag one onto the Run page's Server box to test it.
+   The collapse buttons are handled in the browser (wwwroot/sidebar.js), which remembers the choice. *@
+<section class="servers" aria-label="Servers">
+    <div class="sidebar-header">
+        <h2>Servers</h2>
+        <span class="count" title="Servers in the list">@_items.Count</span>
+        <button type="button" class="icon-btn sidebar-toggle collapse" data-sidebar-toggle="collapse"
+                aria-controls="sidebar" aria-expanded="true" title="Hide the server list" aria-label="Hide the server list">
+            <Icon Kind="ChevronDoubleLeft" Size="18" />
+        </button>
+        <button type="button" class="icon-btn sidebar-toggle expand" data-sidebar-toggle="expand"
+                aria-controls="sidebar" aria-expanded="false" title="Show the server list" aria-label="Show the server list">
+            <Icon Kind="ChevronDoubleRight" Size="18" />
+        </button>
+    </div>
+
+    <div class="toolbar" role="toolbar" aria-label="Server commands">
+        <button type="button" class="icon-btn" title="Add" aria-label="Add" @onclick="AddAsync">
+            <Icon Kind="Plus" />
+        </button>
+        <button type="button" class="icon-btn" title="Alpaca Discovery" aria-label="Alpaca Discovery" @onclick="DiscoverAsync">
+            <Icon Kind="Search" />
+        </button>
+        @if (OperatingSystem.IsWindows())
+        {
+            <button type="button" class="icon-btn" title="ASCOM Drivers" aria-label="ASCOM Drivers" @onclick="AddComDriverAsync">
+                <Icon Kind="Telescope" />
+            </button>
+        }
+        <button type="button" class="icon-btn @(Highlighted is { } h && Connections.IsConnected(h.Id) ? "active" : null)"
+                title="@ConnectText" aria-label="@ConnectText"
+                disabled="@(Highlighted is { } busy && Connections.IsBusy(busy.Id))"
+                @onclick="ConnectAsync">
+            <Icon Kind="Connection" />
+        </button>
+        <button type="button" class="icon-btn" title="Save" aria-label="Save" @onclick="SaveAsync">
+            <Icon Kind="ContentSave" />
+        </button>
+        <span class="spacer"></span>
+        <button type="button" class="icon-btn danger" title="Delete" aria-label="Delete" disabled="@(Highlighted is null)"
+                @onclick="() => DeleteAsync(Highlighted)">
+            <Icon Kind="Delete" />
+        </button>
+    </div>
+
+    <nav class="server-nav" aria-label="Servers">
+        <ul class="server-list">
+            @foreach (var server in _items)
+            {
+                var connected = Connections.IsConnected(server.Id);
+                var running = Runs.IsRunning && Bench.Selected?.Id == server.Id;
+                <li>
+                    <button type="button"
+                            class="server-item @(server.Id == Bench.HighlightedId ? "selected" : null) @(server.Id == Bench.Selected?.Id ? "target" : null)"
+                            title="@($"{server.Name}\n{server.KindText}\n{server.Address}\nDouble-click (or F2) to edit")"
+                            draggable="true"
+                            @ondragstart="() => Bench.StartDrag(server)"
+                            @ondragend="Bench.EndDrag"
+                            @onclick="() => Bench.Highlight(server)"
+                            @ondblclick="() => EditAsync(server)"
+                            @onkeydown="e => KeyAsync(e, server)">
+                        <span class="status @(connected ? "connected" : null) @(Connections.IsBusy(server.Id) ? "busy" : null)"
+                              title="@(connected ? "Connected" : "Not connected")"></span>
+                        <img class="kind" src="@server.Image" alt="@server.KindText" title="@server.KindText" draggable="false" />
+                        <span class="server-text">
+                            <span class="name">@server.Name</span>
+                            <span class="address">@server.Address</span>
+                        </span>
+                        @if (running) { <span class="running" title="Being tested">●</span> }
+                    </button>
+                </li>
+            }
+        </ul>
+    </nav>
+
+    <p class="sidebar-hint">Drag a server onto the Server box to test it. Double-click a server (or press F2) to edit it.</p>
+
+    @* Donations for the project; just the heart while the list is collapsed. *@
+    <a class="donate" href="https://www.gofundme.com/f/green-swamp-server" target="_blank" rel="noopener noreferrer"
+       title="Support the GSServer project on GoFundMe (opens in a new tab)" aria-label="Support on GoFundMe">
+        <Icon Kind="Heart" Size="18" />
+        <span class="donate-text">Support on GoFundMe</span>
+    </a>
+</section>
+
+@code {
+    private IReadOnlyList<ServerEntry> _items = [];
+
+    private ServerEntry? Highlighted => Servers.Find(Bench.HighlightedId);
+
+    private string ConnectText => Highlighted is { } h && Connections.IsConnected(h.Id) ? "Disconnect" : "Connect";
+
+    protected override void OnInitialized()
+    {
+        _items = Servers.Items;
+        Servers.Changed += OnListChanged;
+        Bench.Changed += OnChanged;
+        Runs.Changed += OnChanged;
+        Connections.Changed += OnChanged;
+    }
+
+    private void OnListChanged() => _ = InvokeAsync(() =>
+    {
+        _items = Servers.Items;
+        StateHasChanged();
+    });
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // ===== Toolbar commands =====
+
+    /// <summary>Adds a server through the edit dialog (a GreenSwampAlpaca server on this computer to start with).</summary>
+    private async Task AddAsync()
+    {
+        var dialog = new ServerDialogModel(Servers, null);
+        if (!await Dialogs.ShowAsync(dialog)) return;
+        Servers.Add(dialog.Entry);
+        Bench.Highlight(dialog.Entry);
+    }
+
+    /// <summary>Searches the network for Alpaca telescopes and adds the ones picked.</summary>
+    private async Task DiscoverAsync()
+    {
+        var dialog = new DiscoveryDialogModel(Servers);
+        await Dialogs.ShowAsync(dialog);
+    }
+
+    /// <summary>Adds an ASCOM telescope driver on this computer, picked from the installed drivers.</summary>
+    private async Task AddComDriverAsync()
+    {
+        var dialog = new ComDriversDialogModel();
+        if (!await Dialogs.ShowAsync(dialog) || dialog.SelectedProgId is not { } progId) return;
+        var target = new TestTarget { Codebase = Codebase.GSServer, ProgId = progId };
+        if (Servers.FindDevice(target) is { } existing)
+        {
+            // One entry per driver: the driver is shared, so a second entry would only confuse its state.
+            Bench.Highlight(existing);
+            await Dialogs.ShowMessageAsync($"{existing.Name} is already in the list.");
+            return;
+        }
+        var entry = new ServerEntry { Name = dialog.SelectedName ?? progId, Target = target };
+        Servers.Add(entry);
+        Bench.Highlight(entry);
+    }
+
+    /// <summary>Connects the selected server, or disconnects it if it is connected.</summary>
+    private async Task ConnectAsync()
+    {
+        if (Highlighted is not { } server)
+        {
+            await Dialogs.ShowMessageAsync("Nothing selected");
+            return;
+        }
+        if (Connections.IsBusy(server.Id)) return;
+
+        var disconnecting = Connections.IsConnected(server.Id);
+        var question = disconnecting ? $"Disconnect from {server.Name}?" : $"Connect to {server.Name}?";
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel(disconnecting ? "Disconnect" : "Connect", question))) return;
+        // Skip if the state changed while the dialog was open (another tab did it).
+        if (Connections.IsConnected(server.Id) != disconnecting || Connections.IsBusy(server.Id)) return;
+
+        try
+        {
+            if (disconnecting)
+            {
+                if (await Connections.DisconnectAsync(server.Id))
+                    await Dialogs.ShowMessageAsync($"{server.Name} is still connected: the server kept the connection open (another client holds it).");
+                return;
+            }
+            var connected = await Connections.ConnectAsync(server);
+            await Dialogs.ShowMessageAsync(connected ? $"Connected to {server.Name}." : $"Could not connect to {server.Name}.");
+        }
+        catch (Exception e)
+        {
+            await Dialogs.ShowMessageAsync(disconnecting
+                ? $"Disconnect from {server.Name} failed: {AscomError.Describe(e)}"
+                : $"Connect to {server.Name} failed: {AscomError.Describe(e)}");
+        }
+    }
+
+    /// <summary>Saves the server list now (changes are also saved as they are made).</summary>
+    private async Task SaveAsync()
+    {
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Save", "Save the server list?"))) return;
+        try
+        {
+            Servers.SaveNow();
+        }
+        catch (Exception e)
+        {
+            await Dialogs.ShowMessageAsync($"Could not save: {e.Message}");
+        }
+    }
+
+    /// <summary>Opens the edit dialog; changes apply only on Save. A server moved elsewhere is disconnected.</summary>
+    private async Task EditAsync(ServerEntry? server)
+    {
+        if (server is null) return;
+        Bench.Highlight(server);
+        var dialog = new ServerDialogModel(Servers, server);
+        if (!await Dialogs.ShowAsync(dialog)) return;
+        var edited = dialog.Entry;
+        Servers.Update(edited);
+        // A new address is a different device: don't stay connected to the old one.
+        if (!ServerEntry.SameDevice(server.Target, edited.Target) && Connections.IsConnected(server.Id))
+            Connections.Release(server.Id);
+    }
+
+    /// <summary>Removes a server from the list (after asking), disconnecting it if it was connected here.</summary>
+    private async Task DeleteAsync(ServerEntry? server)
+    {
+        if (server is null) return;
+        if (Runs.IsRunning && Bench.Selected?.Id == server.Id)
+        {
+            await Dialogs.ShowMessageAsync($"{server.Name} is being tested; stop the run first.");
+            return;
+        }
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Delete", $"Delete {server.Name}? Its saved reports are kept.", "Delete", "Cancel", danger: true))) return;
+        Servers.Remove(server.Id);
+        if (Bench.Selected?.Id == server.Id) Bench.Select(null);
+        Bench.Highlight(Servers.Items.LastOrDefault());
+        if (Connections.IsConnected(server.Id)) Connections.Release(server.Id);
+    }
+
+    private Task KeyAsync(KeyboardEventArgs e, ServerEntry server)
+    {
+        switch (e.Key)
+        {
+            case "F2": return EditAsync(server);
+            case "Delete": return DeleteAsync(server);
+            case "Enter" when !Runs.IsRunning: Bench.Select(server); break;
+        }
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        Servers.Changed -= OnListChanged;
+        Bench.Changed -= OnChanged;
+        Runs.Changed -= OnChanged;
+        Connections.Changed -= OnChanged;
+    }
+}

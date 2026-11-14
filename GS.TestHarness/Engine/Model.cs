@@ -1,0 +1,272 @@
+/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+using System.Text.Json.Serialization;
+
+namespace GS.TestHarness.Engine;
+
+/// <summary>How the harness reaches the mount.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<TargetKind>))]
+public enum TargetKind
+{
+    /// <summary>An Alpaca server, over HTTP.</summary>
+    Alpaca,
+
+    /// <summary>An ASCOM driver on this computer, through COM (Windows only).</summary>
+    Com
+}
+
+/// <summary>
+/// The server under test, which is also the source code findings point at. Each is reached one way only:
+/// GSServer through its COM driver, GreenSwampAlpaca over Alpaca.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<Codebase>))]
+public enum Codebase
+{
+    /// <summary>GSServer: the ASCOM.GS.Sky.Telescope COM driver.</summary>
+    GSServer,
+
+    /// <summary>GreenSwampAlpaca: the Alpaca server.</summary>
+    GreenSwampAlpaca
+}
+
+/// <summary>The mount to test: one of the servers, reached the one way that server is reached.</summary>
+public sealed record TestTarget
+{
+    /// <summary>Which server: it decides the transport (<see cref="Kind"/>) and where findings point in the source.</summary>
+    public Codebase Codebase { get; init; } = Codebase.GreenSwampAlpaca;
+
+    /// <summary>COM for GSServer, Alpaca for GreenSwampAlpaca.</summary>
+    [JsonIgnore]
+    public TargetKind Kind => KindOf(Codebase);
+
+    public static TargetKind KindOf(Codebase server) => server == Codebase.GSServer ? TargetKind.Com : TargetKind.Alpaca;
+
+    /// <summary>Whether two targets are the same device: same server, and same address and device number (or ProgID).</summary>
+    public static bool SameDevice(TestTarget a, TestTarget b)
+        => a.Codebase == b.Codebase && (a.Kind == TargetKind.Com
+            ? string.Equals(a.ProgId.Trim(), b.ProgId.Trim(), StringComparison.OrdinalIgnoreCase)
+            : string.Equals(a.Host.Trim(), b.Host.Trim(), StringComparison.OrdinalIgnoreCase) && a.Port == b.Port && a.DeviceNumber == b.DeviceNumber);
+
+    /// <summary>Alpaca: the server's host name or IP address.</summary>
+    public string Host { get; init; } = "localhost";
+
+    /// <summary>Alpaca: the server's port.</summary>
+    public int Port { get; init; } = 31426;
+
+    /// <summary>Alpaca: the telescope's device number.</summary>
+    public int DeviceNumber { get; init; }
+
+    /// <summary>COM: the driver's ProgID.</summary>
+    public string ProgId { get; init; } = "ASCOM.GS.Sky.Telescope";
+
+    /// <summary>Alpaca: the user name for a server that asks for one (HTTP basic authentication). Never saved in reports.</summary>
+    [JsonIgnore]
+    public string? UserName { get; init; }
+
+    /// <summary>Alpaca: the password that goes with <see cref="UserName"/>. Never saved in reports.</summary>
+    [JsonIgnore]
+    public string? Password { get; init; }
+
+    /// <summary>The Alpaca server's base address (no trailing slash).</summary>
+    [JsonIgnore]
+    public string BaseUrl => $"http://{(Host.Contains(':') && !Host.StartsWith('[') ? $"[{Host}]" : Host)}:{Port}";
+
+    /// <summary>How the target is shown: its address or ProgID.</summary>
+    [JsonIgnore]
+    public string Display => Kind == TargetKind.Com
+        ? $"{Codebase} (COM {ProgId})"
+        : $"{Codebase} (Alpaca {BaseUrl} telescope {DeviceNumber})";
+}
+
+/// <summary>
+/// A place on Earth the mount is told it is at for a run (SiteLatitude, SiteLongitude, SiteElevation), so the same
+/// server can be checked from the northern and the southern hemisphere.
+/// </summary>
+public sealed record SiteLocation
+{
+    /// <summary>"North" or "South": which of the two saved sites this is.</summary>
+    public string Hemisphere { get; init; } = "North";
+
+    public string Name { get; init; } = "";
+
+    /// <summary>Degrees, north positive.</summary>
+    public double Latitude { get; init; }
+
+    /// <summary>Degrees, east positive.</summary>
+    public double Longitude { get; init; }
+
+    /// <summary>Metres above mean sea level.</summary>
+    public double Elevation { get; init; }
+
+    [JsonIgnore]
+    public string Label => $"{Hemisphere}: {Name}";
+
+    [JsonIgnore]
+    public string Coordinates => FormattableString.Invariant($"{Latitude:0.####}°, {Longitude:0.####}°, {Elevation:0} m");
+
+    /// <summary>What's wrong with the values, or null.</summary>
+    public string? Problem()
+        => string.IsNullOrWhiteSpace(Name) ? "a name is needed"
+            : Hemisphere == "North" && Latitude is <= 0 or > 90 ? "a northern latitude is above 0 and at most 90"
+            : Hemisphere == "South" && Latitude is >= 0 or < -90 ? "a southern latitude is below 0 and at least -90"
+            : Longitude is < -180 or > 180 ? "longitude is -180 to 180 (east positive)"
+            : Elevation is < -300 or > 10000 ? "elevation is -300 to 10000 m" : null;
+
+    public static SiteLocation DefaultNorth => new() { Hemisphere = "North", Name = "Mauna Kea", Latitude = 19.8207, Longitude = -155.4681, Elevation = 4205 };
+    public static SiteLocation DefaultSouth => new() { Hemisphere = "South", Name = "Cerro Paranal", Latitude = -24.6272, Longitude = -70.4042, Elevation = 2635 };
+}
+
+/// <summary>What a run may do to the mount, and how long it waits.</summary>
+public sealed record RunOptions
+{
+    /// <summary>
+    /// Slew, sync, move the axes, pulse guide, park, unpark and find home. Off by default: only use it with a
+    /// simulator, or with a real mount that is clear to move.
+    /// </summary>
+    public bool AllowMotion { get; init; }
+
+    /// <summary>
+    /// Write settings back (site, guide rates, tracking rate, settle time, refraction), each with the value it
+    /// already has, and try invalid values (which must be refused). Originals are put back afterwards.
+    /// </summary>
+    public bool AllowSettingsWrites { get; init; } = true;
+
+    /// <summary>Call SetPark, which moves the saved park position to where the mount points now. Off by default.</summary>
+    public bool AllowSetPark { get; init; }
+
+    /// <summary>Alpaca only: check the HTTP protocol itself (management API, transaction IDs, error replies, discovery).</summary>
+    public bool IncludeProtocol { get; init; } = true;
+
+    /// <summary>Disconnect at the end and check that the mount then refuses to answer.</summary>
+    public bool IncludeDisconnected { get; init; } = true;
+
+    /// <summary>
+    /// The longer checks: tracking drift (tracking on, off, rate offsets), several clients at once, parallel reads
+    /// and connect cycles. They take a few minutes; off by default.
+    /// </summary>
+    public bool Extended { get; init; }
+
+    /// <summary>How long each tracking-drift measurement lasts, in seconds.</summary>
+    public int DriftSeconds { get; init; } = 20;
+
+    /// <summary>The longest a slew, park or find-home may take.</summary>
+    public int SlewTimeoutSeconds { get; init; } = 120;
+
+    /// <summary>The longest a single call may take.</summary>
+    public int CallTimeoutSeconds { get; init; } = 15;
+}
+
+/// <summary>A check's result.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<Outcome>))]
+public enum Outcome
+{
+    /// <summary>As ASCOM requires.</summary>
+    Pass,
+
+    /// <summary>Allowed, but worth knowing (for example, an optional member that isn't implemented).</summary>
+    Info,
+
+    /// <summary>Not a breach of the standard, but likely to trouble clients, or a recommendation not followed.</summary>
+    Warning,
+
+    /// <summary>Breaks the ASCOM standard.</summary>
+    Fail,
+
+    /// <summary>The check itself couldn't finish (the mount didn't answer, or an earlier step failed).</summary>
+    Error,
+
+    /// <summary>Not run (not applicable, or not allowed by the run's options).</summary>
+    Skipped
+}
+
+/// <summary>One finding: what was checked, what happened and, for a problem, how to correct it.</summary>
+public sealed record CheckResult
+{
+    /// <summary>Stable across versions, so runs can be compared: "Group.Member.Rule".</summary>
+    public required string Id { get; init; }
+
+    public required string Group { get; init; }
+
+    /// <summary>The interface member, Alpaca endpoint or topic.</summary>
+    public required string Member { get; init; }
+
+    public required Outcome Outcome { get; init; }
+
+    /// <summary>What happened, in a sentence.</summary>
+    public required string Message { get; init; }
+
+    public string? Expected { get; init; }
+
+    public string? Actual { get; init; }
+
+    /// <summary>For a problem: why it matters and what to change.</summary>
+    public string? Fix { get; init; }
+
+    /// <summary>For a problem: where the code to change probably is ("file:line").</summary>
+    public string? Source { get; init; }
+
+    /// <summary>The ASCOM reference for the rule.</summary>
+    public string? Reference { get; init; }
+
+    public double DurationMs { get; init; }
+
+    [JsonIgnore]
+    public bool IsProblem => Outcome is Outcome.Fail or Outcome.Error or Outcome.Warning;
+}
+
+/// <summary>What the device says it is, read at the start of a run.</summary>
+public sealed record DeviceIdentity
+{
+    public string? Name { get; init; }
+    public string? Description { get; init; }
+    public string? DriverInfo { get; init; }
+    public string? DriverVersion { get; init; }
+    public short? InterfaceVersion { get; init; }
+
+    /// <summary>Alpaca: the server's management description (ServerName, Manufacturer, ManufacturerVersion).</summary>
+    public string? ServerDescription { get; init; }
+
+    /// <summary>Alpaca: the device's UniqueID from the management API (it must never change).</summary>
+    public string? UniqueId { get; init; }
+}
+
+/// <summary>A whole run: the target, what the device said it was, the options and every finding.</summary>
+public sealed record RunReport
+{
+    public string Id { get; init; } = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6];
+    public required TestTarget Target { get; init; }
+    public required RunOptions Options { get; init; }
+    public DeviceIdentity Identity { get; set; } = new();
+    public DateTimeOffset Started { get; init; } = DateTimeOffset.Now;
+    public DateTimeOffset? Finished { get; set; }
+    public bool Cancelled { get; set; }
+    public string HarnessVersion { get; init; } = typeof(RunReport).Assembly.GetName().Version?.ToString(3) ?? "";
+
+    /// <summary>The site the mount was set to for the run; null when it ran at the server's own site.</summary>
+    public SiteLocation? Site { get; init; }
+
+    /// <summary>Where the run was: the site's label, or the server's own site.</summary>
+    [JsonIgnore]
+    public string SiteLabel => Site?.Label ?? "Server's site";
+    public List<CheckResult> Results { get; init; } = [];
+
+    /// <summary>A short label for the run: device name and version.</summary>
+    [JsonIgnore]
+    public string Label => $"{Identity.Name ?? Target.Display} {Identity.DriverVersion}".Trim() + (Site is null ? "" : $" @ {Site.Name}");
+
+    public int Count(Outcome outcome) => Results.Count(r => r.Outcome == outcome);
+}

@@ -1,0 +1,83 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/reports/{Id}"
+@inject ReportStore Store
+
+<PageTitle>@(_report?.Label ?? "Report") · GS Test Harness</PageTitle>
+
+@if (_missing)
+{
+    <p class="muted">There's no report @Id. <a href="reports">All reports</a>.</p>
+}
+else if (_report is { } r)
+{
+    <header class="page-head">
+        <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> @r.Label</h1>
+        <p class="muted">@r.Started.ToString("yyyy-MM-dd HH:mm") · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")</p>
+    </header>
+
+    <div class="grid">
+        <section class="card facts">
+            <h2>Device</h2>
+            <dl>
+                <dt>Name</dt><dd>@r.Identity.Name</dd>
+                <dt>Description</dt><dd>@r.Identity.Description</dd>
+                <dt>DriverInfo</dt><dd>@r.Identity.DriverInfo</dd>
+                <dt>DriverVersion</dt><dd class="mono">@r.Identity.DriverVersion</dd>
+                <dt>InterfaceVersion</dt><dd class="mono">@r.Identity.InterfaceVersion</dd>
+                @if (r.Identity.ServerDescription is { } sd) { <dt>Alpaca server</dt><dd>@sd</dd> }
+            </dl>
+        </section>
+        <section class="card facts">
+            <h2>Run</h2>
+            <dl>
+                <dt>Server</dt><dd>@r.Target.Codebase (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</dd>
+                <dt>Site</dt><dd>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</dd>
+                <dt>Motion</dt><dd>@(r.Options.AllowMotion ? "allowed" : "not allowed")</dd>
+                <dt>Settings writes</dt><dd>@(r.Options.AllowSettingsWrites ? "allowed" : "not allowed")</dd>
+                <dt>Duration</dt><dd>@((r.Finished - r.Started)?.TotalSeconds.ToString("0")) s</dd>
+                <dt>Harness</dt><dd class="mono">@r.HarnessVersion</dd>
+            </dl>
+            <div class="row-actions">
+                <a class="btn" href="download/@(r.Id).md" download>Download Markdown</a>
+                <a class="btn" href="download/@(r.Id).json" download>JSON</a>
+                <a class="btn" href="compare?after=@r.Id">Compare…</a>
+            </div>
+        </section>
+    </div>
+
+    <section class="card">
+        <ResultsTable Results="r.Results" />
+    </section>
+}
+else
+{
+    <p class="muted">Loading…</p>
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    private RunReport? _report;
+    private bool _missing;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try { _report = await Store.LoadAsync(Id); }
+        catch (ArgumentException) { _report = null; }
+        _missing = _report is null;
+    }
+}

@@ -1,0 +1,59 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* Alpaca discovery: lists the telescopes that answered; the ones ticked are added to the server list. *@
+<h2 class="dialog-title">Find Alpaca servers</h2>
+
+@if (Model.Searching)
+{
+    <p class="dialog-message muted">Searching the network…</p>
+}
+else if (Model.Found.Count == 0)
+{
+    <p class="dialog-message muted">No Alpaca telescopes answered discovery (UDP 32227).</p>
+}
+else
+{
+    <ul class="found-list">
+        @for (var i = 0; i < Model.Found.Count; i++)
+        {
+            var index = i;
+            var (f, inList, picked) = Model.Found[i];
+            <li>
+                <label class="check">
+                    <input type="checkbox" checked="@(picked || inList)" disabled="@inList" @onchange="() => Model.Toggle(index)" />
+                    <span><b>@f.Name</b> <span class="muted mono">@f.Host:@f.Port · telescope @f.DeviceNumber</span>
+                        @if (inList) { <small>already in the list</small> }</span>
+                </label>
+            </li>
+        }
+    </ul>
+}
+
+<div class="dialog-buttons">
+    <button type="button" class="btn primary" disabled="@(Model.Searching || !Model.Found.Any(f => f.Picked))"
+            @onclick="() => { Model.AddPicked(); Model.Close(true); }">Add</button>
+    <button type="button" class="btn" disabled="@Model.Searching" @onclick="SearchAsync">Search again</button>
+    <button type="button" class="btn" @onclick="() => Model.Close(false)">Close</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DiscoveryDialogModel Model { get; set; } = default!;
+
+    protected override Task OnInitializedAsync() => SearchAsync();
+
+    private Task SearchAsync() => Model.SearchAsync(() => _ = InvokeAsync(StateHasChanged));
+}

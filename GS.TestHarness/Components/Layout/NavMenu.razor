@@ -1,0 +1,30 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+<div class="brand">
+    <span class="brand-mark">GS</span>
+    <span class="brand-text">Test Harness<small>ASCOM compliance</small></span>
+</div>
+
+<nav class="nav">
+    <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Run"><Icon Kind="Play" Size="18" /><span class="nav-text">Run</span></NavLink>
+    <NavLink class="nav-link" href="reports" title="Reports"><Icon Kind="FileDocument" Size="18" /><span class="nav-text">Reports</span></NavLink>
+    <NavLink class="nav-link" href="compare" title="Compare"><Icon Kind="Compare" Size="18" /><span class="nav-text">Compare</span></NavLink>
+</nav>
+
+<ServerSidebar />
+
+<div class="nav-foot">v@(typeof(Program).Assembly.GetName().Version?.ToString(3))</div>

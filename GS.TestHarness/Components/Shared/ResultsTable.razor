@@ -1,0 +1,119 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* The findings of a run: counts that filter by outcome, a group filter and search, and a row per finding
+   that opens to show the expected and actual values, the fix and where the code is. *@
+
+<div class="summary">
+    @foreach (var outcome in Order)
+    {
+        var count = Results.Count(r => r.Outcome == outcome);
+        <button class="chip @Css(outcome) @(_outcomes.Contains(outcome) ? "on" : "")" @onclick="() => Toggle(outcome)"
+                title="Show only @outcome (click again to show all)">
+            <span class="chip-count">@count</span> @Label(outcome)
+        </button>
+    }
+    <span class="spacer"></span>
+    <select @bind="_group" aria-label="Group">
+        <option value="">All groups</option>
+        @foreach (var g in Results.Select(r => r.Group).Distinct())
+        {
+            <option value="@g">@g</option>
+        }
+    </select>
+    <input type="search" placeholder="Search" @bind="_search" @bind:event="oninput" aria-label="Search findings" />
+</div>
+
+@if (Shown.Count == 0)
+{
+    <p class="muted empty">@(Results.Count == 0 ? Empty : "No findings match the filter.")</p>
+}
+else
+{
+    <table class="results">
+        <thead>
+            <tr><th class="col-outcome">Result</th><th class="col-member">Member</th><th>Finding</th><th class="col-ms">ms</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in Shown)
+            {
+                var open = _open.Contains(r);
+                <tr class="row @Css(r.Outcome) @(open ? "open" : "")" @onclick="() => ToggleOpen(r)">
+                    <td><span class="badge @Css(r.Outcome)">@Label(r.Outcome)</span></td>
+                    <td class="mono">@r.Member</td>
+                    <td>@r.Message @if (r.Fix is not null && !open) { <span class="hint">· how to fix</span> }</td>
+                    <td class="num">@(r.DurationMs > 0 ? r.DurationMs.ToString("0") : "")</td>
+                </tr>
+                @if (open)
+                {
+                    <tr class="detail">
+                        <td colspan="4">
+                            <dl>
+                                <dt>Check</dt><dd class="mono">@r.Id</dd>
+                                @if (r.Expected is not null) { <dt>Expected</dt><dd>@r.Expected</dd> }
+                                @if (r.Actual is not null) { <dt>Actual</dt><dd class="pre">@r.Actual</dd> }
+                                @if (r.Fix is not null) { <dt>How to fix</dt><dd class="fix">@r.Fix</dd> }
+                                @if (r.Source is not null) { <dt>Where</dt><dd class="mono">@r.Source</dd> }
+                                @if (r.Reference is not null) { <dt>Reference</dt><dd><a href="@r.Reference" target="_blank" rel="noopener">@r.Reference</a></dd> }
+                            </dl>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CheckResult> Results { get; set; } = [];
+    [Parameter] public string Empty { get; set; } = "No findings yet.";
+
+    public static readonly Outcome[] Order = [Outcome.Fail, Outcome.Error, Outcome.Warning, Outcome.Pass, Outcome.Info, Outcome.Skipped];
+
+    private readonly HashSet<Outcome> _outcomes = [];
+    private readonly HashSet<CheckResult> _open = [];
+    private string _group = "";
+    private string _search = "";
+
+    private List<CheckResult> Shown => [.. Results.Where(r =>
+        (_outcomes.Count == 0 || _outcomes.Contains(r.Outcome))
+        && (_group.Length == 0 || r.Group == _group)
+        && (_search.Length == 0 || r.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || r.Message.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || r.Member.Contains(_search, StringComparison.OrdinalIgnoreCase)))];
+
+    private void Toggle(Outcome o)
+    {
+        if (!_outcomes.Remove(o)) _outcomes.Add(o);
+    }
+
+    private void ToggleOpen(CheckResult r)
+    {
+        if (!_open.Remove(r)) _open.Add(r);
+    }
+
+    public static string Css(Outcome o) => o.ToString().ToLowerInvariant();
+
+    public static string Label(Outcome o) => o switch
+    {
+        Outcome.Fail => "Fail",
+        Outcome.Error => "Error",
+        Outcome.Warning => "Warning",
+        Outcome.Pass => "Pass",
+        Outcome.Info => "Info",
+        _ => "Skipped"
+    };
+}

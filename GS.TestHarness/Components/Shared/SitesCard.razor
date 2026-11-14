@@ -1,0 +1,108 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject SiteStore Sites
+
+@* Where the runs are made: the server's own site, and/or one northern and one southern site the mount is set to
+   (SiteLatitude, SiteLongitude, SiteElevation) for the run and then put back. One report per site. *@
+<section class="card sites">
+    <h2>Sites <small class="muted">one report per site ticked</small></h2>
+
+    <label class="check">
+        <input type="checkbox" checked="@_s.UseServer" disabled="@Disabled" @onchange="e => UseServer((bool)e.Value!)" />
+        <span>Server's own site <small>Whatever the server is set to now; nothing is changed.</small></span>
+    </label>
+
+    @foreach (var north in new[] { true, false })
+    {
+        var site = north ? _s.North : _s.South;
+        var use = north ? _s.UseNorth : _s.UseSouth;
+        var problem = site.Problem();
+        <div class="site-row">
+            <label class="check">
+                <input type="checkbox" checked="@use" disabled="@(Disabled || problem is not null)"
+                       @onchange="e => Use(north, (bool)e.Value!)" />
+                <span>@(north ? "North" : "South")</span>
+            </label>
+            <div class="site-fields">
+                <label class="grow">Name <input value="@site.Name" disabled="@Disabled" @onchange="e => EditName(north, e.Value)" /></label>
+                <label>Latitude ° <input type="number" step="0.0001" value="@Num(site.Latitude)" disabled="@Disabled" @onchange="e => EditNumber(north, 0, e.Value)" /></label>
+                <label>Longitude ° <input type="number" step="0.0001" value="@Num(site.Longitude)" disabled="@Disabled" @onchange="e => EditNumber(north, 1, e.Value)" /></label>
+                <label>Elevation m <input type="number" step="1" value="@Num(site.Elevation)" disabled="@Disabled" @onchange="e => EditNumber(north, 2, e.Value)" /></label>
+            </div>
+            @if (problem is not null) { <p class="field-error">@problem</p> }
+        </div>
+    }
+    <p class="muted small">A run at North or South writes SiteElevation, SiteLatitude and SiteLongitude after connecting, and puts
+        the server's own values back before disconnecting (also if the run fails or is stopped). Longitude is east positive.</p>
+</section>
+
+@code {
+    [Parameter] public bool Disabled { get; set; }
+
+    private SiteStore.Saved _s = new();
+
+    protected override void OnInitialized()
+    {
+        _s = Sites.Current;
+        Sites.Changed += OnChanged;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        _s = Sites.Current;
+        StateHasChanged();
+    });
+
+    private void Set(SiteStore.Saved saved) => Sites.Save(saved);
+
+    private void UseServer(bool use) => Set(_s with { UseServer = use });
+
+    private void Use(bool north, bool use) => Set(north ? _s with { UseNorth = use } : _s with { UseSouth = use });
+
+    private void EditName(bool north, object? value)
+    {
+        var site = north ? _s.North : _s.South;
+        Edit(north, site with { Name = (value as string ?? string.Empty).Trim() });
+    }
+
+    /// <summary>Latitude (0), longitude (1) or elevation (2).</summary>
+    private void EditNumber(bool north, int which, object? value)
+    {
+        var site = north ? _s.North : _s.South;
+        Edit(north, which switch
+        {
+            0 => site with { Latitude = Parse(value, site.Latitude) },
+            1 => site with { Longitude = Parse(value, site.Longitude) },
+            _ => site with { Elevation = Parse(value, site.Elevation) }
+        });
+    }
+
+    private void Edit(bool north, SiteLocation site)
+    {
+        // A site with a mistake can't stay ticked.
+        var ok = site.Problem() is null;
+        Set(north ? _s with { North = site, UseNorth = _s.UseNorth && ok } : _s with { South = site, UseSouth = _s.UseSouth && ok });
+    }
+
+    private static string Num(double v) => v.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static double Parse(object? value, double fallback)
+        => double.TryParse(value as string, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : fallback;
+
+    public void Dispose() => Sites.Changed -= OnChanged;
+}

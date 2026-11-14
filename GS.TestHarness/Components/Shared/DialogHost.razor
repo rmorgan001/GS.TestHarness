@@ -1,0 +1,63 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject DialogService Dialogs
+
+@* Renders the dialog DialogService is showing, over everything. Placed once in MainLayout. *@
+@if (Dialogs.Current is { } current)
+{
+    <div class="dialog-backdrop" @onkeydown="e => OnKey(e, current)">
+        <div class="dialog" role="dialog" aria-modal="true">
+            @switch (current)
+            {
+                case ConfirmDialogModel confirm:
+                    <h2 class="dialog-title">@confirm.Title</h2>
+                    <p class="dialog-message">@confirm.Message</p>
+                    <div class="dialog-buttons">
+                        <button type="button" class="btn @(confirm.Danger ? "danger-btn" : "primary")" autofocus @onclick="() => confirm.Close(true)">@confirm.AcceptText</button>
+                        @if (confirm.CancelText is { } cancel)
+                        {
+                            <button type="button" class="btn" @onclick="() => confirm.Close(false)">@cancel</button>
+                        }
+                    </div>
+                    break;
+                case ComDriversDialogModel drivers:
+                    <ComDriversDialog Model="drivers" />
+                    break;
+                case ServerDialogModel server:
+                    <ServerDialog Model="server" />
+                    break;
+                case DiscoveryDialogModel discovery:
+                    <DiscoveryDialog Model="discovery" />
+                    break;
+            }
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Dialogs.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static void OnKey(KeyboardEventArgs e, DialogModel dialog)
+    {
+        if (e.Key == "Escape") dialog.Close(false);
+    }
+
+    public void Dispose() => Dialogs.Changed -= OnChanged;
+}

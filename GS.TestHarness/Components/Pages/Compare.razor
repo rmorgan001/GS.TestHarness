@@ -1,0 +1,161 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/compare"
+@inject ReportStore Store
+@inject NavigationManager Nav
+
+<PageTitle>Compare · GS Test Harness</PageTitle>
+
+<header class="page-head">
+    <h1>Compare two runs</h1>
+    <p class="muted">See what a new version of a program fixed, what it broke and what still fails, or how the same
+        program does at different sites (server's own, north, south). Only runs of the same program are compared.</p>
+</header>
+
+@if (_reports is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_reports.Count < 2)
+{
+    <p class="muted">Two saved runs are needed to compare. <a href="">Start a run</a>.</p>
+}
+else
+{
+    <section class="card">
+        <div class="fields">
+            <label class="wide">After (the run to check)
+                <select value="@_after" @onchange="e => PickAfter(e.Value as string)">
+                    @foreach (var r in _reports) { <option value="@r.Id">@Text(r)</option> }
+                </select>
+            </label>
+            <label class="wide">Before (another run of the same program: an earlier version, or another site)
+                <select value="@_before" disabled="@(SamePrograms.Count == 0)" @onchange="e => Pick(e.Value as string, _after)">
+                    @foreach (var r in SamePrograms) { <option value="@r.Id">@Text(r)</option> }
+                </select>
+            </label>
+        </div>
+        @if (SamePrograms.Count == 0)
+        {
+            <p class="muted">There's no other run of @(AfterReport?.Identity.Name ?? "this program") over
+                @(AfterReport?.Target.Kind == TargetKind.Com ? "COM" : "Alpaca") to compare with. Run it again (for example, a new version) first.</p>
+        }
+    </section>
+
+    @if (_diff is { } diff)
+    {
+        <div class="summary">
+            @foreach (var c in Shown)
+            {
+                <button class="chip @Css(c) @(_filter == c ? "on" : "")" @onclick="() => _filter = _filter == c ? null : c">
+                    <span class="chip-count">@diff.Count(d => d.Change == c)</span> @Label(c)
+                </button>
+            }
+        </div>
+        <section class="card">
+            <table class="results">
+                <thead><tr><th class="col-outcome">Change</th><th>Check</th><th>Before</th><th>After</th></tr></thead>
+                <tbody>
+                    @foreach (var d in diff.Where(d => _filter is null ? d.Change is not (Change.Same or Change.Gone or Change.Added) : d.Change == _filter))
+                    {
+                        <tr class="row">
+                            <td><span class="badge @Css(d.Change)">@Label(d.Change)</span></td>
+                            <td class="mono">@d.Id</td>
+                            <td>@if (d.Before is { } b) { <span class="badge @ResultsTable.Css(b.Outcome)">@b.Outcome</span> @b.Message }</td>
+                            <td>@if (d.After is { } a) { <span class="badge @ResultsTable.Css(a.Outcome)">@a.Outcome</span> @a.Message
+                                @if (a.Fix is not null) { <div class="fix small">@a.Fix</div> } }</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery] public string? Before { get; set; }
+    [SupplyParameterFromQuery] public string? After { get; set; }
+
+    private List<RunReport>? _reports;
+    private string? _before, _after;
+    private List<ComparedCheck>? _diff;
+    private Change? _filter;
+
+    private static readonly Change[] Shown = [Change.Regressed, Change.New, Change.StillFailing, Change.Changed, Change.Fixed, Change.Gone];
+
+    private RunReport? AfterReport => _reports?.FirstOrDefault(r => r.Id == _after);
+
+    /// <summary>The other runs of the program "After" is a run of: the only ones it can be compared with.</summary>
+    private List<RunReport> SamePrograms => AfterReport is { } after
+        ? [.. _reports!.Where(r => r.Id != after.Id && !ReportComparer.AreDifferentPrograms(r, after))]
+        : [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _reports = await Store.ListAsync();
+        if (_reports.Count < 2) return;
+        _after = _reports.Any(r => r.Id == After) ? After : _reports[0].Id;
+        _before = SamePrograms.Any(r => r.Id == Before) ? Before : DefaultBefore();
+        Update();
+    }
+
+    /// <summary>The run of the same program just before "After" (or, failing that, the latest other one).</summary>
+    private string? DefaultBefore()
+    {
+        var same = SamePrograms;
+        return (same.FirstOrDefault(r => r.Started < AfterReport!.Started) ?? same.FirstOrDefault())?.Id;
+    }
+
+    private void PickAfter(string? after)
+    {
+        _after = after;
+        Pick(SamePrograms.Any(r => r.Id == _before) ? _before : DefaultBefore(), _after);
+    }
+
+    private void Pick(string? before, string? after)
+    {
+        (_before, _after) = (before, after);
+        Update();
+        Nav.NavigateTo($"compare?before={_before}&after={_after}", replace: true);
+    }
+
+    private void Update()
+    {
+        var a = _reports?.FirstOrDefault(r => r.Id == _before);
+        var b = _reports?.FirstOrDefault(r => r.Id == _after);
+        _diff = a is not null && b is not null && !ReportComparer.AreDifferentPrograms(a, b) ? ReportComparer.Compare(a, b) : null;
+    }
+
+    private static string Text(RunReport r)
+        => $"{r.Started:yyyy-MM-dd HH:mm} · {r.Label} · {r.SiteLabel} · {(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca")} · {r.Count(Outcome.Fail) + r.Count(Outcome.Error)} fail";
+
+    private static string Css(Change c) => c switch
+    {
+        Change.Fixed => "pass",
+        Change.Regressed or Change.New => "fail",
+        Change.StillFailing or Change.Changed => "warning",
+        _ => "skipped"
+    };
+
+    private static string Label(Change c) => c switch
+    {
+        Change.StillFailing => "Still failing",
+        Change.New => "New problem",
+        Change.Gone => "Not checked now",
+        _ => c.ToString()
+    };
+}

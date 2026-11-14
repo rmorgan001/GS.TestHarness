@@ -1,0 +1,50 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* The ASCOM telescope drivers registered on this computer; the one picked is added as a COM server. *@
+<h2 class="dialog-title">ASCOM Drivers</h2>
+
+<div class="dialog-message with-icon">
+    <Icon Kind="Telescope" Size="28" />
+    <span>@Model.Message</span>
+</div>
+
+@if (Model.Drivers.Count > 0)
+{
+    <ul class="found-list">
+        @foreach (var driver in Model.Drivers)
+        {
+            <li>
+                <label class="check">
+                    <input type="radio" name="ascom-driver" checked="@(driver.ProgId == Model.SelectedProgId)"
+                           @onchange="() => Model.SelectedProgId = driver.ProgId" />
+                    <span><b>@driver.Name</b> <span class="muted mono">@driver.ProgId</span></span>
+                </label>
+            </li>
+        }
+    </ul>
+}
+
+<div class="dialog-buttons">
+    <button type="button" class="btn primary" disabled="@(Model.SelectedProgId is null)" @onclick="() => Model.Close(true)">Add</button>
+    <button type="button" class="btn" @onclick="() => Model.Close(false)">Cancel</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ComDriversDialogModel Model { get; set; } = default!;
+
+    protected override Task OnInitializedAsync() => Model.LoadAsync();
+}

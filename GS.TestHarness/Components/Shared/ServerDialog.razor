@@ -1,0 +1,109 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* Add or edit a server: which one it is (GSServer over COM, GreenSwampAlpaca over Alpaca) and where. *@
+<h2 class="dialog-title">@Model.Title</h2>
+
+<form class="edit-form" @onsubmit="Accept" novalidate>
+    <label class="field">
+        <span class="field-label">Name</span>
+        <input type="text" autofocus @bind="Model.Name" @bind:event="oninput" class="@(Model.NameError is null ? null : "has-error")" />
+        @if (Model.NameError is { } nameError) { <span class="field-error">@nameError</span> }
+    </label>
+
+    <div class="field">
+        <span class="field-label">Server</span>
+        <div class="seg" role="radiogroup" aria-label="Server">
+            <button type="button" class="@(Model.Server == Codebase.GSServer ? "on" : "")" disabled="@(!OperatingSystem.IsWindows())"
+                    @onclick="() => Model.Server = Codebase.GSServer">
+                <img src="com.svg" alt="" /> GSServer <small class="muted">COM</small>
+            </button>
+            <button type="button" class="@(Model.Server == Codebase.GreenSwampAlpaca ? "on" : "")"
+                    @onclick="() => Model.Server = Codebase.GreenSwampAlpaca">
+                <img src="alpaca.png" alt="" /> GreenSwampAlpaca <small class="muted">Alpaca</small>
+            </button>
+        </div>
+    </div>
+
+    @if (Model.Server == Codebase.GreenSwampAlpaca)
+    {
+        <div class="field-row">
+            <label class="field grow">
+                <span class="field-label">Host</span>
+                <input type="text" spellcheck="false" @bind="Model.Host" @bind:event="oninput" class="@(Model.HostError is null ? null : "has-error")" />
+                @if (Model.HostError is { } hostError) { <span class="field-error">@hostError</span> }
+            </label>
+            <label class="field narrow">
+                <span class="field-label">Port</span>
+                <input type="number" min="1" max="65535" @bind="Model.Port" @bind:event="oninput" class="@(Model.PortError is null ? null : "has-error")" />
+                @if (Model.PortError is { } portError) { <span class="field-error">@portError</span> }
+            </label>
+            <label class="field narrow">
+                <span class="field-label">Device</span>
+                <input type="number" min="0" @bind="Model.DeviceNumber" @bind:event="oninput" class="@(Model.DeviceError is null ? null : "has-error")" />
+                @if (Model.DeviceError is { } deviceError) { <span class="field-error">@deviceError</span> }
+            </label>
+        </div>
+        <div class="field-row">
+            <label class="field grow">
+                <span class="field-label">User Name</span>
+                <input type="text" autocomplete="off" @bind="Model.UserName" @bind:event="oninput" />
+            </label>
+            <label class="field grow">
+                <span class="field-label">Password</span>
+                <span class="password">
+                    <input type="@(_showPassword ? "text" : "password")" autocomplete="new-password"
+                           placeholder="@(Model.PasswordUnreadable ? "saved password unreadable: enter it again" : null)"
+                           @bind="Model.Password" @bind:event="oninput" />
+                    <button type="button" class="reveal" title="@(_showPassword ? "Hide password" : "Show password")"
+                            @onclick="() => _showPassword = !_showPassword">@(_showPassword ? "Hide" : "Show")</button>
+                </span>
+            </label>
+        </div>
+    }
+    else
+    {
+        <label class="field">
+            <span class="field-label">Driver ProgID</span>
+            <input type="text" spellcheck="false" @bind="Model.ProgId" @bind:event="oninput" class="@(Model.ProgIdError is null ? null : "has-error")" />
+            @if (Model.ProgIdError is { } progIdError) { <span class="field-error">@progIdError</span> }
+        </label>
+    }
+
+    @if (Model.DuplicateError is { } dup) { <p class="field-error">@dup</p> }
+
+    @* Read-only, below the editable settings. *@
+    <label class="field info">
+        <span class="field-label">ID</span>
+        <input type="text" value="@Model.Id" readonly />
+    </label>
+
+    <div class="dialog-buttons">
+        <button type="submit" class="btn primary">@(Model.IsNew ? "Add" : "Save")</button>
+        <button type="button" class="btn" @onclick="() => Model.Close(false)">Cancel</button>
+    </div>
+</form>
+
+@code {
+    [Parameter, EditorRequired] public ServerDialogModel Model { get; set; } = default!;
+
+    private bool _showPassword;
+
+    private void Accept()
+    {
+        if (Model.Validate()) Model.Close(true);
+    }
+}

@@ -1,0 +1,256 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/"
+@implements IDisposable
+@inject RunService Runs
+@inject TargetStore Saved
+@inject SourceLocator Locator
+@inject Workbench Bench
+@inject ServerList Servers
+@inject SiteStore Sites
+
+<PageTitle>Run · GS Test Harness</PageTitle>
+
+<header class="page-head">
+    <h1>Run a compliance check</h1>
+    <p class="muted">Drag a server from the list onto the Server box, check it against ITelescopeV4 (and, for Alpaca, the
+        Alpaca protocol), and get each problem with how to fix it.</p>
+</header>
+
+<div class="grid">
+    @{
+        var dragging = Bench.Dragging is not null && !Runs.IsRunning;
+        var server = Bench.Selected;
+    }
+    @* The drop handlers sit on the card itself so a fast drop can't miss them; dragleave isn't used (it fires
+       when moving over child elements). *@
+    <section class="card server-box @(dragging ? "dragging" : null) @(_over ? "over" : null)"
+             @ondragenter="() => _over = true"
+             @ondragover:preventDefault
+             @ondrop="Drop"
+             @ondrop:preventDefault>
+        <h2>Server</h2>
+        @if (server is null)
+        {
+            <div class="drop-empty">
+                <Icon Kind="Telescope" Size="28" />
+                <p><b>Drag a server here</b></p>
+                <p class="muted">from the list on the left (or select one there and press Enter).</p>
+            </div>
+        }
+        else
+        {
+            <div class="picked">
+                <img class="kind-lg" src="@server.Image" alt="" />
+                <div>
+                    <div class="picked-name">@server.Name</div>
+                    <div class="muted">@server.KindText</div>
+                    <div class="mono small">@server.Address</div>
+                </div>
+                @if (!Runs.IsRunning)
+                {
+                    <button type="button" class="icon-btn clear" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
+                        <Icon Kind="Close" Size="18" />
+                    </button>
+                }
+            </div>
+            <p class="muted small source">Source for "where to fix":
+                @(Locator.RootOf(server.Target.Codebase) is { } root ? root : "not found on this computer, so findings won't name a file")</p>
+        }
+        @if (dragging)
+        {
+            <div class="drop-zone"><span>Test @Bench.Dragging!.Name</span></div>
+        }
+    </section>
+
+    <section class="card">
+        <h2>What the run may do</h2>
+        <label class="check danger">
+            <input type="checkbox" @bind="_motion" disabled="@Runs.IsRunning" />
+            <span><b>Move the mount</b>: slew, sync, move axes, pulse guide, park, find home.
+                <small>Use a simulator, or a real mount that's clear to move. The mount is put back (tracking, park) afterwards.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_writes" disabled="@Runs.IsRunning" />
+            <span>Write settings back unchanged and try invalid values
+                <small>Site, guide rates, tracking rate, settle time. Anything wrongly accepted is put back.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_setPark" disabled="@(Runs.IsRunning || !_motion)" />
+            <span>Call SetPark <small>Moves the saved park position to wherever the mount is pointing.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_protocol" disabled="@(Runs.IsRunning || server?.Target.Kind == TargetKind.Com)" />
+            <span>Alpaca protocol checks <small>GreenSwampAlpaca only. Management API, transaction IDs, error replies, HTTP 400, discovery.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_extended" disabled="@Runs.IsRunning" />
+            <span>Extended checks <small>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads, connect cycles.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_disconnected" disabled="@Runs.IsRunning" />
+            <span>Disconnect at the end <small>Checks NotConnected errors (only possible when no other client holds the device).</small></span>
+        </label>
+        <div class="fields">
+            <label class="narrow">Slew timeout (s) <input type="number" min="10" @bind="_slewTimeout" disabled="@Runs.IsRunning" /></label>
+            <label class="narrow">Call timeout (s) <input type="number" min="2" @bind="_callTimeout" disabled="@Runs.IsRunning" /></label>
+        </div>
+    </section>
+</div>
+
+<SitesCard Disabled="Runs.IsRunning" />
+
+<div class="run-bar">
+    @if (Runs.IsRunning)
+    {
+        <button class="btn stop" @onclick="Runs.Stop">Stop</button>
+    }
+    else
+    {
+        var count = Sites.Selected().Count;
+        <button class="btn primary" disabled="@(server is null || count == 0)"
+                title="@(server is null ? "Drag a server onto the Server box first" : count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
+                @onclick="Start">@(count > 1 ? $"Start {count} runs" : "Start run")</button>
+    }
+    <div class="progress-wrap">
+        @if (Runs.Status is { } status)
+        {
+            @* The step first and clear; where the run is (site, site n of m) after it, muted. *@
+            var parts = status.Split(" · ");
+            <div class="run-status">
+                <span class="run-status-step">@parts[0]</span>
+                @foreach (var part in parts.Skip(1))
+                {
+                    <span class="run-status-sep" aria-hidden="true">·</span><span class="run-status-where">@part</span>
+                }
+            </div>
+        }
+        @if (Runs.IsRunning && Runs.Progress is { } p)
+        {
+            <div class="progress"><div style="width:@(100.0 * p.GroupIndex / Math.Max(1, p.GroupCount))%"></div></div>
+        }
+    </div>
+    @if (!Runs.IsRunning && Runs.LastReports.Count > 1)
+    {
+        @foreach (var r in Runs.LastReports)
+        {
+            <a class="btn" href="reports/@r.Id">@r.SiteLabel</a>
+        }
+        <a class="btn" href="compare?before=@Runs.LastReports[0].Id&after=@Runs.LastReports[^1].Id">Compare</a>
+    }
+    else if (Runs.LastReport is { } done)
+    {
+        <a class="btn" href="reports/@done.Id">Open report</a>
+        <a class="btn" href="download/@(done.Id).md" download>Markdown</a>
+    }
+</div>
+
+@if (Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
+{
+    <section class="card">
+        <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }</h2>
+        <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
+    </section>
+}
+else
+{
+    <section class="card groups">
+        <h2>What gets checked</h2>
+        <ul>
+            @foreach (var g in TestRunner.Groups)
+            {
+                <li><b>@g.Name</b> <span class="muted">@g.Description</span></li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
+    private int _slewTimeout = 120, _callTimeout = 15;
+    private bool _over;
+
+    protected override void OnInitialized()
+    {
+        var options = Saved.Load().Options;
+        (_motion, _writes, _setPark, _protocol, _disconnected, _slewTimeout, _callTimeout) =
+            (options.AllowMotion, options.AllowSettingsWrites, options.AllowSetPark, options.IncludeProtocol, options.IncludeDisconnected,
+             options.SlewTimeoutSeconds, options.CallTimeoutSeconds);
+        _extended = options.Extended;
+        Runs.Changed += OnChanged;
+        Bench.Changed += OnBenchChanged;
+        Servers.Changed += OnBenchChanged;
+        Sites.Changed += OnBenchChanged;
+    }
+
+    private void Drop()
+    {
+        _over = false;
+        if (Runs.IsRunning) Bench.EndDrag();
+        else Bench.Drop();
+    }
+
+    private void Start()
+    {
+        if (Bench.Selected is not { } server) return;
+        var options = new RunOptions
+        {
+            AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
+            IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
+            SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout)
+        };
+        Saved.SaveOptions(options);
+        Runs.Start(server.RunTarget, options, Sites.Selected());
+    }
+
+    private void OnBenchChanged() => _ = InvokeAsync(() =>
+    {
+        if (Bench.Dragging is null) _over = false;
+        StateHasChanged();
+    });
+
+    // Findings arrive quickly; redraw at most a few times a second.
+    private DateTime _lastRender;
+    private bool _pending;
+
+    private void OnChanged()
+    {
+        var now = DateTime.UtcNow;
+        if (!Runs.IsRunning || (now - _lastRender).TotalMilliseconds > 250)
+        {
+            _lastRender = now;
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (_pending) return;
+        _pending = true;
+        _ = Task.Delay(300).ContinueWith(_ =>
+        {
+            _pending = false;
+            _lastRender = DateTime.UtcNow;
+            return InvokeAsync(StateHasChanged);
+        });
+    }
+
+    public void Dispose()
+    {
+        Runs.Changed -= OnChanged;
+        Bench.Changed -= OnBenchChanged;
+        Servers.Changed -= OnBenchChanged;
+        Sites.Changed -= OnBenchChanged;
+    }
+}
