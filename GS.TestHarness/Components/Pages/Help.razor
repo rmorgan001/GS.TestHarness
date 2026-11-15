@@ -41,6 +41,7 @@
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
                 <li><a href="help#compare">The Compare tab</a></li>
+                <li><a href="help#recommendations">The Recommendations tab</a></li>
                 <li><a href="help#checks">What gets checked</a></li>
                 <li><a href="help#source">Where to fix</a></li>
                 <li><a href="help#cli">From the command line</a></li>
@@ -184,6 +185,18 @@
                     <dd>Passed everywhere. Hidden until you click its count.</dd>
                 </dl>
                 <p>Runs at two or more of the ticked sites are needed.</p>
+            </section>
+
+            <section id="recommendations">
+                <h2>The Recommendations tab</h2>
+                <p>Every check that found a problem, across the saved runs, with the recommended fix and where the code
+                    probably is. Only the latest run of each device at each site counts, so a problem fixed since an
+                    older run doesn't come back. Each server is listed apart, because the fix is in its own code.</p>
+                <p>A check is listed once per server, with the worst result first. Under it: the fix (more than one when
+                    runs gave different advice), the source locations, the ASCOM reference and each run that found it,
+                    with the expected and actual values. A check with no recorded fix shows those values instead.</p>
+                <p>Click a count to show only failures, errors or warnings; <strong>No problem</strong> also lists the
+                    checks that passed. <strong>Download Markdown</strong> saves the list, ready to paste into an issue.</p>
             </section>
 
             <section id="checks">

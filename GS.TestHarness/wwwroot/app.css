@@ -478,3 +478,18 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .reports tr.checked td { background: rgba(239, 100, 97, .07); }
 .btn.danger-outline { border-color: rgba(239, 100, 97, .5); color: #ff8a87; background: transparent; }
 .btn.danger-outline:hover:not(:disabled) { background: rgba(239, 100, 97, .12); border-color: var(--red); color: #ff8a87; }
+
+/* ---- Recommendations: one card per check, grouped by server ---- */
+.rec-runs-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.rec-runs-head .btn { margin-left: auto; }
+.rec-server { margin: 1.5rem 0 .75rem; }
+.rec { padding-top: .9rem; }
+.rec-head { display: flex; align-items: baseline; gap: .4rem .75rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.rec-head .spacer { flex: 1; }
+.rec-member { font-weight: 600; }
+.rec-body { margin: 0; }
+.rec-body dd > div + div { margin-top: .35rem; }
+.rec-body dd > div:first-child { margin-top: 0; }
+.rec-body div.fix { color: var(--moon); }
+.rec-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.rec-hits .pre { white-space: pre-wrap; font-family: var(--mono); font-size: .85em; max-height: 8rem; overflow: auto; }

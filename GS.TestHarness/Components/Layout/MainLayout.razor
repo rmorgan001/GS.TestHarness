@@ -17,7 +17,7 @@
 @inherits LayoutComponentBase
 
 @* As GS.Point3DWeb: a header across the top, the server list on the left, and the page on the right under its
-   Run / Reports / Compare tabs. *@
+   Run / Reports / Compare / Recommendations tabs. *@
 <div class="shell">
     <header class="app-header">
         <div class="brand">
@@ -42,6 +42,7 @@
                 <NavLink class="tab" href="" Match="NavLinkMatch.All"><Icon Kind="Play" Size="18" /><span>Run</span></NavLink>
                 <NavLink class="tab" href="reports"><Icon Kind="FileDocument" Size="18" /><span>Reports</span></NavLink>
                 <NavLink class="tab" href="compare"><Icon Kind="Compare" Size="18" /><span>Compare</span></NavLink>
+                <NavLink class="tab" href="recommendations"><Icon Kind="Lightbulb" Size="18" /><span>Recommendations</span></NavLink>
             </nav>
             @* Only the page scrolls; the tabs stay put. *@
             <div class="page-scroll">

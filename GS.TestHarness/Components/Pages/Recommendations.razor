@@ -1,0 +1,206 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/recommendations"
+@implements IDisposable
+@inject ReportStore Store
+@inject RunService Runs
+
+<PageTitle>Recommendations · GS Test Harness</PageTitle>
+
+@* Every problem the latest runs found, once per check and server, with what to change and where. Older runs of a
+   device at a site are left out, so a problem fixed since doesn't come back. *@
+<header class="page-head">
+    <h1>Recommendations</h1>
+    <p class="muted">Every check that found a problem in the latest run of each device at each site, with the recommended
+        fix and where the code probably is. GSServer and GreenSwampAlpaca are listed apart: the fix is in each one's own code.</p>
+</header>
+
+@if (_set is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_set.Runs.Count == 0)
+{
+    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>No runs yet.</p><a class="btn primary" href="">Start one</a></div>
+}
+else
+{
+    var shown = Shown;
+    <section class="card">
+        <div class="rec-runs-head">
+            <span class="muted">From @_set.Runs.Count latest run@(_set.Runs.Count == 1 ? "" : "s")</span>
+            <a class="btn" href="download/recommendations.md" download><Icon Kind="Download" Size="16" /> Download Markdown</a>
+        </div>
+        <ul class="site-runs">
+            @foreach (var run in _set.Runs)
+            {
+                <li>
+                    <b>@run.Target.Codebase · @run.SiteLabel</b>
+                    <a href="reports/@run.Id">@run.Started.ToString("yyyy-MM-dd HH:mm")</a>
+                    <span class="muted">@run.Label · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail · @run.Count(Outcome.Warning) warning</span>
+                    @if (run.Cancelled) { <span class="tag" title="No finished run of this device at this site">stopped</span> }
+                </li>
+            }
+        </ul>
+    </section>
+
+    <div class="summary">
+        @foreach (var outcome in Problems)
+        {
+            <button class="chip @ResultsTable.Css(outcome) @(_outcomes.Contains(outcome) ? "on" : "")" @onclick="() => Toggle(outcome)"
+                    title="Show only @outcome (click again to show all)">
+                <span class="chip-count">@_set.Recommendations.Count(r => r.Worst == outcome)</span> @ResultsTable.Label(outcome)
+            </button>
+        }
+        <button class="chip pass @(_showClean ? "on" : "")" @onclick="() => _showClean = !_showClean" title="Also list the checks that found no problem">
+            <span class="chip-count">@_set.Clean.Count</span> No problem
+        </button>
+        <span class="spacer"></span>
+        <select @bind="_codebase" aria-label="Server">
+            <option value="">All servers</option>
+            @foreach (var c in _set.Runs.Select(r => r.Target.Codebase).Distinct())
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+        <input type="search" placeholder="Search" @bind="_search" @bind:event="oninput" aria-label="Search recommendations" />
+    </div>
+
+    @if (_set.Recommendations.Count == 0)
+    {
+        <p class="muted empty">The latest runs found no problems.</p>
+    }
+    else if (shown.Count == 0)
+    {
+        <p class="muted empty">No recommendations match the filter.</p>
+    }
+
+    @foreach (var server in shown.GroupBy(r => r.Codebase))
+    {
+        <h2 class="rec-server">@server.Key <span class="muted">(@server.Count())</span></h2>
+        @foreach (var r in server)
+        {
+            <article class="card rec">
+                <div class="rec-head">
+                    <span class="badge @ResultsTable.Css(r.Worst)">@ResultsTable.Label(r.Worst)</span>
+                    <span class="rec-member mono">@r.Member</span>
+                    <span class="mono muted small">@r.Id</span>
+                    <span class="spacer"></span>
+                    <span class="muted small">@r.Hits.Count of @RunsOf(r.Codebase) run@(RunsOf(r.Codebase) == 1 ? "" : "s")</span>
+                </div>
+                <dl class="rec-body">
+                    <dt>Recommendation</dt>
+                    <dd>
+                        @if (r.Fixes.Count == 0)
+                        {
+                            <span class="muted">None recorded for this check. The expected and actual values below show what to change.</span>
+                        }
+                        @foreach (var fix in r.Fixes) { <div class="fix">@fix</div> }
+                    </dd>
+                    @if (r.Sources.Count > 0)
+                    {
+                        <dt>Where</dt>
+                        <dd>@foreach (var source in r.Sources) { <div class="mono">@source</div> }</dd>
+                    }
+                    @if (r.Reference is not null)
+                    {
+                        <dt>Reference</dt>
+                        <dd><a href="@r.Reference" target="_blank" rel="noopener">@r.Reference</a></dd>
+                    }
+                    <dt>Found in</dt>
+                    <dd>
+                        <ul class="rec-hits">
+                            @foreach (var hit in r.Hits)
+                            {
+                                <li>
+                                    <span class="badge @ResultsTable.Css(hit.Result.Outcome)">@ResultsTable.Label(hit.Result.Outcome)</span>
+                                    <a href="reports/@hit.Run.Id">@hit.Run.SiteLabel</a> <span class="muted small">@hit.Run.Label</span>
+                                    <span>@hit.Result.Message</span>
+                                    @if (hit.Result.Expected is not null) { <div class="small muted">Expected: @hit.Result.Expected</div> }
+                                    @if (hit.Result.Actual is not null) { <div class="small muted pre">Actual: @hit.Result.Actual</div> }
+                                </li>
+                            }
+                        </ul>
+                    </dd>
+                </dl>
+            </article>
+        }
+    }
+
+    @if (_showClean)
+    {
+        var clean = _set.Clean.Where(c => (_codebase.Length == 0 || c.Codebase.ToString() == _codebase) && Matches(c.Id, c.Member)).ToList();
+        <h2 class="rec-server">No problem <span class="muted">(@clean.Count)</span></h2>
+        <section class="card table-scroll">
+            <table class="results">
+                <thead><tr><th>Server</th><th>Check</th><th>Member</th><th class="num" title="Latest runs where it passed">Passed in</th></tr></thead>
+                <tbody>
+                    @foreach (var c in clean)
+                    {
+                        <tr><td>@c.Codebase</td><td class="mono">@c.Id</td><td class="mono">@c.Member</td><td class="num">@c.Runs</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
+
+@code {
+    private static readonly Outcome[] Problems = [Outcome.Fail, Outcome.Error, Outcome.Warning];
+
+    private RecommendationSet? _set;
+    private readonly HashSet<Outcome> _outcomes = [];
+    private string _codebase = "";
+    private string _search = "";
+    private bool _showClean;
+    private string? _lastRun;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lastRun = Runs.LastReport?.Id;
+        _set = RecommendationBuilder.Build(await Store.ListAsync());
+        Runs.Changed += OnRunsChanged;
+    }
+
+    private List<Recommendation> Shown => [.. _set!.Recommendations.Where(r =>
+        (_outcomes.Count == 0 || _outcomes.Contains(r.Worst))
+        && (_codebase.Length == 0 || r.Codebase.ToString() == _codebase)
+        && (Matches(r.Id, r.Member) || r.Fixes.Any(f => f.Contains(_search, StringComparison.OrdinalIgnoreCase))
+            || r.Sources.Any(s => s.Contains(_search, StringComparison.OrdinalIgnoreCase))))];
+
+    private bool Matches(string id, string member)
+        => _search.Length == 0 || id.Contains(_search, StringComparison.OrdinalIgnoreCase) || member.Contains(_search, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>How many of the latest runs are of this server.</summary>
+    private int RunsOf(Codebase codebase) => _set!.Runs.Count(r => r.Target.Codebase == codebase);
+
+    private void Toggle(Outcome o)
+    {
+        if (!_outcomes.Remove(o)) _outcomes.Add(o);
+    }
+
+    /// <summary>A run finished: rebuild from the saved runs.</summary>
+    private void OnRunsChanged() => InvokeAsync(async () =>
+    {
+        if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
+        _lastRun = Runs.LastReport?.Id;
+        _set = RecommendationBuilder.Build(await Store.ListAsync());
+        StateHasChanged();
+    });
+
+    public void Dispose() => Runs.Changed -= OnRunsChanged;
+}
