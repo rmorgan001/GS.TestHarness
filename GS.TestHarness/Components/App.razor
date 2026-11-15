@@ -23,7 +23,10 @@
     <base href="/" />
     <ResourcePreloader />
     <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#070b0e" />
     <link rel="icon" type="image/x-icon" href="@Assets["favicon.ico"]" />
+    @* Barlow fonts, as in GS.Point3DWeb, served by the app (wwwroot/fonts) so it needs no internet connection. *@
+    <link rel="stylesheet" href="@Assets["fonts/fonts.css"]" />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["GS.TestHarness.styles.css"]" />
     @* Before the body is drawn: puts the server list back the way this browser left it (collapsed or not). *@
@@ -36,6 +39,7 @@
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["app.js"]"></script>
 </body>
 
 </html>

@@ -1,0 +1,256 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/help"
+@layout BareLayout
+@inject ReportStore Store
+
+@* The user guide, opened in its own window from the help button in the header (as in GS.Point3DWeb). In-page
+   links use "help#…" (not "#…"): a bare fragment would resolve against the base address and go to the Run tab. *@
+
+<PageTitle>Help · GS Test Harness</PageTitle>
+
+<div class="help-page">
+    <header class="help-header">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <h1>Help</h1>
+        <span class="help-version">GS Test Harness v@(typeof(Program).Assembly.GetName().Version?.ToString(3))</span>
+    </header>
+
+    <div class="help-body">
+        <nav class="help-toc" aria-label="Contents">
+            <ol>
+                <li><a href="help#start">Getting started</a></li>
+                <li><a href="help#servers">The server list</a></li>
+                <li><a href="help#run">The Run tab</a></li>
+                <li><a href="help#sites">Sites</a></li>
+                <li><a href="help#options">What the run may do</a></li>
+                <li><a href="help#results">Reading the results</a></li>
+                <li><a href="help#reports">The Reports tab</a></li>
+                <li><a href="help#compare">The Compare tab</a></li>
+                <li><a href="help#checks">What gets checked</a></li>
+                <li><a href="help#source">Where to fix</a></li>
+                <li><a href="help#cli">From the command line</a></li>
+                <li><a href="help#files">Where things are stored</a></li>
+                <li><a href="help#trouble">Troubleshooting</a></li>
+            </ol>
+        </nav>
+
+        <article class="help-text">
+            <p class="lead">
+                GS Test Harness checks a telescope server for ASCOM compliance: <strong>GSServer</strong> through its COM
+                driver, or <strong>GreenSwampAlpaca</strong> over Alpaca. It calls every ITelescopeV4 member (and, for
+                Alpaca, the HTTP protocol), and for each problem says what's wrong, what ASCOM expects, how to fix it and
+                where the code to change probably is.
+            </p>
+
+            <section id="start">
+                <h2>Getting started</h2>
+                <ol>
+                    <li>Add the server to the <strong>Servers</strong> list on the left (see <a href="help#servers">The server list</a>).</li>
+                    <li>Drag it onto the <strong>Server and sites</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
+                    <li>Tick the sites to run at, choose what the run may do, and press <strong>Start run</strong> beside the server.</li>
+                    <li>Read the findings as they come in. Each run is saved; open it later on the <strong>Reports</strong> tab.</li>
+                </ol>
+                <p class="warning">Moving the mount is off by default. Turn it on only for a simulator, or a real mount that's clear to move.</p>
+            </section>
+
+            <section id="servers">
+                <h2>The server list</h2>
+                <p>The buttons above the list:</p>
+                <dl>
+                    <dt>Add (+)</dt>
+                    <dd>A new entry: a name, which server it is, and its Alpaca host, port and device number (with a user
+                        name and password for a server that asks for one), or the COM driver's ProgID.</dd>
+                    <dt>Alpaca Discovery (magnifier)</dt>
+                    <dd>Searches the local network for Alpaca telescopes and lists the ones that answer. Pick one to add it.</dd>
+                    <dt>ASCOM Drivers (telescope)</dt>
+                    <dd>Lists the ASCOM telescope drivers installed on this computer. Windows only.</dd>
+                    <dt>Connect (plug)</dt>
+                    <dd>Connects to, or disconnects from, the selected server, to see that it answers. A run connects by itself.</dd>
+                    <dt>Save (disk)</dt>
+                    <dd>Saves the list now. It's also saved after every change.</dd>
+                    <dt>Delete (bin)</dt>
+                    <dd>Removes the selected server from the list. Its reports are kept.</dd>
+                </dl>
+                <p>The dot before a server is green while it's connected. Double-click a server (or press <kbd>F2</kbd>)
+                    to edit it, and press <kbd>Delete</kbd> to remove it. The <strong>«</strong> button folds the list
+                    into a narrow strip; this browser remembers the choice.</p>
+            </section>
+
+            <section id="run">
+                <h2>The Run tab</h2>
+                <p>The <strong>Server and sites</strong> card holds the server to test. Drag one onto it from the list;
+                    <strong>✕</strong> clears it. It also shows where the server's source code was found, so findings can
+                    name a file (see <a href="help#source">Where to fix</a>).</p>
+                <p><strong>Start run</strong> sits beside the server. With more than one site ticked it reads
+                    <strong>Start 2 runs</strong> or <strong>Start 3 runs</strong>: one run, and one report, per site.
+                    While it runs, a bar shows the step and progress, with <strong>Stop</strong> to end it early (the mount
+                    is still put back). The findings appear below as they come in.</p>
+                <p>When it's done, the bar links to each report and, for several sites, to <strong>Compare sites</strong>.</p>
+            </section>
+
+            <section id="sites">
+                <h2>Sites</h2>
+                <p>A run can be made at up to three sites, ticked under the server:</p>
+                <dl>
+                    <dt>Server's own site</dt>
+                    <dd>Whatever the server is set to now. Nothing is changed.</dd>
+                    <dt>North and South</dt>
+                    <dd>A name, latitude, longitude (east positive) and elevation in metres. A run there writes
+                        SiteElevation, SiteLatitude and SiteLongitude after connecting, and puts the server's own values
+                        back before disconnecting, also if the run fails or is stopped.</dd>
+                </dl>
+                <p>A northern site needs a latitude above 0, a southern one below 0. A site with a mistake can't be ticked.
+                    The sites and ticks are shared by every browser tab.</p>
+            </section>
+
+            <section id="options">
+                <h2>What the run may do</h2>
+                <dl>
+                    <dt>Move the mount</dt>
+                    <dd>Slews, syncs, MoveAxis, PulseGuide, park and find home. Tracking and park state are put back afterwards.</dd>
+                    <dt>Write settings back unchanged and try invalid values</dt>
+                    <dd>Site, guide rates, tracking rate and settle time. Anything wrongly accepted is put back.</dd>
+                    <dt>Call SetPark</dt>
+                    <dd>Moves the saved park position to wherever the mount is pointing. Needs <em>Move the mount</em>.</dd>
+                    <dt>Alpaca protocol checks</dt>
+                    <dd>GreenSwampAlpaca only: management API, transaction IDs, error replies, HTTP 400 and discovery.</dd>
+                    <dt>Extended checks</dt>
+                    <dd>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads and connect cycles.</dd>
+                    <dt>Disconnect at the end</dt>
+                    <dd>Checks NotConnected errors. Only possible when no other client holds the device.</dd>
+                    <dt>Slew timeout and call timeout</dt>
+                    <dd>How long a slew, and any single call, may take before it counts as never answered.</dd>
+                </dl>
+            </section>
+
+            <section id="results">
+                <h2>Reading the results</h2>
+                <p>Each finding has an outcome:</p>
+                <table>
+                    <thead><tr><th>Outcome</th><th>Means</th></tr></thead>
+                    <tbody>
+                        <tr><td><span class="badge fail">Fail</span></td><td>Breaks the ASCOM rules. Fix it.</td></tr>
+                        <tr><td><span class="badge error">Error</span></td><td>The call threw something unexpected, or never answered.</td></tr>
+                        <tr><td><span class="badge warning">Warning</span></td><td>Allowed, but likely to trouble some clients.</td></tr>
+                        <tr><td><span class="badge pass">Pass</span></td><td>As ASCOM expects.</td></tr>
+                        <tr><td><span class="badge info">Info</span></td><td>Worth knowing; not a problem.</td></tr>
+                        <tr><td><span class="badge">Skipped</span></td><td>Not checked: not supported, or not allowed by the run's options.</td></tr>
+                    </tbody>
+                </table>
+                <p>The counts above the list are filters: click one to show only that outcome (click again to show all).
+                    Narrow it further by group or with the search box. Click a finding to open it: the check's ID, what was
+                    expected, what came back, <strong>how to fix</strong> it, <strong>where</strong> in the code, and a
+                    reference to the ASCOM rule.</p>
+            </section>
+
+            <section id="reports">
+                <h2>The Reports tab</h2>
+                <p>Every finished run, newest first: when, the device and its version, the site, COM or Alpaca, and a bar
+                    of fail, warning and pass. Click the device to open the report. The buttons at the end of a row
+                    download it as Markdown (ready to paste into an issue) or JSON.</p>
+                <p>To delete reports, tick them (or tick <strong>Select all</strong>) and press <strong>Delete checked</strong>.
+                    You're asked first; deleted reports can't be brought back.</p>
+                <p>A report opens with its totals and duration, the device's identity, the run's options, and the findings.</p>
+            </section>
+
+            <section id="compare">
+                <h2>The Compare tab</h2>
+                <p>Shows how the server on the Run tab does at each ticked site, side by side: its latest run at each,
+                    one column per site. Change the server or the ticks on the Run tab and it follows.</p>
+                <dl>
+                    <dt>Differs</dt>
+                    <dd>Another outcome, or another message, at some site: usually something that depends on the latitude
+                        or longitude, such as pier side, alt/az or sidereal time.</dd>
+                    <dt>Fails at every site</dt>
+                    <dd>The same problem everywhere.</dd>
+                    <dt>Not checked everywhere</dt>
+                    <dd>The same result wherever it was made, but some site's run didn't make the check.</dd>
+                    <dt>Same, no problem</dt>
+                    <dd>Passed everywhere. Hidden until you click its count.</dd>
+                </dl>
+                <p>Runs at two or more of the ticked sites are needed.</p>
+            </section>
+
+            <section id="checks">
+                <h2>What gets checked</h2>
+                <table>
+                    <thead><tr><th>Group</th><th>Checks</th></tr></thead>
+                    <tbody>
+                        @foreach (var g in TestRunner.Groups)
+                        {
+                            <tr><td><strong>@g.Name</strong></td><td>@g.Description</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section id="source">
+                <h2>Where to fix</h2>
+                <p>A finding names the file and line to look at, such as <code>GS.Ascom.SkyTelescope/Telescope.cs:1265</code>,
+                    when the server's source code is on this computer. <code>appsettings.json</code> → <code>Codebases</code>
+                    says where each server's source is. Folder names are looked for beside this program's folder and
+                    its parents, so <code>GSServer</code> and <code>GreenSwampAlpaca</code> cloned next to it are found
+                    by themselves. The Server and sites card shows the folder found, or says none was.</p>
+            </section>
+
+            <section id="cli">
+                <h2>From the command line</h2>
+                <p>For scripts and build pipelines, <code>--run</code> checks one device, saves the report like a run from
+                    this page, and exits:</p>
+                <pre><code>GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--md report.md]
+GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
+                <p>Other options: <code>--setpark</code>, <code>--no-writes</code>, <code>--no-protocol</code>,
+                    <code>--no-disconnect</code>, <code>--extended</code>, <code>--drift-seconds &lt;s&gt;</code>,
+                    <code>--sites server,north,south</code> (the North and South saved here), <code>--slew-timeout &lt;s&gt;</code>
+                    and <code>--call-timeout &lt;s&gt;</code>.</p>
+                <p>The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.</p>
+            </section>
+
+            <section id="files">
+                <h2>Where things are stored</h2>
+                <dl>
+                    <dt>Reports</dt>
+                    <dd><code>@Store.Folder</code>, one JSON file per run (setting <code>ReportsFolder</code>).</dd>
+                    <dt>Servers and sites</dt>
+                    <dd><code>servers.json</code> and <code>sites.json</code> beside the reports folder. Alpaca passwords
+                        are saved encrypted (with DPAPI on Windows) and never written into reports.</dd>
+                </dl>
+            </section>
+
+            <section id="trouble">
+                <h2>Troubleshooting</h2>
+                <dl>
+                    <dt>Alpaca Discovery finds nothing</dt>
+                    <dd>The server must be on the same network, with discovery on and UDP port 32227 not blocked by a
+                        firewall. Otherwise add it with + and its host and port.</dd>
+                    <dt>The ASCOM Drivers button is missing</dt>
+                    <dd>It's only there on Windows. A COM driver also needs the ASCOM Platform installed.</dd>
+                    <dt>The Disconnected checks are skipped</dt>
+                    <dd>Another client (a planetarium, a guider, GS Point3D Web) is holding the device. Close it, or
+                        untick <em>Disconnect at the end</em>.</dd>
+                    <dt>Slews time out</dt>
+                    <dd>Raise the slew timeout, or check that the mount (or simulator) is unparked and can reach the targets.</dd>
+                    <dt>Findings don't name a file</dt>
+                    <dd>The server's source wasn't found: see <a href="help#source">Where to fix</a>.</dd>
+                    <dt>Start run is greyed out</dt>
+                    <dd>Tick at least one site under the server.</dd>
+                </dl>
+            </section>
+        </article>
+    </div>
+</div>

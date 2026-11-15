@@ -18,9 +18,10 @@
 @inject SiteStore Sites
 
 @* Where the runs are made: the server's own site, and/or one northern and one southern site the mount is set to
-   (SiteLatitude, SiteLongitude, SiteElevation) for the run and then put back. One report per site. *@
-<section class="card sites">
-    <h2>Sites <small class="muted">one report per site ticked</small></h2>
+   (SiteLatitude, SiteLongitude, SiteElevation) for the run and then put back. One report per site. Shown inside
+   the Run page's Server card. *@
+<div class="sites">
+    <h3>Sites <small class="muted">one report per site ticked</small></h3>
 
     <label class="check">
         <input type="checkbox" checked="@_s.UseServer" disabled="@Disabled" @onchange="e => UseServer((bool)e.Value!)" />
@@ -49,7 +50,7 @@
     }
     <p class="muted small">A run at North or South writes SiteElevation, SiteLatitude and SiteLongitude after connecting, and puts
         the server's own values back before disconnecting (also if the run fails or is stopped). Longitude is east positive.</p>
-</section>
+</div>
 
 @code {
     [Parameter] public bool Disabled { get; set; }

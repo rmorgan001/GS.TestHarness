@@ -15,69 +15,102 @@
  *@
 
 @page "/compare"
+@implements IDisposable
 @inject ReportStore Store
-@inject NavigationManager Nav
+@inject SiteStore Sites
+@inject Workbench Bench
+@inject ServerList Servers
+@inject RunService Runs
 
 <PageTitle>Compare · GS Test Harness</PageTitle>
 
+@* No picking of runs: the server on the Run tab, and its latest run at each site ticked there, side by side. *@
 <header class="page-head">
-    <h1>Compare two runs</h1>
-    <p class="muted">See what a new version of a program fixed, what it broke and what still fails, or how the same
-        program does at different sites (server's own, north, south). Only runs of the same program are compared.</p>
+    <h1>Compare sites</h1>
+    <p class="muted">How the server on the Run tab does at each site ticked there (server's own, north, south): its latest
+        run at each, side by side.</p>
 </header>
 
-@if (_reports is null)
+@if (_all is null)
 {
     <p class="muted">Loading…</p>
 }
-else if (_reports.Count < 2)
+else if (Bench.Selected is not { } server)
 {
-    <p class="muted">Two saved runs are needed to compare. <a href="">Start a run</a>.</p>
+    <p class="muted">Drag a server onto the Server box on the <a href="">Run</a> tab first.</p>
 }
 else
 {
+    var columns = Columns(server);
     <section class="card">
-        <div class="fields">
-            <label class="wide">After (the run to check)
-                <select value="@_after" @onchange="e => PickAfter(e.Value as string)">
-                    @foreach (var r in _reports) { <option value="@r.Id">@Text(r)</option> }
-                </select>
-            </label>
-            <label class="wide">Before (another run of the same program: an earlier version, or another site)
-                <select value="@_before" disabled="@(SamePrograms.Count == 0)" @onchange="e => Pick(e.Value as string, _after)">
-                    @foreach (var r in SamePrograms) { <option value="@r.Id">@Text(r)</option> }
-                </select>
-            </label>
+        <div class="picked">
+            <img class="kind-lg" src="@server.Image" alt="" />
+            <div>
+                <div class="picked-name">@server.Name</div>
+                <div class="muted">@server.KindText</div>
+                <div class="mono small">@server.Address</div>
+            </div>
         </div>
-        @if (SamePrograms.Count == 0)
+        @if (columns.Count == 0)
         {
-            <p class="muted">There's no other run of @(AfterReport?.Identity.Name ?? "this program") over
-                @(AfterReport?.Target.Kind == TargetKind.Com ? "COM" : "Alpaca") to compare with. Run it again (for example, a new version) first.</p>
+            <p class="muted">No site is ticked on the <a href="">Run</a> tab.</p>
+        }
+        else
+        {
+            <ul class="site-runs">
+                @foreach (var (site, run) in columns)
+                {
+                    <li>
+                        <b>@SiteName(site)</b>
+                        @if (run is null) { <span class="muted">no run yet</span> }
+                        else
+                        {
+                            <a href="reports/@run.Id">@run.Started.ToString("yyyy-MM-dd HH:mm")</a>
+                            <span class="muted">@run.Identity.DriverVersion · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail</span>
+                        }
+                    </li>
+                }
+            </ul>
         }
     </section>
 
-    @if (_diff is { } diff)
+    var runs = columns.Where(c => c.Run is not null).ToList();
+    if (runs.Count < 2)
     {
+        <p class="muted">Runs at two or more of the ticked sites are needed to compare. Start them on the <a href="">Run</a> tab.</p>
+    }
+    else
+    {
+        var rows = ReportComparer.CompareSites([.. runs.Select(c => c.Run!)]);
         <div class="summary">
             @foreach (var c in Shown)
             {
                 <button class="chip @Css(c) @(_filter == c ? "on" : "")" @onclick="() => _filter = _filter == c ? null : c">
-                    <span class="chip-count">@diff.Count(d => d.Change == c)</span> @Label(c)
+                    <span class="chip-count">@rows.Count(d => d.Change == c)</span> @Label(c)
                 </button>
             }
         </div>
-        <section class="card">
+        <section class="card table-scroll">
             <table class="results">
-                <thead><tr><th class="col-outcome">Change</th><th>Check</th><th>Before</th><th>After</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th class="col-sites">Sites</th><th class="col-check">Check</th>
+                        @foreach (var (site, _) in runs) { <th>@SiteName(site)</th> }
+                    </tr>
+                </thead>
                 <tbody>
-                    @foreach (var d in diff.Where(d => _filter is null ? d.Change is not (Change.Same or Change.Gone or Change.Added) : d.Change == _filter))
+                    @foreach (var d in rows.Where(d => _filter is null ? d.Change != SiteChange.Same : d.Change == _filter))
                     {
                         <tr class="row">
                             <td><span class="badge @Css(d.Change)">@Label(d.Change)</span></td>
-                            <td class="mono">@d.Id</td>
-                            <td>@if (d.Before is { } b) { <span class="badge @ResultsTable.Css(b.Outcome)">@b.Outcome</span> @b.Message }</td>
-                            <td>@if (d.After is { } a) { <span class="badge @ResultsTable.Css(a.Outcome)">@a.Outcome</span> @a.Message
-                                @if (a.Fix is not null) { <div class="fix small">@a.Fix</div> } }</td>
+                            @* The fix once, under the check: the same advice at every site. *@
+                            <td><span class="mono">@d.Id</span>
+                                @if (d.Results.FirstOrDefault(r => r is { Outcome: not Outcome.Pass, Fix: not null }) is { } bad) { <div class="fix small">@bad.Fix</div> }</td>
+                            @foreach (var r in d.Results)
+                            {
+                                <td>@if (r is null) { <span class="muted">not checked</span> }
+                                    else { <span class="badge @ResultsTable.Css(r.Outcome)">@r.Outcome</span> @r.Message }</td>
+                            }
                         </tr>
                     }
                 </tbody>
@@ -87,75 +120,61 @@ else
 }
 
 @code {
-    [SupplyParameterFromQuery] public string? Before { get; set; }
-    [SupplyParameterFromQuery] public string? After { get; set; }
+    private List<RunReport>? _all;  // every saved run, newest first
+    private SiteChange? _filter;
+    private string? _lastRun;
 
-    private List<RunReport>? _reports;
-    private string? _before, _after;
-    private List<ComparedCheck>? _diff;
-    private Change? _filter;
-
-    private static readonly Change[] Shown = [Change.Regressed, Change.New, Change.StillFailing, Change.Changed, Change.Fixed, Change.Gone];
-
-    private RunReport? AfterReport => _reports?.FirstOrDefault(r => r.Id == _after);
-
-    /// <summary>The other runs of the program "After" is a run of: the only ones it can be compared with.</summary>
-    private List<RunReport> SamePrograms => AfterReport is { } after
-        ? [.. _reports!.Where(r => r.Id != after.Id && !ReportComparer.AreDifferentPrograms(r, after))]
-        : [];
+    private static readonly SiteChange[] Shown = [SiteChange.Differs, SiteChange.FailsEverywhere, SiteChange.NotEverywhere, SiteChange.Same];
 
     protected override async Task OnInitializedAsync()
     {
-        _reports = await Store.ListAsync();
-        if (_reports.Count < 2) return;
-        _after = _reports.Any(r => r.Id == After) ? After : _reports[0].Id;
-        _before = SamePrograms.Any(r => r.Id == Before) ? Before : DefaultBefore();
-        Update();
+        _lastRun = Runs.LastReport?.Id;
+        _all = await Store.ListAsync();
+        Sites.Changed += OnChanged;
+        Bench.Changed += OnChanged;
+        Servers.Changed += OnChanged;
+        Runs.Changed += OnRunsChanged;
     }
 
-    /// <summary>The run of the same program just before "After" (or, failing that, the latest other one).</summary>
-    private string? DefaultBefore()
-    {
-        var same = SamePrograms;
-        return (same.FirstOrDefault(r => r.Started < AfterReport!.Started) ?? same.FirstOrDefault())?.Id;
-    }
+    /// <summary>Each ticked site (null: the server's own) and the server's latest run there, if any.</summary>
+    private List<(SiteLocation? Site, RunReport? Run)> Columns(ServerEntry server)
+        => [.. Sites.Selected().Select(site => (site, _all!.FirstOrDefault(r =>
+            TestTarget.SameDevice(r.Target, server.Target) && r.Site?.Hemisphere == site?.Hemisphere)))];
 
-    private void PickAfter(string? after)
-    {
-        _after = after;
-        Pick(SamePrograms.Any(r => r.Id == _before) ? _before : DefaultBefore(), _after);
-    }
+    private static string SiteName(SiteLocation? site) => site?.Label ?? "Server's own site";
 
-    private void Pick(string? before, string? after)
-    {
-        (_before, _after) = (before, after);
-        Update();
-        Nav.NavigateTo($"compare?before={_before}&after={_after}", replace: true);
-    }
+    private void OnChanged() => InvokeAsync(StateHasChanged);
 
-    private void Update()
+    /// <summary>A run finished: list it.</summary>
+    private void OnRunsChanged() => InvokeAsync(async () =>
     {
-        var a = _reports?.FirstOrDefault(r => r.Id == _before);
-        var b = _reports?.FirstOrDefault(r => r.Id == _after);
-        _diff = a is not null && b is not null && !ReportComparer.AreDifferentPrograms(a, b) ? ReportComparer.Compare(a, b) : null;
-    }
+        if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
+        _lastRun = Runs.LastReport?.Id;
+        _all = await Store.ListAsync();
+        StateHasChanged();
+    });
 
-    private static string Text(RunReport r)
-        => $"{r.Started:yyyy-MM-dd HH:mm} · {r.Label} · {r.SiteLabel} · {(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca")} · {r.Count(Outcome.Fail) + r.Count(Outcome.Error)} fail";
-
-    private static string Css(Change c) => c switch
+    private static string Css(SiteChange c) => c switch
     {
-        Change.Fixed => "pass",
-        Change.Regressed or Change.New => "fail",
-        Change.StillFailing or Change.Changed => "warning",
+        SiteChange.Differs => "fail",
+        SiteChange.FailsEverywhere => "warning",
+        SiteChange.Same => "pass",
         _ => "skipped"
     };
 
-    private static string Label(Change c) => c switch
+    private static string Label(SiteChange c) => c switch
     {
-        Change.StillFailing => "Still failing",
-        Change.New => "New problem",
-        Change.Gone => "Not checked now",
-        _ => c.ToString()
+        SiteChange.Differs => "Differs",
+        SiteChange.FailsEverywhere => "Fails at every site",
+        SiteChange.NotEverywhere => "Not checked everywhere",
+        _ => "Same, no problem"
     };
+
+    public void Dispose()
+    {
+        Sites.Changed -= OnChanged;
+        Bench.Changed -= OnChanged;
+        Servers.Changed -= OnChanged;
+        Runs.Changed -= OnRunsChanged;
+    }
 }

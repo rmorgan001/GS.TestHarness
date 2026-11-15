@@ -16,6 +16,7 @@
 
 @page "/reports"
 @inject ReportStore Store
+@inject DialogService Dialogs
 
 <PageTitle>Reports · GS Test Harness</PageTitle>
 
@@ -30,32 +31,62 @@
 }
 else if (_reports.Count == 0)
 {
-    <p class="muted">No runs yet. <a href="">Start one</a>.</p>
+    <div class="empty-state"><Icon Kind="FileDocument" Size="32" /><p>No runs yet.</p><a class="btn primary" href="">Start one</a></div>
 }
 else
 {
-    <section class="card">
+    var all = _checked.Count == _reports.Count;
+    @* Tick reports (or Select all), then delete them together. *@
+    <div class="bulk-bar">
+        <label class="bulk-all">
+            <input type="checkbox" checked="@all" @onchange="e => SelectAll((bool)e.Value!)" />
+            <span>Select all</span>
+        </label>
+        <span class="muted">@(_checked.Count == 0 ? $"{_reports.Count} reports" : $"{_checked.Count} of {_reports.Count} checked")</span>
+        <button class="btn danger-outline" disabled="@(_checked.Count == 0)" @onclick="DeleteCheckedAsync">
+            <Icon Kind="Delete" Size="16" /> Delete checked@(_checked.Count > 0 ? $" ({_checked.Count})" : "")
+        </button>
+    </div>
+    <section class="card table-scroll">
         <table class="results reports">
             <thead>
-                <tr><th>When</th><th>Device</th><th>Version</th><th>Site</th><th>Via</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
+                <tr><th class="col-check-box"><input type="checkbox" checked="@all" title="Select all" aria-label="Select all reports"
+                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>When</th><th>Device</th><th>Site</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
             </thead>
             <tbody>
                 @foreach (var r in _reports)
                 {
-                    <tr>
-                        <td class="mono">@r.Started.ToString("yyyy-MM-dd HH:mm")</td>
-                        <td><a href="reports/@r.Id">@(r.Identity.Name ?? r.Target.Display)</a>@if (r.Cancelled) { <span class="badge skipped">stopped</span> }
-                            @if (r.Options.AllowMotion) { <span class="badge info">motion</span> }</td>
-                        <td class="mono">@r.Identity.DriverVersion</td>
+                    var fail = r.Count(Outcome.Fail) + r.Count(Outcome.Error);
+                    var warn = r.Count(Outcome.Warning);
+                    var pass = r.Count(Outcome.Pass);
+                    var total = Math.Max(1, fail + warn + pass);
+                    var isChecked = _checked.Contains(r.Id);
+                    <tr class="@(isChecked ? "checked" : null)">
+                        <td class="col-check-box"><input type="checkbox" checked="@isChecked" aria-label="Check this report for deleting"
+                                                         @onchange="e => Check(r.Id, (bool)e.Value!)" /></td>
+                        <td class="when"><span>@r.Started.ToString("yyyy-MM-dd")</span> <span class="muted">@r.Started.ToString("HH:mm")</span></td>
+                        <td>
+                            <a class="device" href="reports/@r.Id">@(r.Identity.Name ?? r.Target.Display)</a>
+                            <div class="device-meta">
+                                <span class="mono">@r.Identity.DriverVersion</span>
+                                @if (r.Options.AllowMotion) { <span class="tag">motion</span> }
+                                @if (r.Cancelled) { <span class="tag">stopped</span> }
+                            </div>
+                        </td>
                         <td>@r.SiteLabel</td>
-                        <td>@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca")</td>
-                        <td class="num"><span class="count fail">@(r.Count(Outcome.Fail) + r.Count(Outcome.Error))</span></td>
-                        <td class="num"><span class="count warning">@r.Count(Outcome.Warning)</span></td>
-                        <td class="num">@r.Count(Outcome.Pass)</td>
+                        <td><span class="via"><img src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="" />@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca")</span></td>
+                        @* Fail, warning and pass as one bar: how the run went at a glance. *@
+                        <td class="col-bar">
+                            <div class="outcome-bar" title="@fail fail · @warn warning · @pass pass">
+                                <span class="fail" style="width:@Pct(fail, total)"></span><span class="warning" style="width:@Pct(warn, total)"></span><span class="pass" style="width:@Pct(pass, total)"></span>
+                            </div>
+                        </td>
+                        <td class="num"><span class="count @(fail > 0 ? "fail" : null)">@fail</span></td>
+                        <td class="num"><span class="count @(warn > 0 ? "warning" : null)">@warn</span></td>
+                        <td class="num">@pass</td>
                         <td class="actions">
-                            <a href="download/@(r.Id).md" download>md</a>
-                            <a href="download/@(r.Id).json" download>json</a>
-                            <button class="link danger" @onclick="() => Delete(r)">delete</button>
+                            <a class="icon-btn" href="download/@(r.Id).md" download title="Download Markdown" aria-label="Download Markdown"><Icon Kind="Download" Size="18" /></a>
+                            <a class="icon-btn" href="download/@(r.Id).json" download title="Download JSON" aria-label="Download JSON"><Icon Kind="CodeBraces" Size="18" /></a>
                         </td>
                     </tr>
                 }
@@ -66,12 +97,32 @@ else
 
 @code {
     private List<RunReport>? _reports;
+    private readonly HashSet<string> _checked = [];
 
     protected override async Task OnInitializedAsync() => _reports = await Store.ListAsync();
 
-    private void Delete(RunReport r)
+    private static string Pct(int n, int total) => FormattableString.Invariant($"{100.0 * n / total:0.##}%");
+
+    private void Check(string id, bool on)
     {
-        Store.Delete(r.Id);
-        _reports?.Remove(r);
+        if (on) _checked.Add(id);
+        else _checked.Remove(id);
+    }
+
+    private void SelectAll(bool on)
+    {
+        _checked.Clear();
+        if (on) _checked.UnionWith(_reports!.Select(r => r.Id));
+    }
+
+    private async Task DeleteCheckedAsync()
+    {
+        var n = _checked.Count;
+        if (n == 0 || !await Dialogs.ShowAsync(new ConfirmDialogModel("Delete reports",
+                $"Delete {(n == 1 ? "the checked report" : $"the {n} checked reports")}? This can't be undone.", "Delete", "Cancel", danger: true)))
+            return;
+        foreach (var id in _checked) Store.Delete(id);
+        _reports!.RemoveAll(r => _checked.Contains(r.Id));
+        _checked.Clear();
     }
 }

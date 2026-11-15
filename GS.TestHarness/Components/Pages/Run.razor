@@ -43,7 +43,7 @@
              @ondragover:preventDefault
              @ondrop="Drop"
              @ondrop:preventDefault>
-        <h2>Server</h2>
+        <h2>Server and sites</h2>
         @if (server is null)
         {
             <div class="drop-empty">
@@ -61,16 +61,28 @@
                     <div class="muted">@server.KindText</div>
                     <div class="mono small">@server.Address</div>
                 </div>
-                @if (!Runs.IsRunning)
-                {
-                    <button type="button" class="icon-btn clear" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
-                        <Icon Kind="Close" Size="18" />
-                    </button>
-                }
+                @* Start (or Stop) beside the server it runs on. *@
+                <div class="picked-actions">
+                    @if (Runs.IsRunning)
+                    {
+                        <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
+                    }
+                    else
+                    {
+                        var count = Sites.Selected().Count;
+                        <button class="btn primary" disabled="@(count == 0)"
+                                title="@(count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
+                                @onclick="Start"><Icon Kind="Play" Size="18" /> @(count > 1 ? $"Start {count} runs" : "Start run")</button>
+                        <button type="button" class="icon-btn" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
+                            <Icon Kind="Close" Size="18" />
+                        </button>
+                    }
+                </div>
             </div>
             <p class="muted small source">Source for "where to fix":
                 @(Locator.RootOf(server.Target.Codebase) is { } root ? root : "not found on this computer, so findings won't name a file")</p>
         }
+        <SitesCard Disabled="Runs.IsRunning" />
         @if (dragging)
         {
             <div class="drop-zone"><span>Test @Bench.Dragging!.Name</span></div>
@@ -112,19 +124,13 @@
     </section>
 </div>
 
-<SitesCard Disabled="Runs.IsRunning" />
-
+@* The run's progress, and its reports when it's done; Stop stays at hand while the page scrolls. *@
+@if (Runs.IsRunning || Runs.Status is not null || Runs.LastReport is not null)
+{
 <div class="run-bar">
     @if (Runs.IsRunning)
     {
-        <button class="btn stop" @onclick="Runs.Stop">Stop</button>
-    }
-    else
-    {
-        var count = Sites.Selected().Count;
-        <button class="btn primary" disabled="@(server is null || count == 0)"
-                title="@(server is null ? "Drag a server onto the Server box first" : count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
-                @onclick="Start">@(count > 1 ? $"Start {count} runs" : "Start run")</button>
+        <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
     }
     <div class="progress-wrap">
         @if (Runs.Status is { } status)
@@ -150,14 +156,15 @@
         {
             <a class="btn" href="reports/@r.Id">@r.SiteLabel</a>
         }
-        <a class="btn" href="compare?before=@Runs.LastReports[0].Id&after=@Runs.LastReports[^1].Id">Compare</a>
+        <a class="btn" href="compare"><Icon Kind="Compare" Size="16" /> Compare sites</a>
     }
     else if (Runs.LastReport is { } done)
     {
-        <a class="btn" href="reports/@done.Id">Open report</a>
-        <a class="btn" href="download/@(done.Id).md" download>Markdown</a>
+        <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report</a>
+        <a class="btn" href="download/@(done.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
     }
 </div>
+}
 
 @if (Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
 {
@@ -173,7 +180,7 @@ else
         <ul>
             @foreach (var g in TestRunner.Groups)
             {
-                <li><b>@g.Name</b> <span class="muted">@g.Description</span></li>
+                <li><b>@g.Name</b><span class="muted">@g.Description</span></li>
             }
         </ul>
     </section>

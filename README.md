@@ -9,8 +9,8 @@ A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server i
 - **GreenSwampAlpaca**, over Alpaca. This also checks the Alpaca HTTP protocol itself: the management API,
   transaction IDs, the JSON reply shape, error numbers versus HTTP 400, parameter casing and UDP discovery.
 
-Every run is saved, so two versions of the same server can be compared check by check: fixed, regressed, still
-failing. Runs of different servers aren't compared.
+Every run is saved. The Compare tab shows a server's latest run at each site side by side, check by check: what
+differs between sites, what fails at every site, and what some sites didn't check.
 
 ## What gets checked
 
@@ -34,9 +34,9 @@ failing. Runs of different servers aren't compared.
 **Extended checks** (off by default) add a few minutes: tracking drift and several clients at once.
 
 **Sites.** A run can be made at the server's own site, and/or at one northern and one southern site saved on the
-Run page (name, latitude, longitude, elevation). For those, SiteElevation, SiteLatitude and SiteLongitude are set
-after connecting and the server's own values are put back afterwards. Each site gets its own report; runs of the same
-server at different sites can be compared.
+Run tab (name, latitude, longitude, elevation). For those, SiteElevation, SiteLatitude and SiteLongitude are set
+after connecting and the server's own values are put back afterwards. Each site gets its own report, and the Compare tab
+puts them side by side.
 
 **Motion is off by default.** Turn it on only for a simulator, or for a real mount that is clear to move.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
@@ -47,7 +47,8 @@ Tracking and park state are put back afterwards. SetPark (which moves the saved 
 dotnet run --project GS.TestHarness
 ```
 
-Then open http://localhost:5207, pick the server and start a run.
+Then open http://localhost:5207, drag a server onto the Run tab and start a run. The **?** at the top right opens the
+help.
 
 ### From the command line
 

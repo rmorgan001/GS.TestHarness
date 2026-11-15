@@ -27,8 +27,16 @@ else if (_report is { } r)
 {
     <header class="page-head">
         <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> @r.Label</h1>
-        <p class="muted">@r.Started.ToString("yyyy-MM-dd HH:mm") · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")</p>
+        <p class="muted"><a href="reports">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.SiteLabel · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")</p>
     </header>
+
+    @* The run at a glance. *@
+    <div class="stats">
+        <div class="stat fail"><span class="stat-value">@(r.Count(Outcome.Fail) + r.Count(Outcome.Error))</span><span class="stat-label">Fail or error</span></div>
+        <div class="stat warning"><span class="stat-value">@r.Count(Outcome.Warning)</span><span class="stat-label">Warnings</span></div>
+        <div class="stat pass"><span class="stat-value">@r.Count(Outcome.Pass)</span><span class="stat-label">Pass</span></div>
+        <div class="stat"><span class="stat-value">@((r.Finished - r.Started)?.TotalSeconds.ToString("0") ?? "–") s</span><span class="stat-label">Duration</span></div>
+    </div>
 
     <div class="grid">
         <section class="card facts">
@@ -53,9 +61,8 @@ else if (_report is { } r)
                 <dt>Harness</dt><dd class="mono">@r.HarnessVersion</dd>
             </dl>
             <div class="row-actions">
-                <a class="btn" href="download/@(r.Id).md" download>Download Markdown</a>
-                <a class="btn" href="download/@(r.Id).json" download>JSON</a>
-                <a class="btn" href="compare?after=@r.Id">Compare…</a>
+                <a class="btn" href="download/@(r.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
+                <a class="btn" href="download/@(r.Id).json" download><Icon Kind="CodeBraces" Size="16" /> JSON</a>
             </div>
         </section>
     </div>

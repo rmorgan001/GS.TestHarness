@@ -16,13 +16,41 @@
 
 @inherits LayoutComponentBase
 
+@* As GS.Point3DWeb: a header across the top, the server list on the left, and the page on the right under its
+   Run / Reports / Compare tabs. *@
 <div class="shell">
-    <aside class="sidebar" id="sidebar">
-        <NavMenu />
-    </aside>
-    <main class="main">
-        @Body
-    </main>
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span>GS Test Harness</span>
+            <span class="brand-version" title="Version @Version">v@(Version)</span>
+            <span class="brand-sub">ASCOM compliance</span>
+        </div>
+        @* Opens the help (/help) in its own window (wwwroot/app.js); a plain new tab if pop-ups are blocked. *@
+        <a class="help-button" href="help" target="gs-testharness-help" data-popup="width=1000,height=800"
+           title="Open the help in a separate window" aria-label="Help">
+            <Icon Kind="HelpCircle" Size="20" />
+        </a>
+    </header>
+
+    <div class="workspace">
+        <aside class="sidebar" id="sidebar">
+            <ServerSidebar />
+        </aside>
+        <main class="main">
+            <nav class="tabs" aria-label="Pages">
+                <NavLink class="tab" href="" Match="NavLinkMatch.All"><Icon Kind="Play" Size="18" /><span>Run</span></NavLink>
+                <NavLink class="tab" href="reports"><Icon Kind="FileDocument" Size="18" /><span>Reports</span></NavLink>
+                <NavLink class="tab" href="compare"><Icon Kind="Compare" Size="18" /><span>Compare</span></NavLink>
+            </nav>
+            @* Only the page scrolls; the tabs stay put. *@
+            <div class="page-scroll">
+                <div class="page">
+                    @Body
+                </div>
+            </div>
+        </main>
+    </div>
 </div>
 
 <DialogHost />
@@ -32,3 +60,7 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">✕</span>
 </div>
+
+@code {
+    private static readonly string? Version = typeof(Program).Assembly.GetName().Version?.ToString(3);
+}

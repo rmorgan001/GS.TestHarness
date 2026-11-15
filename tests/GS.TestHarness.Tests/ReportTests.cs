@@ -44,6 +44,25 @@ public class ReportTests
     }
 
     [Fact]
+    public void Comparing_sites_finds_what_differs_what_fails_everywhere_and_what_some_sites_skipped()
+    {
+        var server = Report(Result("A.Diff", Outcome.Pass), Result("A.Msg", Outcome.Fail, "one"), Result("A.Bad", Outcome.Fail),
+            Result("A.Some", Outcome.Pass), Result("A.Ok", Outcome.Pass));
+        var north = Report(Result("A.Diff", Outcome.Fail), Result("A.Msg", Outcome.Fail, "two"), Result("A.Bad", Outcome.Fail),
+            Result("A.Ok", Outcome.Pass));
+        var south = Report(Result("A.Diff", Outcome.Pass), Result("A.Msg", Outcome.Fail, "one"), Result("A.Bad", Outcome.Fail),
+            Result("A.Some", Outcome.Pass), Result("A.Ok", Outcome.Pass));
+        var rows = ReportComparer.CompareSites([server, north, south]).ToDictionary(d => d.Id);
+        Assert.Equal(SiteChange.Differs, rows["A.Diff"].Change);
+        Assert.Equal(SiteChange.Differs, rows["A.Msg"].Change);
+        Assert.Equal(SiteChange.FailsEverywhere, rows["A.Bad"].Change);
+        Assert.Equal(SiteChange.NotEverywhere, rows["A.Some"].Change);
+        Assert.Null(rows["A.Some"].Results[1]);
+        Assert.Equal(SiteChange.Same, rows["A.Ok"].Change);
+        Assert.Equal(Outcome.Fail, rows["A.Diff"].Results[1]!.Outcome);
+    }
+
+    [Fact]
     public void Runs_of_another_device_codebase_or_transport_are_different_programs()
     {
         var gss = Report() with { Target = new TestTarget { Codebase = Codebase.GSServer }, Identity = new DeviceIdentity { Name = "GSServer", DriverVersion = "1.2.3.3" } };

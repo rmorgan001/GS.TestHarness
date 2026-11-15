@@ -148,6 +148,24 @@ public enum Change
     Same
 }
 
+/// <summary>How a check came out across the sites, worst first.</summary>
+public enum SiteChange
+{
+    /// <summary>Another outcome (or, for a problem, another message) at some site.</summary>
+    Differs,
+
+    /// <summary>The same problem at every site.</summary>
+    FailsEverywhere,
+
+    /// <summary>The same result wherever it was made, but some site's run didn't make it.</summary>
+    NotEverywhere,
+
+    /// <summary>No problem, at every site.</summary>
+    Same
+}
+
+public sealed record SiteComparedCheck(string Id, string Group, string Member, CheckResult?[] Results, SiteChange Change);
+
 public sealed record ComparedCheck(string Id, string Group, string Member, CheckResult? Before, CheckResult? After, Change Change);
 
 /// <summary>
@@ -185,6 +203,33 @@ public static class ReportComparer
             else if (Severity(y.Outcome) > 0) change = x.Message == y.Message ? Change.StillFailing : Change.Changed;
             else change = Change.Same;
             list.Add(new ComparedCheck(id, any.Group, any.Member, x, y, change));
+        }
+        return [.. list.OrderBy(c => c.Change).ThenBy(c => c.Id, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// Compares runs of one device at several sites (server's own, north, south) check by check. Each row holds
+    /// the check's result in each run, in the runs' order (null: that run didn't make it).
+    /// </summary>
+    public static List<SiteComparedCheck> CompareSites(IReadOnlyList<RunReport> runs)
+    {
+        static Dictionary<string, CheckResult> Index(RunReport r) => r.Results
+            .GroupBy(x => x.Id)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => Severity(x.Outcome)).First());
+        var indexes = runs.Select(Index).ToList();
+        var list = new List<SiteComparedCheck>();
+        foreach (var id in indexes.SelectMany(i => i.Keys).Distinct())
+        {
+            var results = indexes.Select(i => i.GetValueOrDefault(id)).ToArray();
+            var made = results.OfType<CheckResult>().ToList();
+            var any = made[0];
+            SiteChange change;
+            if (made.Select(r => Severity(r.Outcome)).Distinct().Count() > 1
+                || (Severity(any.Outcome) > 0 && made.Select(r => r.Message).Distinct().Count() > 1))
+                change = SiteChange.Differs;
+            else if (made.Count < results.Length) change = SiteChange.NotEverywhere;
+            else change = Severity(any.Outcome) > 0 ? SiteChange.FailsEverywhere : SiteChange.Same;
+            list.Add(new SiteComparedCheck(id, any.Group, any.Member, results, change));
         }
         return [.. list.OrderBy(c => c.Change).ThenBy(c => c.Id, StringComparer.Ordinal)];
     }
