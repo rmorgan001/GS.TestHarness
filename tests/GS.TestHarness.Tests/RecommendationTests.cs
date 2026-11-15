@@ -127,6 +127,89 @@ public class RecommendationTests
     }
 
     [Fact]
+    public void A_check_recorded_twice_in_one_run_is_one_hit()
+    {
+        var run = Run(Codebase.GreenSwampAlpaca, "North", 0,
+            Result("A.Twice", Outcome.Warning, message: "first"), Result("A.Twice", Outcome.Fail, message: "second"));
+
+        var r = Assert.Single(RecommendationBuilder.Build([run]).Recommendations);
+
+        Assert.Equal(Outcome.Fail, r.Worst);
+        Assert.Equal("second", Assert.Single(r.Hits).Result.Message);
+    }
+
+    [Fact]
+    public void A_device_last_tested_on_an_older_build_is_left_out()
+    {
+        var oldPort = Run(Codebase.GreenSwampAlpaca, "North", 0, Result("A.Fixed", Outcome.Fail)) with
+        {
+            Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca, Port = 11111 }
+        };
+        oldPort.Identity = new DeviceIdentity { DriverVersion = "1.0" };
+        var current = Run(Codebase.GreenSwampAlpaca, "North", 10, Result("A.Fixed", Outcome.Pass));
+        current.Identity = new DeviceIdentity { DriverVersion = "1.1" };
+        var otherDevice = Run(Codebase.GreenSwampAlpaca, "North", 5, Result("A.Fixed", Outcome.Pass)) with
+        {
+            Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca, DeviceNumber = 1 }
+        };
+        otherDevice.Identity = new DeviceIdentity { DriverVersion = "1.1" };
+
+        var set = RecommendationBuilder.Build([oldPort, current, otherDevice]);
+
+        Assert.Equal([current, otherDevice], set.Runs);
+        Assert.Empty(set.Recommendations);
+    }
+
+    [Fact]
+    public void A_run_with_no_version_is_kept()
+    {
+        var unknown = Run(Codebase.GreenSwampAlpaca, "North", 0, Result("A.X", Outcome.Fail)) with
+        {
+            Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca, Port = 11111 }
+        };
+        var current = Run(Codebase.GreenSwampAlpaca, "North", 10, Result("A.X", Outcome.Pass));
+        current.Identity = new DeviceIdentity { DriverVersion = "1.1" };
+
+        Assert.Equal([current, unknown], RecommendationBuilder.Build([unknown, current]).Runs);
+    }
+
+    [Fact]
+    public void Markdown_keeps_each_value_inside_its_list_item()
+    {
+        var result = Result("A.X", Outcome.Fail, fix: "first line\r\nsecond line", source: "Odd`Name.cs:3") with
+        {
+            Actual = "Exception: boom\r\n   at Foo()\r\n   at Bar()"
+        };
+
+        var md = RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build([Run(Codebase.GreenSwampAlpaca, null, 0, result)]));
+
+        Assert.Contains("- Recommendation: first line second line", md);
+        Assert.Contains("- Where: ``Odd`Name.cs:3``", md);
+        Assert.Contains("    Exception: boom", md);
+        Assert.Contains("       at Bar()", md);
+        Assert.DoesNotContain("\r", md.Replace(Environment.NewLine, "\n"));
+    }
+
+    [Fact]
+    public void A_failure_is_listed_before_an_error()
+    {
+        var run = Run(Codebase.GreenSwampAlpaca, null, 0, Result("A.Error", Outcome.Error), Result("B.Fail", Outcome.Fail));
+
+        Assert.Equal(["B.Fail", "A.Error"], RecommendationBuilder.Build([run]).Recommendations.Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Compare_and_recommendations_pick_the_same_run()
+    {
+        var finished = Run(Codebase.GreenSwampAlpaca, "North", 0, Result("A.X", Outcome.Fail));
+        var stopped = Run(Codebase.GreenSwampAlpaca, "North", 10, Result("A.X", Outcome.Pass));
+        stopped.Cancelled = true;
+
+        Assert.Same(finished, ReportStore.LatestAt([finished, stopped], finished.Target, "North"));
+        Assert.Same(finished, Assert.Single(RecommendationBuilder.LatestRuns([finished, stopped])));
+    }
+
+    [Fact]
     public void No_runs_give_an_empty_set()
     {
         var set = RecommendationBuilder.Build([]);

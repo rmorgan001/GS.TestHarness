@@ -78,11 +78,12 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 app.MapStaticAssets();
 
-// Report downloads: Markdown (to paste into an issue) and the raw JSON.
 // The Recommendations tab as Markdown. A literal route, so it wins over {id}.md.
 app.MapGet("/download/recommendations.md", async (ReportStore store) =>
     Results.File(System.Text.Encoding.UTF8.GetBytes(RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build(await store.ListAsync()))),
         "text/markdown; charset=utf-8", "recommendations.md"));
+
+// Report downloads: Markdown (to paste into an issue) and the raw JSON.
 app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
     await store.LoadAsync(id) is { } report
         ? Results.File(System.Text.Encoding.UTF8.GetBytes(ReportStore.ToMarkdown(report)), "text/markdown; charset=utf-8", $"{id}.md")

@@ -51,25 +51,34 @@ public sealed record RecommendationSet(
 /// </summary>
 public static class RecommendationBuilder
 {
-    private static int Severity(Outcome o) => o switch
-    {
-        Outcome.Fail => 3,
-        Outcome.Error => 2,
-        Outcome.Warning => 1,
-        _ => 0
-    };
+    /// <summary>
+    /// The order to list problems in: <see cref="OutcomeExtensions.Severity"/> (shared with Compare), then a failure
+    /// before an error, since a failure is a breach of the standard and an error is a check that couldn't finish.
+    /// </summary>
+    private static (int, bool) Rank(Outcome o) => (o.Severity(), o == Outcome.Fail);
 
     /// <summary>
-    /// The newest run of each device at each site (server's own, north, south), newest first. A run that was
-    /// stopped early only counts when there's no finished one: it didn't make every check, so it would hide
-    /// problems an older finished run found.
+    /// The newest run of each device at each site (server's own, north, south), newest first; see
+    /// <see cref="ReportStore.Representative"/> for how a run stopped early counts. A device's run of an older
+    /// build of the server is left out too: when the newest run of that server at that site reports a different
+    /// version, the older one tested code that has since changed (for example a port tested once and not since).
     /// </summary>
     public static List<RunReport> LatestRuns(IEnumerable<RunReport> runs)
     {
-        var latest = new List<RunReport>();
-        foreach (var run in runs.OrderBy(r => r.Cancelled).ThenByDescending(r => r.Started))
-            if (!latest.Any(l => TestTarget.SameDevice(l.Target, run.Target) && l.Site?.Hemisphere == run.Site?.Hemisphere))
-                latest.Add(run);
+        var all = runs.ToList();
+        var latest = all
+            .GroupBy(r => (r.Target.DeviceKey, r.Site?.Hemisphere))
+            .Select(g => ReportStore.Representative(g)!)
+            .ToList();
+
+        // The version of each server at each site now: the one its newest run reported.
+        var current = all
+            .Where(r => !string.IsNullOrWhiteSpace(r.Identity.DriverVersion))
+            .GroupBy(r => (r.Target.Codebase, r.Site?.Hemisphere))
+            .ToDictionary(g => g.Key, g => g.MaxBy(r => r.Started)!.Identity.DriverVersion!.Trim());
+        latest.RemoveAll(run => !string.IsNullOrWhiteSpace(run.Identity.DriverVersion)
+                                && current.TryGetValue((run.Target.Codebase, run.Site?.Hemisphere), out var now)
+                                && !string.Equals(run.Identity.DriverVersion.Trim(), now, StringComparison.OrdinalIgnoreCase));
         return [.. latest.OrderByDescending(r => r.Started)];
     }
 
@@ -94,7 +103,11 @@ public static class RecommendationBuilder
                 continue;
             }
 
-            var ordered = problems.OrderByDescending(x => Severity(x.Result.Outcome)).ThenByDescending(x => x.Run.Started).ToList();
+            // One hit per run: a run can record the same check more than once, and only its worst result counts.
+            var ordered = problems
+                .GroupBy(x => x.Run)
+                .Select(run => run.OrderByDescending(x => Rank(x.Result.Outcome)).First())
+                .OrderByDescending(x => Rank(x.Result.Outcome)).ThenByDescending(x => x.Run.Started).ToList();
             recommendations.Add(new Recommendation(
                 check.Key.Codebase,
                 check.Key.Id,
@@ -111,7 +124,7 @@ public static class RecommendationBuilder
             latest,
             [.. recommendations
                 .OrderBy(r => r.Codebase)
-                .ThenByDescending(r => Severity(r.Worst))
+                .ThenByDescending(r => Rank(r.Worst))
                 .ThenByDescending(r => r.Hits.Count)
                 .ThenBy(r => r.Id, StringComparer.Ordinal)],
             [.. clean.OrderBy(c => c.Codebase).ThenBy(c => c.Id, StringComparer.Ordinal)]);
@@ -140,21 +153,60 @@ public static class RecommendationBuilder
             foreach (var r in server)
             {
                 sb.AppendLine();
-                sb.AppendLine($"### {r.Worst}: {r.Member}");
-                sb.AppendLine($"`{r.Id}`");
+                sb.AppendLine($"### {r.Worst}: {Inline(r.Member)}");
+                sb.AppendLine(Code(r.Id));
                 sb.AppendLine();
                 if (r.Fixes.Count == 0) sb.AppendLine("- Recommendation: none recorded; see the expected and actual values below.");
-                foreach (var fix in r.Fixes) sb.AppendLine($"- Recommendation: {fix}");
-                foreach (var source in r.Sources) sb.AppendLine($"- Where: `{source}`");
-                if (r.Reference is not null) sb.AppendLine($"- Reference: {r.Reference}");
+                foreach (var fix in r.Fixes) sb.AppendLine($"- Recommendation: {Inline(fix)}");
+                foreach (var source in r.Sources) sb.AppendLine($"- Where: {Code(source)}");
+                if (r.Reference is not null) sb.AppendLine($"- Reference: {Inline(r.Reference)}");
                 foreach (var hit in r.Hits)
                 {
-                    sb.AppendLine($"- {hit.Result.Outcome} at {hit.Run.SiteLabel} ({hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {hit.Result.Message}");
-                    if (hit.Result.Expected is not null) sb.AppendLine($"  - Expected: {hit.Result.Expected}");
-                    if (hit.Result.Actual is not null) sb.AppendLine($"  - Actual: {hit.Result.Actual.Split('\n')[0]}");
+                    sb.AppendLine($"- {hit.Result.Outcome} at {hit.Run.SiteLabel} ({hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {Inline(hit.Result.Message)}");
+                    if (hit.Result.Expected is not null) sb.AppendLine($"  - Expected: {Inline(hit.Result.Expected)}");
+                    if (hit.Result.Actual is not null) AppendActual(sb, hit.Result.Actual);
                 }
             }
         }
         return sb.ToString();
+    }
+
+    private static string[] Lines(string text)
+        => text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+    /// <summary>Text on one line, so it stays inside its list item.</summary>
+    private static string Inline(string text)
+        => string.Join(" ", Lines(text).Select(l => l.Trim()).Where(l => l.Length > 0));
+
+    /// <summary>A code span that holds any text: the fence is one backtick longer than the longest run inside.</summary>
+    private static string Code(string text)
+    {
+        text = Inline(text);
+        var longest = 0;
+        for (int i = 0, run = 0; i < text.Length; i++)
+            longest = Math.Max(longest, run = text[i] == '`' ? run + 1 : 0);
+        var fence = new string('`', longest + 1);
+        var pad = text.StartsWith('`') || text.EndsWith('`') ? " " : "";
+        return $"{fence}{pad}{text}{pad}{fence}";
+    }
+
+    /// <summary>The actual value: on the line itself when it's one line, otherwise all of it in a code block under it.</summary>
+    private static void AppendActual(StringBuilder sb, string actual)
+    {
+        var lines = Lines(actual.TrimEnd());
+        if (lines.Length == 1)
+        {
+            sb.AppendLine($"  - Actual: {lines[0]}");
+            return;
+        }
+        var longest = 0;
+        foreach (var line in lines)
+            if (line.TrimStart().StartsWith("```")) longest = Math.Max(longest, line.TrimStart().TakeWhile(c => c == '`').Count());
+        var fence = new string('`', Math.Max(3, longest + 1));
+        sb.AppendLine("  - Actual:");
+        sb.AppendLine();
+        sb.AppendLine($"    {fence}");
+        foreach (var line in lines) sb.AppendLine($"    {line}");
+        sb.AppendLine($"    {fence}");
     }
 }

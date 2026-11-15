@@ -56,10 +56,13 @@ public sealed record TestTarget
     public static TargetKind KindOf(Codebase server) => server == Codebase.GSServer ? TargetKind.Com : TargetKind.Alpaca;
 
     /// <summary>Whether two targets are the same device: same server, and same address and device number (or ProgID).</summary>
-    public static bool SameDevice(TestTarget a, TestTarget b)
-        => a.Codebase == b.Codebase && (a.Kind == TargetKind.Com
-            ? string.Equals(a.ProgId.Trim(), b.ProgId.Trim(), StringComparison.OrdinalIgnoreCase)
-            : string.Equals(a.Host.Trim(), b.Host.Trim(), StringComparison.OrdinalIgnoreCase) && a.Port == b.Port && a.DeviceNumber == b.DeviceNumber);
+    public static bool SameDevice(TestTarget a, TestTarget b) => a.DeviceKey == b.DeviceKey;
+
+    /// <summary>The same for two targets exactly when they're the same device (see <see cref="SameDevice"/>).</summary>
+    [JsonIgnore]
+    public string DeviceKey => Kind == TargetKind.Com
+        ? $"{Codebase}|{ProgId.Trim().ToUpperInvariant()}"
+        : $"{Codebase}|{Host.Trim().ToUpperInvariant()}|{Port}|{DeviceNumber}";
 
     /// <summary>Alpaca: the server's host name or IP address.</summary>
     public string Host { get; init; } = "localhost";
@@ -191,6 +194,20 @@ public enum Outcome
 
     /// <summary>Not run (not applicable, or not allowed by the run's options).</summary>
     Skipped
+}
+
+public static class OutcomeExtensions
+{
+    /// <summary>
+    /// How bad an outcome is: 2 for Fail or Error, 1 for Warning, 0 for the rest. Fail and Error rank the same, so
+    /// a check going from one to the other is neither fixed nor broken.
+    /// </summary>
+    public static int Severity(this Outcome o) => o switch
+    {
+        Outcome.Fail or Outcome.Error => 2,
+        Outcome.Warning => 1,
+        _ => 0
+    };
 }
 
 /// <summary>One finding: what was checked, what happened and, for a problem, how to correct it.</summary>

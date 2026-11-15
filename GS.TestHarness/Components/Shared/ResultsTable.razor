@@ -22,7 +22,7 @@
     {
         var count = Results.Count(r => r.Outcome == outcome);
         <button class="chip @Css(outcome) @(_outcomes.Contains(outcome) ? "on" : "")" @onclick="() => Toggle(outcome)"
-                title="Show only @outcome (click again to show all)">
+                title="Show @outcome (click again to hide it; with none picked, all show)">
             <span class="chip-count">@count</span> @Label(outcome)
         </button>
     }

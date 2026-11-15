@@ -136,10 +136,12 @@ else
         Runs.Changed += OnRunsChanged;
     }
 
-    /// <summary>Each ticked site (null: the server's own) and the server's latest run there, if any.</summary>
+    /// <summary>
+    /// Each ticked site (null: the server's own) and the server's run there, if any: the same run the
+    /// Recommendations tab uses (<see cref="ReportStore.LatestAt"/>).
+    /// </summary>
     private List<(SiteLocation? Site, RunReport? Run)> Columns(ServerEntry server)
-        => [.. Sites.Selected().Select(site => (site, _all!.FirstOrDefault(r =>
-            TestTarget.SameDevice(r.Target, server.Target) && r.Site?.Hemisphere == site?.Hemisphere)))];
+        => [.. Sites.Selected().Select(site => (site, ReportStore.LatestAt(_all!, server.Target, site?.Hemisphere)))];
 
     private static string SiteName(SiteLocation? site) => site?.Label ?? "Server's own site";
 

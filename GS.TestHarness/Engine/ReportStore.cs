@@ -14,6 +14,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -52,21 +53,54 @@ public sealed class ReportStore(string folder)
         return JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(path), Json);
     }
 
-    /// <summary>Every saved run, newest first. Files that can't be read are left out.</summary>
+    /// <summary>Each report file read so far, with the time and size it had then: it's read again only when either changes.</summary>
+    private readonly ConcurrentDictionary<string, (DateTime Written, long Length, RunReport Report)> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every saved run, newest first. Files that can't be read are left out. A file is only read again when it has
+    /// changed, so listing doesn't get slower as the history grows. The reports are shared: don't change them.
+    /// </summary>
     public async Task<List<RunReport>> ListAsync()
     {
         var reports = new List<RunReport>();
-        if (!Directory.Exists(Folder)) return reports;
-        foreach (var file in Directory.EnumerateFiles(Folder, "*.json"))
+        if (!Directory.Exists(Folder))
+        {
+            _cache.Clear();
+            return reports;
+        }
+        var files = new HashSet<string>(Directory.EnumerateFiles(Folder, "*.json"), StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files)
         {
             try
             {
-                if (JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(file), Json) is { } r) reports.Add(r);
+                var info = new FileInfo(file);
+                if (_cache.TryGetValue(file, out var hit) && hit.Written == info.LastWriteTimeUtc && hit.Length == info.Length)
+                {
+                    reports.Add(hit.Report);
+                    continue;
+                }
+                if (JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(file), Json) is { } r)
+                {
+                    _cache[file] = (info.LastWriteTimeUtc, info.Length, r);
+                    reports.Add(r);
+                }
             }
-            catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { }
+            catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { _cache.TryRemove(file, out _); }
         }
+        foreach (var gone in _cache.Keys.Where(k => !files.Contains(k)).ToList()) _cache.TryRemove(gone, out _);
         return [.. reports.OrderByDescending(r => r.Started)];
     }
+
+    /// <summary>
+    /// The run that stands for one device at one site: its newest finished run, or its newest stopped one when
+    /// none finished (a stopped run didn't make every check, so it would hide what a finished one found).
+    /// </summary>
+    public static RunReport? Representative(IEnumerable<RunReport> runsOfOneDeviceAtOneSite)
+        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Cancelled).ThenByDescending(r => r.Started).FirstOrDefault();
+
+    /// <summary>The run that stands for <paramref name="target"/> at the site with this hemisphere (null: the server's own site).</summary>
+    public static RunReport? LatestAt(IEnumerable<RunReport> runs, TestTarget target, string? hemisphere)
+        => Representative(runs.Where(r => TestTarget.SameDevice(r.Target, target) && r.Site?.Hemisphere == hemisphere));
 
     /// <summary>The newest saved run of the same device (by target), other than <paramref name="exceptId"/>.</summary>
     public async Task<RunReport?> LatestForAsync(TestTarget target, string? exceptId = null)
@@ -174,12 +208,7 @@ public sealed record ComparedCheck(string Id, string Group, string Member, Check
 /// </summary>
 public static class ReportComparer
 {
-    private static int Severity(Outcome o) => o switch
-    {
-        Outcome.Fail or Outcome.Error => 2,
-        Outcome.Warning => 1,
-        _ => 0
-    };
+    private static int Severity(Outcome o) => o.Severity();
 
     public static List<ComparedCheck> Compare(RunReport before, RunReport after)
     {

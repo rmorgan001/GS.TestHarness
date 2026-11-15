@@ -98,6 +98,34 @@ public class ReportTests
     }
 
     [Fact]
+    public async Task Listing_again_picks_up_changed_new_and_deleted_files()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "gs-harness-tests-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new ReportStore(folder);
+            var report = Report(Result("A.X", Outcome.Fail));
+            await store.SaveAsync(report);
+            Assert.Same(Assert.Single(await store.ListAsync()), Assert.Single(await store.ListAsync()));
+
+            report.Results.Add(Result("A.Y", Outcome.Pass));
+            await store.SaveAsync(report);
+            Assert.Equal(2, Assert.Single(await store.ListAsync()).Results.Count);
+
+            var other = Report(Result("B.X", Outcome.Pass));
+            await store.SaveAsync(other);
+            Assert.Equal(2, (await store.ListAsync()).Count);
+
+            store.Delete(report.Id);
+            Assert.Equal(other.Id, Assert.Single(await store.ListAsync()).Id);
+        }
+        finally
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        }
+    }
+
+    [Fact]
     public void Markdown_lists_each_problem_with_its_fix()
     {
         var md = ReportStore.ToMarkdown(Report(Result("A.X", Outcome.Fail, "broken"), Result("A.Y", Outcome.Pass)));
