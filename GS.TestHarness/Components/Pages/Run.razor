@@ -121,6 +121,8 @@
         <div class="fields">
             <label class="narrow">Slew timeout (s) <input type="number" min="10" @bind="_slewTimeout" disabled="@Runs.IsRunning" /></label>
             <label class="narrow">Call timeout (s) <input type="number" min="2" @bind="_callTimeout" disabled="@Runs.IsRunning" /></label>
+            <label class="narrow" title="Degrees either side of the meridian where the mount can point from either side of the pier. Inside it the flip checks use the SideOfPier command; a goto past it must flip the mount.">
+                Flip angle (°) <input type="number" min="0" max="90" step="1" @bind="_flipAngle" disabled="@(Runs.IsRunning || !_motion)" /></label>
         </div>
     </section>
 </div>
@@ -189,7 +191,7 @@ else
 
 @code {
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
-    private int _slewTimeout = 120, _callTimeout = 15;
+    private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 15;
     private bool _over;
 
     protected override void OnInitialized()
@@ -199,6 +201,7 @@ else
             (options.AllowMotion, options.AllowSettingsWrites, options.AllowSetPark, options.IncludeProtocol, options.IncludeDisconnected,
              options.SlewTimeoutSeconds, options.CallTimeoutSeconds);
         _extended = options.Extended;
+        _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
         Runs.Changed += OnChanged;
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
@@ -228,7 +231,8 @@ else
         {
             AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
             IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
-            SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout)
+            SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
+            FlipAngle = Math.Clamp(_flipAngle, 0, 90)
         };
         Saved.SaveOptions(options);
         Runs.Start(server.RunTarget, options, Sites.Selected());

@@ -66,7 +66,8 @@ public static class Cli
             Extended = Flag("--extended"),
             DriftSeconds = int.TryParse(Value("--drift-seconds"), out var ds) ? Math.Max(5, ds) : 20,
             SlewTimeoutSeconds = int.TryParse(Value("--slew-timeout"), out var st) ? st : 120,
-            CallTimeoutSeconds = int.TryParse(Value("--call-timeout"), out var ct) ? ct : 15
+            CallTimeoutSeconds = int.TryParse(Value("--call-timeout"), out var ct) ? ct : 15,
+            FlipAngle = int.TryParse(Value("--flip-angle"), out var fa) ? Math.Clamp(fa, 0, 90) : 15
         };
 
         // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the

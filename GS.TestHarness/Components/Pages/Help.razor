@@ -138,6 +138,11 @@
                     <dd>Checks NotConnected errors. Only possible when no other client holds the device.</dd>
                     <dt>Slew timeout and call timeout</dt>
                     <dd>How long a slew, and any single call, may take before it counts as never answered.</dd>
+                    <dt>Flip angle</dt>
+                    <dd>Degrees either side of the meridian (0 to 90) where the mount can point from either side of the pier.
+                        Inside it the flip checks flip the mount with the SideOfPier command, halfway in on each side, and it must
+                        keep pointing at the same place. A goto 5° past it, across the meridian, must flip the mount by itself.
+                        Needs <em>Move the mount</em>.</dd>
                 </dl>
             </section>
 

@@ -197,6 +197,10 @@ public class MotionDefectTests(ITestOutputHelper output)
     [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.North.Moves.ThroughThePole")]
     [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.South.Moves.ThroughThePole")]
     [InlineData(Defect.MoveAxisIgnoresSign, "Motion.MoveAxis.Primary.Direction")]
+    // The defect keeps whatever side the mount started on, so only the flip checks fail on both crossings every time.
+    [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.EastToWest.Flipped")]
+    [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.WestToEast.Flipped")]
+    [InlineData(Defect.SideOfPierSetIgnored, "Motion.Flip.SideOfPier.West")]
     public Task Each_motion_defect_is_caught(Defect defect, string id)
         => new EngineTests(output).DefectAsync(defect, id, Outcome.Fail, EngineTests.Everything);
 

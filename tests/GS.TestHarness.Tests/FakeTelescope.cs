@@ -44,7 +44,9 @@ public enum Defect
     AzimuthFromSouth,
     ParkCantBeAborted,
     PulseGuideDecReversedThroughThePole,
-    MoveAxisIgnoresSign
+    MoveAxisIgnoresSign,
+    NoMeridianFlip,
+    SideOfPierSetIgnored
 }
 
 /// <summary>
@@ -411,7 +413,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         {
             NeedConnected();
             CheckCanMove();
-            StartMotion(200, () => _forcedSide = value);
+            StartMotion(200, () => { if (!Has(Defect.SideOfPierSetIgnored)) _forcedSide = value; });
         }
     }
 
@@ -446,7 +448,9 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         _targetDec = dec;
         _atHome = false;
         _atPark = false;
-        StartMotion(300 + (Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000), () => { SetPos(ra, dec); _forcedSide = null; });
+        // With the defect, the mount never changes side (though DestinationSideOfPier says it will).
+        PointingState? keep = Has(Defect.NoMeridianFlip) ? SideOfPier : null;
+        StartMotion(300 + (Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000), () => { SetPos(ra, dec); _forcedSide = keep; });
         if (!async || Has(Defect.AsyncSlewBlocks)) WaitForMotion(Has(Defect.AsyncSlewBlocks) ? 5500 : 0);
     }
 

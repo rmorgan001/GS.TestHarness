@@ -171,6 +171,12 @@ public sealed record RunOptions
 
     /// <summary>The longest a single call may take.</summary>
     public int CallTimeoutSeconds { get; init; } = 15;
+
+    /// <summary>
+    /// Degrees either side of the meridian (0 to 90) where a German mount can point from either side of the pier.
+    /// The flip checks flip the mount with SideOfPier inside it, and expect a goto past it to flip the mount.
+    /// </summary>
+    public int FlipAngle { get; init; } = 15;
 }
 
 /// <summary>A check's result.</summary>

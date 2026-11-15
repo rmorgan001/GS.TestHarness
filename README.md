@@ -59,7 +59,7 @@ GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [
 GS.TestHarness --run GSServer
 ```
 
-Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`.
+Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 15).
 
 The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.
 

@@ -27,7 +27,7 @@ namespace GS.TestHarness.Engine.Checks;
 public sealed class MotionChecks : ICheckGroup
 {
     public string Name => "Motion";
-    public string Description => "Slews (sync, async, to target, alt/az), syncs, MoveAxis, PulseGuide, AbortSlew, tracking, rate offsets and pier side. Moves the mount.";
+    public string Description => "Slews (sync, async, to target, alt/az), meridian flips, syncs, MoveAxis, PulseGuide, AbortSlew, tracking and rate offsets. Moves the mount.";
 
     public string? SkipReason(CheckContext ctx) => ctx.Options.AllowMotion ? null : "motion is turned off for this run";
 
@@ -68,7 +68,6 @@ public sealed class MotionChecks : ICheckGroup
             await PulseGuideAsync(ctx);
             await TrackingAsync(ctx);
             await RateOffsetsAsync(ctx);
-            await SideOfPierAsync(ctx);
         }
         finally
         {
@@ -172,6 +171,7 @@ public sealed class MotionChecks : ICheckGroup
 
         if (c.CanSlewAsync) await SettleTimeAsync(ctx);
         if (c.CanSlewAsync && gem && Math.Abs(c.SiteLatitude ?? 30) > 10) await FarSidesAsync(ctx, lst.Value);
+        if (c.CanSlewAsync && gem) await FlipsAsync(ctx);
 
         // Invalid coordinates must be refused before the mount moves.
         var member = c.CanSlewAsync ? "SlewToCoordinatesAsync" : "SlewToCoordinates";
@@ -221,6 +221,124 @@ public sealed class MotionChecks : ICheckGroup
         ctx.Report("SideOfPier.FarHourAngles", "SideOfPier", Outcome.Info,
             $"SideOfPier at Dec {dec:0}°, {string.Join("; ", sides)}.",
             actual: string.Join("; ", sides));
+    }
+
+    /// <summary>
+    /// Meridian flips around the run's flip angle (<see cref="RunOptions.FlipAngle"/>, degrees from the meridian).
+    /// Past it on either side only one side of the pier reaches the sky, so a goto across the meridian must flip the
+    /// mount (east of the meridian ThroughThePole, west of it Normal). Inside it either side works, so the flip is
+    /// made with the SideOfPier command, and the mount must keep pointing at the same place.
+    /// </summary>
+    private static async Task FlipsAsync(CheckContext ctx)
+    {
+        var dec = MethodChecks.SafeDeclination(ctx);
+        var angle = Math.Clamp(ctx.Options.FlipAngle, 0, 90);
+
+        // Gotos 5° past the flip angle, east to west and back.
+        var past = (angle + 5) / 15.0; // hours
+        foreach (var (id, fromHa, toHa, expect) in new[]
+                 {
+                     ("Flip.Goto.EastToWest", -past, past, PointingState.Normal),
+                     ("Flip.Goto.WestToEast", past, -past, PointingState.ThroughThePole)
+                 })
+        {
+            var start = expect == PointingState.Normal ? PointingState.ThroughThePole : PointingState.Normal;
+            var fromSide = fromHa < 0 ? "east" : "west";
+            var toSide = toHa < 0 ? "east" : "west";
+            var lst = await ctx.TryAsync(t => t.SiderealTime);
+            if (!lst.Ok) return;
+            var from = Values.Wrap24(lst.Value - fromHa);
+            if (!(await ctx.TryAsync(t => t.SlewToCoordinatesAsync(from, dec), ctx.SlewTimeout)).Ok || !await ctx.WaitForSlewEndAsync())
+            {
+                await StopAsync(ctx);
+                ctx.Report($"{id}.Flipped", "SlewToCoordinatesAsync", Outcome.Skipped,
+                    $"The mount couldn't be sent {angle + 5}° {fromSide} of the meridian first, so the flip wasn't checked.");
+                continue;
+            }
+            var before = await ctx.TryAsync(t => t.SideOfPier);
+            if (!before.Ok || before.Value == PointingState.Unknown)
+            {
+                ctx.Report($"{id}.Flipped", "SideOfPier", Outcome.Skipped, "SideOfPier can't be read (or is pierUnknown), so a flip can't be seen.");
+                continue;
+            }
+
+            // The goto itself (returns, position, targets, DestinationSideOfPier) ...
+            var to = Values.Wrap24(lst.Value - toHa);
+            await SlewAsync(ctx, id, "SlewToCoordinatesAsync", to, dec, async: true, t => t.SlewToCoordinatesAsync(to, dec), expectSide: null);
+
+            // ... then whether it flipped.
+            var after = await ctx.TryAsync(t => t.SideOfPier);
+            if (!after.Ok || (await ctx.TryAsync(t => t.Slewing)) is { Ok: true, Value: true }) continue;
+            var flipped = before.Value == start && after.Value == expect;
+            ctx.Report($"{id}.Flipped", "SideOfPier", flipped ? Outcome.Pass : Outcome.Fail,
+                flipped
+                    ? $"A goto from {angle + 5}° {fromSide} to {angle + 5}° {toSide} of the meridian (past the {angle}° flip angle) flipped the mount from {before.Value} to {after.Value}."
+                    : before.Value != start
+                        ? $"{angle + 5}° {fromSide} of the meridian, past the {angle}° flip angle, the mount was on {before.Value}, not {start}."
+                        : $"A goto from {angle + 5}° {fromSide} to {angle + 5}° {toSide} of the meridian (past the {angle}° flip angle) didn't flip the mount: it stayed on {after.Value}.",
+                expected: $"{start} → {expect}", actual: $"{before.Value} → {after.Value}",
+                fix: flipped ? null
+                    : $"Past the flip angle a German mount can only reach the sky from one side: east of the meridian ThroughThePole " +
+                      "(pierWest), west of it Normal (pierEast). A goto across the meridian there must flip the mount. Check the flip " +
+                      "decision against the flip angle (the meridian limit), the hour angle's sign, and that the axis positions are " +
+                      "recalculated for the new side.",
+                sourcePatterns: ["SideOfPier", "DestinationSideOfPier", "Flip", "Meridian"]);
+        }
+
+        // SideOfPier flips halfway inside the flip angle, west then east of the meridian.
+        if (!ctx.Caps.CanSetPierSide)
+        {
+            ctx.Report("Flip.SideOfPier", "SideOfPier", Outcome.Skipped, "CanSetPierSide is false, so flipping with the SideOfPier command wasn't checked.");
+            return;
+        }
+        if (angle < 1)
+        {
+            ctx.Report("Flip.SideOfPier", "SideOfPier", Outcome.Skipped,
+                "The flip angle is 0°: there's no zone where either side reaches the sky, so the SideOfPier command wasn't checked.");
+            return;
+        }
+        foreach (var (id, ha) in new[] { ("Flip.SideOfPier.West", angle / 2.0 / 15), ("Flip.SideOfPier.East", -angle / 2.0 / 15) })
+        {
+            var lst = await ctx.TryAsync(t => t.SiderealTime);
+            if (!lst.Ok) return;
+            var ra = Values.Wrap24(lst.Value - ha);
+            var where = $"{angle / 2.0:0.#}° {(ha > 0 ? "west" : "east")} of the meridian (inside the {angle}° flip angle)";
+            if (!(await ctx.TryAsync(t => t.SlewToCoordinatesAsync(ra, dec), ctx.SlewTimeout)).Ok || !await ctx.WaitForSlewEndAsync())
+            {
+                await StopAsync(ctx);
+                ctx.Report(id, "SideOfPier", Outcome.Skipped, $"The mount couldn't be sent {where}, so the SideOfPier flip wasn't checked.");
+                continue;
+            }
+            var before = await ctx.TryAsync(t => t.SideOfPier);
+            if (!before.Ok || before.Value == PointingState.Unknown)
+            {
+                ctx.Report(id, "SideOfPier", Outcome.Skipped, "SideOfPier can't be read (or is pierUnknown), so a flip can't be seen.");
+                continue;
+            }
+            var other = before.Value == PointingState.Normal ? PointingState.ThroughThePole : PointingState.Normal;
+
+            var flip = await ctx.TryAsync(t => t.SideOfPier = other, ctx.SlewTimeout);
+            await ctx.WaitForSlewEndAsync();
+            var after = await ctx.TryAsync(t => t.SideOfPier);
+            var pos = await PositionAsync(ctx);
+            var sideOk = flip.Ok && after is { Ok: true } && after.Value == other;
+            var sep = pos is { } p ? Values.Separation(p.Ra, p.Dec, ra, dec) : (double?)null;
+            var outcome = !sideOk || sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass;
+            ctx.Report(id, "SideOfPier", outcome,
+                !sideOk ? $"SideOfPier = {other} {where} didn't flip the mount (it was on {before.Value})."
+                    : sep is null ? $"SideOfPier = {other} flipped the mount {where} (its position couldn't be read)."
+                    : $"SideOfPier = {other} flipped the mount {where} from {before.Value}, and it ended {sep * 3600:0.0}\" from where it pointed.",
+                expected: $"{other}, still at RA {CheckContext.Show(ra)} h, Dec {CheckContext.Show(dec)}°",
+                actual: !flip.Ok ? flip.ErrorText
+                    : $"{(after.Ok ? after.Value.ToString() : after.ErrorText)}" + (pos is { } q ? $", RA {CheckContext.Show(q.Ra)} h, Dec {CheckContext.Show(q.Dec)}°" : ""),
+                ms: flip.Ms,
+                fix: outcome == Outcome.Pass ? null
+                    : "CanSetPierSide is true, so inside the flip angle setting SideOfPier must move the mount to that side while " +
+                      "pointing at the same RA and Dec: the same target reached through the other side of the pier.",
+                sourcePatterns: ["SideOfPier", "Flip"]);
+            await ctx.TryAsync(t => t.SideOfPier = before.Value, ctx.SlewTimeout);
+            await ctx.WaitForSlewEndAsync();
+        }
     }
 
     /// <summary>
@@ -773,7 +891,7 @@ public sealed class MotionChecks : ICheckGroup
         await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromSeconds(6), 100);
     }
 
-    // ---------- Tracking, rate offsets, pier side ----------
+    // ---------- Tracking and rate offsets ----------
 
     private static async Task TrackingAsync(CheckContext ctx)
     {
@@ -837,33 +955,6 @@ public sealed class MotionChecks : ICheckGroup
                 if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
             }
         }
-    }
-
-    private static async Task SideOfPierAsync(CheckContext ctx)
-    {
-        var c = ctx.Caps;
-        if (!c.CanSetPierSide || !c.CanSlewAsync) return;
-        // Near the meridian, where either side can reach the sky without passing a flip limit.
-        var lst = await ctx.TryAsync(t => t.SiderealTime);
-        if (!lst.Ok) return;
-        var dec = MethodChecks.SafeDeclination(ctx);
-        var ra = Values.Wrap24(lst.Value - 0.1);
-        await ctx.TryAsync(t => t.SlewToCoordinatesAsync(ra, dec));
-        await ctx.WaitForSlewEndAsync();
-        var before = await ctx.TryAsync(t => t.SideOfPier);
-        if (!before.Ok || before.Value == PointingState.Unknown) return;
-        var other = before.Value == PointingState.Normal ? PointingState.ThroughThePole : PointingState.Normal;
-
-        var flip = await ctx.TryAsync(t => t.SideOfPier = other, ctx.SlewTimeout);
-        await ctx.WaitForSlewEndAsync();
-        var after = await ctx.TryAsync(t => t.SideOfPier);
-        var ok = flip.Ok && after is { Ok: true } && after.Value == other;
-        ctx.Report("SideOfPier.Set", "SideOfPier", ok ? Outcome.Pass : Outcome.Fail,
-            ok ? $"SideOfPier = {other} flipped the mount (from {before.Value})." : $"SideOfPier = {other} didn't flip the mount.",
-            expected: other.ToString(), actual: !flip.Ok ? flip.ErrorText : after.Ok ? after.Value.ToString() : after.ErrorText, ms: flip.Ms,
-            fix: "CanSetPierSide is true, so setting SideOfPier near the meridian must move the mount to that side, pointing at the same place.");
-        await ctx.TryAsync(t => t.SideOfPier = before.Value, ctx.SlewTimeout);
-        await ctx.WaitForSlewEndAsync();
     }
 
     // ---------- Pulse guide and MoveAxis movement ----------
