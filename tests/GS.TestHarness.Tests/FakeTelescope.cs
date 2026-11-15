@@ -42,7 +42,9 @@ public enum Defect
     SettleTimeIgnored,
     ClientDisconnectDropsAll,
     AzimuthFromSouth,
-    ParkCantBeAborted
+    ParkCantBeAborted,
+    PulseGuideDecReversedThroughThePole,
+    MoveAxisIgnoresSign
 }
 
 /// <summary>
@@ -262,15 +264,19 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     /// <summary>
     /// Where the mount points now: tracking, the anchored position moved by any rate offsets; not tracking, a fixed
-    /// hour angle (so RA follows sidereal time).
+    /// hour angle (so RA follows sidereal time). Either way, MoveAxis turns the primary axis (RA) and the secondary
+    /// axis (Dec) at their rates in degrees per second.
     /// </summary>
     private (double Ra, double Dec) Pos()
     {
         lock (_gate)
         {
-            if (!_tracking) return (Values.Wrap24(Lst - _ha), _dec);
             var seconds = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _anchor) / System.Diagnostics.Stopwatch.Frequency;
-            return (Values.Wrap24(_ra + _raRate * seconds * 1.0027379 / 3600), Math.Clamp(_dec + _decRate * seconds / 3600, -90, 90));
+            var axisRa = _axisRates[0] * seconds / 15;
+            var axisDec = _axisRates[1] * seconds;
+            if (!_tracking) return (Values.Wrap24(Lst - _ha + axisRa), Math.Clamp(_dec + axisDec, -90, 90));
+            return (Values.Wrap24(_ra + _raRate * seconds * 1.0027379 / 3600 + axisRa),
+                Math.Clamp(_dec + _decRate * seconds / 3600 + axisDec, -90, 90));
         }
     }
 
@@ -426,6 +432,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         if (_atPark) throw new ParkedException("parked");
         if (Has(Defect.ParkCantBeAborted) && _parking) return;
         StopMotion();
+        Bake();
         Array.Clear(_axisRates);
     }
 
@@ -519,7 +526,8 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         if (!CanMoveAxis(axis)) throw new MethodNotImplementedException("MoveAxis");
         if (Math.Abs(rate) > 4) throw new InvalidValueException("rate");
         CheckCanMove();
-        if (!Has(Defect.NotSlewingDuringMoveAxis)) _axisRates[(int)axis] = rate;
+        Bake();
+        if (!Has(Defect.NotSlewingDuringMoveAxis)) _axisRates[(int)axis] = Has(Defect.MoveAxisIgnoresSign) ? Math.Abs(rate) : rate;
         if (rate == 0 && Has(Defect.MoveAxisStopsTracking)) Tracking = false;
     }
 
@@ -532,6 +540,18 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         if (!Has(Defect.PulseGuideWhileNotTracking) && !_tracking) throw new ASCOM.InvalidOperationException("not tracking");
         if (_slewing) throw new ASCOM.InvalidOperationException("slewing");
         _pulseUntil = DateTime.UtcNow.AddMilliseconds(duration);
+        // The whole pulse's movement at once: North raises Dec and East raises RA, on either side of the pier.
+        var seconds = duration / 1000.0;
+        var flip = Has(Defect.PulseGuideDecReversedThroughThePole) && SideOfPier == PointingState.ThroughThePole ? -1 : 1;
+        var (ra, dec) = Pos();
+        switch (direction)
+        {
+            case GuideDirection.North: dec += flip * _guideDec * seconds; break;
+            case GuideDirection.South: dec -= flip * _guideDec * seconds; break;
+            case GuideDirection.East: ra += _guideRa * seconds / 15; break;
+            case GuideDirection.West: ra -= _guideRa * seconds / 15; break;
+        }
+        SetPos(ra, dec);
     }
 
     public void FindHome()

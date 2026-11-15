@@ -25,7 +25,7 @@
 
     <label class="check">
         <input type="checkbox" checked="@_s.UseServer" disabled="@Disabled" @onchange="e => UseServer((bool)e.Value!)" />
-        <span>Server's own site <small>Whatever the server is set to now; nothing is changed.</small></span>
+        <span>Server's current settings <small>Whatever the server is set to now; nothing is changed.</small></span>
     </label>
 
     @foreach (var north in new[] { true, false })
@@ -37,7 +37,7 @@
             <label class="check">
                 <input type="checkbox" checked="@use" disabled="@(Disabled || problem is not null)"
                        @onchange="e => Use(north, (bool)e.Value!)" />
-                <span>@(north ? "North" : "South")</span>
+                <span>@(north ? "Northern Hemisphere" : "Southern Hemisphere")</span>
             </label>
             <div class="site-fields">
                 <label class="grow">Name <input value="@site.Name" disabled="@Disabled" @onchange="e => EditName(north, e.Value)" /></label>

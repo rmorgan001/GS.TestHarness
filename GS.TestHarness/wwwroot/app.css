@@ -385,7 +385,7 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
     border: 1px solid var(--line-strong); border-radius: 14px; padding: 1.25rem 1.5rem; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .9);
 }
 .dialog-title { font-size: 1.45rem; margin: 0 0 1rem; color: var(--yellow); }
-.dialog-message { margin: 0 0 1rem; }
+.dialog-message { margin: 0 0 1rem; white-space: pre-line; }
 .dialog-buttons { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.2rem; flex-wrap: wrap; }
 .btn.danger-btn { background: #7c2b2a; border-color: var(--red); color: #fff; }
 .edit-form { display: grid; gap: .8rem; }

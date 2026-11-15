@@ -573,6 +573,7 @@ public sealed class MotionChecks : ICheckGroup
             var id = $"MoveAxis.{axis}";
 
             var trackingBefore = await ctx.TryAsync(t => t.Tracking);
+            var start = await AxisAngleAsync(ctx, axis);
             var move = await ctx.TryAsync(t => t.MoveAxis(axis, rate));
             if (!move.Ok)
             {
@@ -580,14 +581,19 @@ public sealed class MotionChecks : ICheckGroup
                     actual: move.ErrorText, ms: move.Ms, fix: "A rate inside AxisRates must be accepted.");
                 continue;
             }
+            var moving = Stopwatch.StartNew();
             await Task.Delay(1500, ctx.Token);
             var slewing = await ctx.TryAsync(t => t.Slewing);
+            var forwardSeconds = moving.Elapsed.TotalSeconds;
             ctx.Report($"{id}.Slewing", "MoveAxis", slewing is { Ok: true, Value: true } ? Outcome.Pass : Outcome.Fail,
                 slewing is { Ok: true, Value: true } ? "Slewing is true while an axis moves." : "Slewing is false while MoveAxis is moving an axis.",
                 expected: "Slewing true", actual: slewing.Ok ? slewing.Value.ToString() : slewing.ErrorText,
                 fix: "Slewing must be true while any axis is moving under MoveAxis, so clients know the mount is moving.");
             var stop = await ctx.TryAsync(t => t.MoveAxis(axis, 0));
             var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
+            var end = await AxisAngleAsync(ctx, axis);
+            var forward = start is { } s0 && end is { } e0 ? AxisDiff(axis, e0, s0) : (double?)null;
+            ReportAxisSpeed(ctx, axis, rate, forwardSeconds, forward);
             ctx.Report($"{id}.Stop", "MoveAxis", stop.Ok && stopped ? Outcome.Pass : Outcome.Fail,
                 stop.Ok && stopped ? $"MoveAxis({axis}, 0) stopped the axis." : stop.Ok ? "Slewing stayed true after MoveAxis(axis, 0)." : "MoveAxis(axis, 0) raised an error.",
                 actual: stop.ErrorText, ms: stop.Ms,
@@ -602,13 +608,19 @@ public sealed class MotionChecks : ICheckGroup
                     fix: "\"A call with Rate = 0 is required to stop motion and return to the previous tracking state of that " +
                          "axis\": remember Tracking when MoveAxis starts and put it back when it stops.");
 
+            var backStart = await AxisAngleAsync(ctx, axis);
             var reverse = await ctx.TryAsync(t => t.MoveAxis(axis, -rate));
+            var reversing = Stopwatch.StartNew();
             await Task.Delay(500, ctx.Token);
+            var backSeconds = reversing.Elapsed.TotalSeconds;
             await ctx.TryAsync(t => t.MoveAxis(axis, 0));
             ctx.Report($"{id}.Negative", "MoveAxis", reverse.Ok ? Outcome.Pass : Outcome.Warning,
                 reverse.Ok ? "A negative rate (the other direction) was accepted." : "A negative rate was refused.",
                 actual: reverse.ErrorText, fix: "MoveAxis takes the direction from the rate's sign: -rate must be accepted wherever +rate is.");
             await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
+            var backEnd = await AxisAngleAsync(ctx, axis);
+            if (reverse.Ok && forward is { } f && backStart is { } s1 && backEnd is { } e1)
+                ReportAxisDirection(ctx, axis, rate, forwardSeconds, f, backSeconds, AxisDiff(axis, e1, s1));
 
             foreach (var (suffix, bad) in new[] { ("TooFast", max + 1), ("TooFastNegative", -(max + 1)) })
             {
@@ -661,12 +673,22 @@ public sealed class MotionChecks : ICheckGroup
     {
         if (!ctx.Caps.CanPulseGuide) return;
         if (ctx.Caps.CanSetTracking) await ctx.TryAsync(t => t.Tracking = true);
-        const int duration = 1000;
-        foreach (var direction in new[] { GuideDirection.North, GuideDirection.South, GuideDirection.East, GuideDirection.West })
+        var (rateRa, rateDec) = await GuideRatesAsync(ctx);
+        // Long enough for the slower axis to move about 20 arc-seconds, so the movement can be measured.
+        var duration = (int)Math.Clamp(Math.Round(20.0 / 3600 / Math.Min(rateRa ?? AssumedGuideRate, rateDec ?? AssumedGuideRate) * 10) * 100, 1000, 4000);
+
+        // The pulses are measured west of the meridian and, on a German mount, again east of it (through the pole),
+        // where the Dec motor has to turn the other way for the same direction on the sky.
+        var gem = ctx.Caps.AlignmentMode == AlignmentMode.GermanPolar;
+        var placed = await PlaceForGuidingAsync(ctx, hourAngle: 3);
+        var side = placed && gem ? nameof(PointingState.Normal) : null;
+
+        foreach (var direction in GuideDirections)
         {
             var id = $"PulseGuide.{direction}";
+            var before = await PositionAsync(ctx);
             var watch = Stopwatch.StartNew();
-            var call = await ctx.TryAsync(t => t.PulseGuide(direction, duration), TimeSpan.FromSeconds(ctx.Options.CallTimeoutSeconds + 2));
+            var call = await ctx.TryAsync(t => t.PulseGuide(direction, duration), TimeSpan.FromSeconds(ctx.Options.CallTimeoutSeconds) + TimeSpan.FromMilliseconds(duration));
             if (!call.Ok)
             {
                 ctx.Report(id, "PulseGuide", Outcome.Fail, $"PulseGuide({direction}, {duration}) raised an error.", actual: call.ErrorText,
@@ -699,7 +721,12 @@ public sealed class MotionChecks : ICheckGroup
                     : "IsPulseGuiding stayed true well after the pulse should have ended.",
                 actual: $"returned after {call.Ms:0} ms", ms: call.Ms,
                 fix: "IsPulseGuiding must go false when the pulse's duration has passed.");
+            if (ended && before is { } b && await PositionAsync(ctx) is { } a)
+                ReportGuideMove(ctx, direction, side, b, a, direction is GuideDirection.North or GuideDirection.South ? rateDec : rateRa, duration);
         }
+
+        if (side is not null && await PlaceForGuidingAsync(ctx, hourAngle: -3))
+            await GuideMovesAsync(ctx, nameof(PointingState.ThroughThePole), rateRa, rateDec, duration);
         await ctx.ExpectErrorAsync("PulseGuide.InvalidDirection", "PulseGuide", "PulseGuide(9, 100)",
             t => t.PulseGuide((GuideDirection)9, 100), AscomErrorKind.InvalidValue, "9 isn't a GuideDirection");
         await ctx.ExpectErrorAsync("PulseGuide.NegativeDuration", "PulseGuide", "PulseGuide(North, -1)",
@@ -837,6 +864,176 @@ public sealed class MotionChecks : ICheckGroup
             fix: "CanSetPierSide is true, so setting SideOfPier near the meridian must move the mount to that side, pointing at the same place.");
         await ctx.TryAsync(t => t.SideOfPier = before.Value, ctx.SlewTimeout);
         await ctx.WaitForSlewEndAsync();
+    }
+
+    // ---------- Pulse guide and MoveAxis movement ----------
+
+    private static readonly GuideDirection[] GuideDirections = [GuideDirection.North, GuideDirection.South, GuideDirection.East, GuideDirection.West];
+
+    /// <summary>Half the sidereal rate, in degrees per second: the usual guide rate, used when the mount doesn't say.</summary>
+    private const double AssumedGuideRate = 0.5 * 15.041 / 3600;
+
+    /// <summary>The guide rates in degrees per second, or null where one can't be read (or isn't above 0).</summary>
+    private static async Task<(double? Ra, double? Dec)> GuideRatesAsync(CheckContext ctx)
+    {
+        var ra = await ctx.TryAsync(t => t.GuideRateRightAscension);
+        var dec = await ctx.TryAsync(t => t.GuideRateDeclination);
+        return (ra is { Ok: true, Value: > 0 } ? ra.Value : null, dec is { Ok: true, Value: > 0 } ? dec.Value : null);
+    }
+
+    /// <summary>
+    /// Slews to this hour angle (positive: west of the meridian) at a safe declination and waits for the slew to end;
+    /// false when the mount can't slew there, so the pulses are measured where it is.
+    /// </summary>
+    private static async Task<bool> PlaceForGuidingAsync(CheckContext ctx, double hourAngle)
+    {
+        if (!ctx.Caps.CanSlewAsync) return false;
+        var lst = await ctx.TryAsync(t => t.SiderealTime);
+        if (!lst.Ok) return false;
+        var ra = Values.Wrap24(lst.Value - hourAngle);
+        var dec = MethodChecks.SafeDeclination(ctx);
+        if (!(await ctx.TryAsync(t => t.SlewToCoordinatesAsync(ra, dec), ctx.SlewTimeout)).Ok) return false;
+        await ctx.WaitForSlewEndAsync();
+        await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromSeconds(5), 100);
+        return true;
+    }
+
+    /// <summary>Pulses in each direction where the mount is, and checks how far and which way each one moved it.</summary>
+    private static async Task GuideMovesAsync(CheckContext ctx, string side, double? rateRa, double? rateDec, int duration)
+    {
+        foreach (var direction in GuideDirections)
+        {
+            var before = await PositionAsync(ctx);
+            var call = await ctx.TryAsync(t => t.PulseGuide(direction, duration), TimeSpan.FromSeconds(ctx.Options.CallTimeoutSeconds) + TimeSpan.FromMilliseconds(duration));
+            if (!call.Ok || before is not { } b) continue;
+            if (!await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromMilliseconds(duration + 3000), 100)) continue;
+            if (await PositionAsync(ctx) is { } a)
+                ReportGuideMove(ctx, direction, side, b, a, direction is GuideDirection.North or GuideDirection.South ? rateDec : rateRa, duration);
+        }
+    }
+
+    /// <summary>
+    /// Whether a pulse moved the mount the right way and about the right distance (the guide rate times the
+    /// duration): guideNorth raises Declination, guideSouth lowers it, guideEast raises Right Ascension and
+    /// guideWest lowers it, on either side of the pier and in either hemisphere.
+    /// </summary>
+    private static void ReportGuideMove(CheckContext ctx, GuideDirection direction, string? side,
+        (double Ra, double Dec) before, (double Ra, double Dec) after, double? rate, int duration)
+    {
+        var id = $"PulseGuide.{direction}.Moves" + (side is null ? "" : $".{side}");
+        var inDec = direction is GuideDirection.North or GuideDirection.South;
+        var sign = direction is GuideDirection.North or GuideDirection.East ? 1 : -1;
+        var coordinate = inDec ? "Declination" : "Right Ascension";
+        // Degrees: of declination, or of the RA axis (15 per hour of RA).
+        var moved = inDec ? after.Dec - before.Dec : Values.HoursDiff(after.Ra, before.Ra) * 15;
+        var expected = (rate ?? AssumedGuideRate) * duration / 1000;
+        var where = side is null ? "" : $" ({(side == nameof(PointingState.Normal) ? "west of the meridian, pier side Normal" : "east of the meridian, pier side ThroughThePole")})";
+        var expectedText = $"{coordinate} {(sign > 0 ? "up" : "down")} about {Arcsec(expected)}" + (rate is null ? " (guide rate unknown: half sidereal assumed)" : "");
+        var actualText = $"{coordinate} {(moved >= 0 ? "up" : "down")} {Arcsec(Math.Abs(moved))}";
+        const string fix =
+            "guideNorth must raise Declination and guideSouth lower it; guideEast must raise Right Ascension and guideWest " +
+            "lower it, by about the guide rate times the duration. That holds on both sides of the pier and in both " +
+            "hemispheres: on a German mount the Dec motor turns the other way after a meridian flip, and in the southern " +
+            "hemisphere the RA motor does, so the driver has to reverse the motor direction in those cases. Autoguiders " +
+            "calibrate once and rely on this.";
+        string[] patterns = ["PulseGuide", "GuideDirection"];
+
+        if (Math.Abs(moved) < Math.Max(0.2 * expected, 1.0 / 3600))
+        {
+            ctx.Report(id, "PulseGuide", Outcome.Fail, $"PulseGuide({direction}, {duration}) didn't move the mount{where}.",
+                expected: expectedText, actual: actualText, fix: fix, sourcePatterns: patterns);
+            return;
+        }
+        if (Math.Sign(moved) != sign)
+        {
+            ctx.Report(id, "PulseGuide", Outcome.Fail, $"PulseGuide({direction}, {duration}) moved the mount the wrong way{where}.",
+                expected: expectedText, actual: actualText, fix: fix, sourcePatterns: patterns);
+            return;
+        }
+        // An RA guide rate may be meant on the sky rather than on the axis: on the axis that's 1/cos(Dec) more.
+        var ratio = Math.Abs(moved) / expected;
+        var skyRatio = ratio * Math.Cos(before.Dec * Math.PI / 180);
+        var distanceOk = ratio is >= 0.5 and <= 1.5 || (!inDec && skyRatio is >= 0.5 and <= 1.5);
+        ctx.Report(id, "PulseGuide", distanceOk ? Outcome.Pass : rate is null ? Outcome.Info : Outcome.Warning,
+            distanceOk
+                ? $"PulseGuide({direction}, {duration}) moved {coordinate} the right way by {Arcsec(Math.Abs(moved))}{where}."
+                : $"PulseGuide({direction}, {duration}) moved {coordinate} the right way{where}, but {Arcsec(Math.Abs(moved))} rather than about {Arcsec(expected)}.",
+            expected: expectedText, actual: actualText,
+            fix: distanceOk ? null : "A pulse should move the mount by about its guide rate (GuideRateRightAscension, GuideRateDeclination, " +
+                                     "in degrees per second) times its duration; otherwise autoguiders over- or under-correct.",
+            sourcePatterns: patterns);
+    }
+
+    private static string Arcsec(double degrees) => $"{degrees * 3600:0.#} arcsec";
+
+    /// <summary>
+    /// Where an axis points, in degrees: on an alt/az mount the primary axis is azimuth and the secondary altitude;
+    /// on an equatorial mount, RA (15 degrees an hour) and Dec. Null for the tertiary axis or when it can't be read.
+    /// </summary>
+    private static async Task<double?> AxisAngleAsync(CheckContext ctx, TelescopeAxis axis)
+    {
+        var altAz = ctx.Caps.AlignmentMode == AlignmentMode.AltAz;
+        var read = axis switch
+        {
+            TelescopeAxis.Primary => altAz ? await ctx.TryAsync(t => t.Azimuth) : await ctx.TryAsync(t => t.RightAscension * 15),
+            TelescopeAxis.Secondary => altAz ? await ctx.TryAsync(t => t.Altitude) : await ctx.TryAsync(t => t.Declination),
+            _ => null
+        };
+        return read is { Ok: true } ? read.Value : null;
+    }
+
+    /// <summary>How far an axis turned from <paramref name="from"/> to <paramref name="to"/>, in degrees (the primary wrapped to ±180).</summary>
+    private static double AxisDiff(TelescopeAxis axis, double to, double from)
+        => axis == TelescopeAxis.Primary ? ((to - from) % 360 + 540) % 360 - 180 : to - from;
+
+    /// <summary>Movements under this (30 arc-seconds) are too small to tell from tracking and reading noise.</summary>
+    private const double MeasurableMove = 30.0 / 3600;
+
+    /// <summary>MoveAxis at a rate in degrees per second must turn the axis at about that rate.</summary>
+    private static void ReportAxisSpeed(CheckContext ctx, TelescopeAxis axis, double rate, double seconds, double? moved)
+    {
+        var id = $"MoveAxis.{axis}.Speed";
+        var expected = Math.Abs(rate) * seconds;
+        if (moved is null || expected < MeasurableMove) return;
+        var unit = ctx.Caps.AlignmentMode == AlignmentMode.AltAz ? (axis == TelescopeAxis.Primary ? "azimuth" : "altitude")
+            : axis == TelescopeAxis.Primary ? "right ascension (15° an hour)" : "declination";
+        var expectedText = $"about {expected:0.###}° of {unit} in {seconds:0.0} s";
+        var actualText = $"{Math.Abs(moved.Value):0.###}°";
+        if (Math.Abs(moved.Value) < 0.1 * expected)
+        {
+            ctx.Report(id, "MoveAxis", Outcome.Fail, $"MoveAxis({axis}, {CheckContext.Show(rate)}) didn't turn the axis.",
+                expected: expectedText, actual: actualText,
+                fix: "MoveAxis must turn the axis at the given rate, in degrees per second, until it's stopped with rate 0.",
+                sourcePatterns: ["MoveAxis"]);
+            return;
+        }
+        var ratio = Math.Abs(moved.Value) / expected;
+        var ok = ratio is >= 0.5 and <= 1.5;
+        ctx.Report(id, "MoveAxis", ok ? Outcome.Pass : Outcome.Warning,
+            ok ? $"MoveAxis({axis}, {CheckContext.Show(rate)}) turned the axis at about the rate asked ({Math.Abs(moved.Value) / seconds:0.###}°/s)."
+               : $"MoveAxis({axis}, {CheckContext.Show(rate)}) turned the axis at {Math.Abs(moved.Value) / seconds:0.###}°/s, not about {Math.Abs(rate):0.###}°/s.",
+            expected: expectedText, actual: actualText,
+            fix: ok ? null : "MoveAxis's rate is in degrees per second (and AxisRates lists the rates in the same unit): check the conversion to motor steps.",
+            sourcePatterns: ["MoveAxis", "AxisRates"]);
+    }
+
+    /// <summary>A negative rate must turn the axis the other way from a positive one.</summary>
+    private static void ReportAxisDirection(CheckContext ctx, TelescopeAxis axis, double rate,
+        double forwardSeconds, double forward, double backSeconds, double back)
+    {
+        var id = $"MoveAxis.{axis}.Direction";
+        if (Math.Abs(rate) * forwardSeconds < MeasurableMove || Math.Abs(forward) < 0.1 * Math.Abs(rate) * forwardSeconds) return;
+        var backExpected = Math.Abs(rate) * backSeconds;
+        var fix = "MoveAxis takes its direction from the rate's sign: a negative rate must turn the axis the opposite way to a positive one.";
+        var actual = $"+{CheckContext.Show(rate)}: {forward:+0.###;-0.###}°, -{CheckContext.Show(rate)}: {back:+0.###;-0.###}°";
+        if (Math.Abs(back) < 0.1 * backExpected)
+            ctx.Report(id, "MoveAxis", Outcome.Fail, $"MoveAxis({axis}, {CheckContext.Show(-rate)}) didn't turn the axis.",
+                expected: "the axis turns back", actual: actual, fix: fix, sourcePatterns: ["MoveAxis"]);
+        else if (Math.Sign(back) == Math.Sign(forward))
+            ctx.Report(id, "MoveAxis", Outcome.Fail, $"MoveAxis({axis}) turned the same way for a negative rate as for a positive one.",
+                expected: "opposite directions", actual: actual, fix: fix, sourcePatterns: ["MoveAxis"]);
+        else
+            ctx.Report(id, "MoveAxis", Outcome.Pass, $"MoveAxis({axis}) turned one way for a positive rate and back for a negative one.", actual: actual);
     }
 
     // ---------- Helpers ----------

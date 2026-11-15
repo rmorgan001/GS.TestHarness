@@ -63,7 +63,9 @@
                 <ol>
                     <li>Add the server to the <strong>Servers</strong> list on the left (see <a href="help#servers">The server list</a>).</li>
                     <li>Drag it onto the <strong>Server and sites</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
-                    <li>Tick the sites to run at, choose what the run may do, and press <strong>Start run</strong> beside the server.</li>
+                    <li>Tick the sites to run at, choose what the run may do, and press <strong>Start run</strong> beside the server.
+                        A warning asks you to remove the OTAs and watch the mount for the whole run; clicking <strong>Start</strong>
+                        there accepts responsibility for the run.</li>
                     <li>Read the findings as they come in. Each run is saved; open it later on the <strong>Reports</strong> tab.</li>
                 </ol>
                 <p class="warning">Moving the mount is off by default. Turn it on only for a simulator, or a real mount that's clear to move.</p>
@@ -108,9 +110,9 @@
                 <h2>Sites</h2>
                 <p>A run can be made at up to three sites, ticked under the server:</p>
                 <dl>
-                    <dt>Server's own site</dt>
+                    <dt>Server's current settings</dt>
                     <dd>Whatever the server is set to now. Nothing is changed.</dd>
-                    <dt>North and South</dt>
+                    <dt>Northern Hemisphere and Southern Hemisphere</dt>
                     <dd>A name, latitude, longitude (east positive) and elevation in metres. A run there writes
                         SiteElevation, SiteLatitude and SiteLongitude after connecting, and puts the server's own values
                         back before disconnecting, also if the run fails or is stopped.</dd>

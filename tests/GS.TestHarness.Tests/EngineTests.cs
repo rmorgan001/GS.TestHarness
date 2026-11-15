@@ -194,6 +194,9 @@ public class MotionDefectTests(ITestOutputHelper output)
     [InlineData(Defect.MoveAxisStopsTracking, "Motion.MoveAxis.Primary.TrackingRestored")]
     [InlineData(Defect.SettleTimeIgnored, "Motion.SlewSettleTime.Effect")]
     [InlineData(Defect.ParkCantBeAborted, "ParkHome.AbortSlew.DuringPark")]
+    [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.North.Moves.ThroughThePole")]
+    [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.South.Moves.ThroughThePole")]
+    [InlineData(Defect.MoveAxisIgnoresSign, "Motion.MoveAxis.Primary.Direction")]
     public Task Each_motion_defect_is_caught(Defect defect, string id)
         => new EngineTests(output).DefectAsync(defect, id, Outcome.Fail, EngineTests.Everything);
 

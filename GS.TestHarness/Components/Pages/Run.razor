@@ -22,6 +22,7 @@
 @inject Workbench Bench
 @inject ServerList Servers
 @inject SiteStore Sites
+@inject DialogService Dialogs
 
 <PageTitle>Run · GS Test Harness</PageTitle>
 
@@ -211,9 +212,18 @@ else
         else Bench.Drop();
     }
 
-    private void Start()
+    /// <summary>The warning shown before every run: the mount moves on its own, so the user watches it and takes responsibility.</summary>
+    private const string SafetyWarning =
+        "The run can slew, flip, park and home the mount, and move its axes, without any further warning.\n\n" +
+        "• Remove the OTAs (telescopes, cameras and anything else mounted) before you start, so a pier or tripod-leg strike can't damage them.\n" +
+        "• Stay with the mount and watch it for the whole run. Be ready to stop the run or cut the mount's power if it heads for the pier, a leg or a cable.\n\n" +
+        "By clicking Start you accept responsibility for starting the run and for monitoring the mount.";
+
+    private async Task Start()
     {
         if (Bench.Selected is not { } server) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true))) return;
+        if (Runs.IsRunning) return;
         var options = new RunOptions
         {
             AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,

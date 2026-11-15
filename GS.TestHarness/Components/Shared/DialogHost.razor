@@ -28,10 +28,11 @@
                     <h2 class="dialog-title">@confirm.Title</h2>
                     <p class="dialog-message">@confirm.Message</p>
                     <div class="dialog-buttons">
-                        <button type="button" class="btn @(confirm.Danger ? "danger-btn" : "primary")" autofocus @onclick="() => confirm.Close(true)">@confirm.AcceptText</button>
+                        @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
+                        <button type="button" class="btn @(confirm.Danger ? "danger-btn" : "primary")" autofocus="@(!confirm.Danger || confirm.CancelText is null)" @onclick="() => confirm.Close(true)">@confirm.AcceptText</button>
                         @if (confirm.CancelText is { } cancel)
                         {
-                            <button type="button" class="btn" @onclick="() => confirm.Close(false)">@cancel</button>
+                            <button type="button" class="btn" autofocus="@confirm.Danger" @onclick="() => confirm.Close(false)">@cancel</button>
                         }
                     </div>
                     break;
