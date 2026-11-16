@@ -71,6 +71,7 @@ else
                                 <span class="mono">@r.Identity.DriverVersion</span>
                                 @if (r.Options.AllowMotion) { <span class="tag">motion</span> }
                                 @if (r.Cancelled) { <span class="tag">stopped</span> }
+                                @if (r.CommunicationLost) { <span class="tag">connection lost</span> }
                             </div>
                         </td>
                         <td>@r.SiteLabel</td>

@@ -74,6 +74,60 @@ public class ReportTests
         Assert.True(ReportComparer.AreDifferentPrograms(gss, gsa));
     }
 
+    private static RunReport Run(string version, int minutesAgo, SiteLocation? site = null)
+        => Report() with
+        {
+            Identity = new DeviceIdentity { Name = "Dev", DriverVersion = version },
+            Started = DateTimeOffset.Now.AddMinutes(-minutesAgo),
+            Site = site
+        };
+
+    [Fact]
+    public void Versions_compare_the_newest_run_with_the_newest_earlier_version_at_the_same_site()
+    {
+        var newest = Run("1.3", 1);
+        var sameVersion = Run("1.3", 10);
+        var elsewhere = Run("1.2", 20, SiteLocation.DefaultSouth);
+        var older = Run("1.2", 30);
+        var pair = ReportComparer.DefaultVersionPair([sameVersion, older, newest, elsewhere]);
+        Assert.Equal(newest.Id, pair!.Value.After.Id);
+        Assert.Equal(older.Id, pair.Value.Before.Id);
+
+        // No other version at the site: the newest earlier run there.
+        Assert.Equal(sameVersion.Id, ReportComparer.DefaultVersionPair([newest, sameVersion, elsewhere])!.Value.Before.Id);
+        Assert.Null(ReportComparer.DefaultVersionPair([newest]));
+    }
+
+    [Fact]
+    public void Runs_that_arent_like_for_like_are_called_out()
+    {
+        var before = Run("1.2", 30);
+        var after = Run("1.3", 1) with { Options = new RunOptions { AllowMotion = true }, Site = SiteLocation.DefaultNorth };
+        var differences = ReportComparer.Differences(before, after);
+        Assert.Contains(differences, d => d.StartsWith("motion was off"));
+        Assert.Contains(differences, d => d.Contains("different sites"));
+        Assert.Empty(ReportComparer.Differences(before, Run("1.3", 1)));
+    }
+
+    [Fact]
+    public void CSV_quotes_what_needs_it_and_defuses_formulas()
+    {
+        var report = Report(Result("A.X", Outcome.Fail, "says \"no\", twice\nthen stops"), Result("A.Y", Outcome.Pass, "=HYPERLINK(\"x\")"),
+            Result("A.Z", Outcome.Pass, "-91"));
+        var bytes = ReportCsv.Report(report);
+        Assert.Equal(System.Text.Encoding.UTF8.GetPreamble(), bytes[..3]);
+        var text = System.Text.Encoding.UTF8.GetString(bytes[3..]);
+        var lines = text.Split("\r\n");
+        Assert.StartsWith("Id,Group,Member,Outcome,Message", lines[0]);
+        Assert.Contains("\"says \"\"no\"\", twice\nthen stops\"", text);
+        // A leading apostrophe makes the formula text; the quotes inside it force quoting.
+        Assert.Contains(",\"'=HYPERLINK(\"\"x\"\")\",", text);
+        Assert.Contains(",-91,", text);
+
+        var compare = System.Text.Encoding.UTF8.GetString(ReportCsv.Comparison(report, Report(Result("A.X", Outcome.Pass)))[3..]);
+        Assert.Contains("Fixed,A.X,", compare);
+    }
+
     [Fact]
     public async Task Reports_are_saved_listed_loaded_and_deleted()
     {

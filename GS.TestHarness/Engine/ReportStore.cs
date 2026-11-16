@@ -96,7 +96,7 @@ public sealed class ReportStore(string folder)
     /// none finished (a stopped run didn't make every check, so it would hide what a finished one found).
     /// </summary>
     public static RunReport? Representative(IEnumerable<RunReport> runsOfOneDeviceAtOneSite)
-        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Cancelled).ThenByDescending(r => r.Started).FirstOrDefault();
+        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Cancelled || r.CommunicationLost).ThenByDescending(r => r.Started).FirstOrDefault();
 
     /// <summary>The run that stands for <paramref name="target"/> at the site with this hemisphere (null: the server's own site).</summary>
     public static RunReport? LatestAt(IEnumerable<RunReport> runs, TestTarget target, string? hemisphere)
@@ -127,7 +127,7 @@ public sealed class ReportStore(string folder)
         sb.AppendLine($"- DriverInfo: {r.Identity.DriverInfo}");
         sb.AppendLine($"- DriverVersion: {r.Identity.DriverVersion}, InterfaceVersion: {r.Identity.InterfaceVersion}");
         if (r.Identity.ServerDescription is { } sd) sb.AppendLine($"- Alpaca server: {sd}");
-        sb.AppendLine($"- Run: {r.Started:yyyy-MM-dd HH:mm} ({(r.Finished - r.Started)?.TotalSeconds:0} s){(r.Cancelled ? ", stopped early" : "")}, GS.TestHarness {r.HarnessVersion}");
+        sb.AppendLine($"- Run: {r.Started:yyyy-MM-dd HH:mm} ({(r.Finished - r.Started)?.TotalSeconds:0} s){(r.Cancelled ? ", stopped early" : "")}{(r.CommunicationLost ? ", stopped: communication with the device was lost" : "")}, GS.TestHarness {r.HarnessVersion}");
         sb.AppendLine($"- Options: motion {(r.Options.AllowMotion ? "on" : "off")}, settings writes {(r.Options.AllowSettingsWrites ? "on" : "off")}, " +
                       $"SetPark {(r.Options.AllowSetPark ? "on" : "off")}, protocol {(r.Options.IncludeProtocol ? "on" : "off")}");
         sb.AppendLine();
@@ -270,4 +270,90 @@ public static class ReportComparer
     public static bool AreDifferentPrograms(RunReport a, RunReport b)
         => a.Target.Codebase != b.Target.Codebase
            || !string.Equals(a.Identity.Name, b.Identity.Name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The two runs of one device to compare by default, for a regression check across driver versions: its newest
+    /// run (after), and the newest earlier run at the same site with another DriverVersion (before); failing that,
+    /// the newest earlier run at the same site, then at any site. Null with fewer than two runs.
+    /// </summary>
+    public static (RunReport Before, RunReport After)? DefaultVersionPair(IEnumerable<RunReport> runsOfOneDevice)
+    {
+        var runs = runsOfOneDevice.OrderByDescending(r => r.Started).ToList();
+        if (runs.Count < 2) return null;
+        var after = runs[0];
+        var earlier = runs.Skip(1).ToList();
+        var sameSite = earlier.Where(r => r.Site?.Hemisphere == after.Site?.Hemisphere).ToList();
+        var before = sameSite.FirstOrDefault(r => !string.Equals(r.Identity.DriverVersion, after.Identity.DriverVersion, StringComparison.OrdinalIgnoreCase))
+                     ?? sameSite.FirstOrDefault()
+                     ?? earlier[0];
+        return (before, after);
+    }
+
+    /// <summary>
+    /// What makes two runs not like for like (another site, other options, another program), for a warning above
+    /// the comparison: such differences show up as checks gone or added rather than as regressions.
+    /// </summary>
+    public static List<string> Differences(RunReport before, RunReport after)
+    {
+        var list = new List<string>();
+        if (AreDifferentPrograms(before, after)) list.Add("they are runs of different programs");
+        if (before.Site?.Hemisphere != after.Site?.Hemisphere) list.Add($"they were made at different sites ({before.SiteLabel}, {after.SiteLabel})");
+        void Option(string name, bool a, bool b) { if (a != b) list.Add($"{name} was {(a ? "on" : "off")} before and {(b ? "on" : "off")} after"); }
+        Option("motion", before.Options.AllowMotion, after.Options.AllowMotion);
+        Option("settings writes", before.Options.AllowSettingsWrites, after.Options.AllowSettingsWrites);
+        Option("SetPark", before.Options.AllowSetPark, after.Options.AllowSetPark);
+        Option("the protocol checks", before.Options.IncludeProtocol, after.Options.IncludeProtocol);
+        Option("the extended checks", before.Options.Extended, after.Options.Extended);
+        Option("the disconnected checks", before.Options.IncludeDisconnected, after.Options.IncludeDisconnected);
+        if (before.Cancelled || before.CommunicationLost) list.Add("the earlier run stopped part way");
+        if (after.Cancelled || after.CommunicationLost) list.Add("the later run stopped part way");
+        return list;
+    }
+}
+
+/// <summary>Reports and comparisons as CSV (RFC 4180, UTF-8 with a byte order mark so Excel reads it as UTF-8).</summary>
+public static class ReportCsv
+{
+    public static byte[] Report(RunReport r)
+    {
+        var sb = new StringBuilder();
+        Row(sb, "Id", "Group", "Member", "Outcome", "Message", "Expected", "Actual", "Fix", "Source", "Reference", "DurationMs");
+        foreach (var x in r.Results)
+            Row(sb, x.Id, x.Group, x.Member, x.Outcome.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
+                x.DurationMs.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
+        return Bytes(sb);
+    }
+
+    public static byte[] Comparison(RunReport before, RunReport after)
+    {
+        var sb = new StringBuilder();
+        Row(sb, "Change", "Id", "Group", "Member",
+            $"Before outcome ({before.Identity.DriverVersion} {before.Started:yyyy-MM-dd HH:mm})", "Before message",
+            $"After outcome ({after.Identity.DriverVersion} {after.Started:yyyy-MM-dd HH:mm})", "After message", "Fix");
+        foreach (var c in ReportComparer.Compare(before, after))
+            Row(sb, c.Change.ToString(), c.Id, c.Group, c.Member, c.Before?.Outcome.ToString(), c.Before?.Message,
+                c.After?.Outcome.ToString(), c.After?.Message, (c.After ?? c.Before)?.Fix);
+        return Bytes(sb);
+    }
+
+    /// <summary>A file name made safe from the run's label.</summary>
+    public static string FileName(string label) => Regex.Replace(label, @"[^\w.-]+", "_").Trim('_');
+
+    private static void Row(StringBuilder sb, params string?[] fields)
+    {
+        sb.AppendJoin(',', fields.Select(Field));
+        sb.Append("\r\n");
+    }
+
+    private static string Field(string? value)
+    {
+        value ??= "";
+        // A spreadsheet runs a cell that starts like a formula: device messages are untrusted, so make it text.
+        if (value.Length > 0 && (value[0] is '=' or '+' or '@' or '\t' or '\r'
+                                 || (value[0] == '-' && (value.Length == 1 || !(char.IsDigit(value[1]) || value[1] is '.' or ' ')))))
+            value = "'" + value;
+        return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+    }
+
+    private static byte[] Bytes(StringBuilder sb) => [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
 }

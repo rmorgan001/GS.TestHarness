@@ -86,6 +86,13 @@ public sealed class TestRunner(SourceLocator locator)
     {
         var group = ctx.Group;
         ctx.Group = "Site";
+        if (ctx.Lost is not null)
+        {
+            ctx.Report("Restore", "SiteLatitude", Outcome.Error, "The server's own site couldn't be put back: communication with the device was lost.",
+                fix: FormattableString.Invariant($"Set the site back to latitude {own.Latitude:0.####}, longitude {own.Longitude:0.####}, elevation {own.Elevation:0} m in the server's settings."));
+            ctx.Group = group;
+            return;
+        }
         var r = await ctx.TryAsync(t =>
         {
             t.SiteElevation = own.Elevation;
@@ -145,6 +152,12 @@ public sealed class TestRunner(SourceLocator locator)
                 }
                 ctx.Group = group.Name;
                 onProgress?.Invoke(new RunProgress(i, Groups.Count, group.Name, report.Results.Count));
+                // Once the device has gone, only the summary of what was found can still run.
+                if (ctx.Lost is not null && group is not PerformanceChecks)
+                {
+                    ctx.Report("Group", group.Name, Outcome.Skipped, $"{group.Name} not run: communication with the device was lost.");
+                    continue;
+                }
                 if (group.SkipReason(ctx) is { } reason)
                 {
                     ctx.Report("Group", group.Name, Outcome.Skipped, $"{group.Name} not run: {reason}.");
@@ -153,7 +166,22 @@ public sealed class TestRunner(SourceLocator locator)
                 try
                 {
                     await group.RunAsync(ctx);
-                    if (group is ConnectionChecks && site is not null) original = await ApplySiteAsync(ctx, site);
+                    if (group is ConnectionChecks)
+                    {
+                        // Connected: from now on a device that stops answering stops the run.
+                        ctx.WatchForLostConnection = true;
+                        if (site is not null) original = await ApplySiteAsync(ctx, site);
+                    }
+                }
+                catch (CommunicationLostException ex)
+                {
+                    ctx.Group = ex.Group;
+                    ctx.Report("CommunicationLost", ex.Group, Outcome.Error, $"Run stopped during {ex.Group}: {ex.Message}",
+                        actual: ex.Diagnostics,
+                        fix: "The driver's server program (COM) or the Alpaca server stopped answering. Look at the server's log " +
+                             "for a crash or an exception at this time, restart it, and check the mount before running again. " +
+                             "The findings up to this point are kept.");
+                    report.CommunicationLost = true;
                 }
                 catch (StopRunException ex)
                 {

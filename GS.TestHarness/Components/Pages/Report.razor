@@ -27,7 +27,7 @@ else if (_report is { } r)
 {
     <header class="page-head">
         <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> @r.Label</h1>
-        <p class="muted"><a href="reports">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.SiteLabel · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")</p>
+        <p class="muted"><a href="reports">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.SiteLabel · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")@(r.CommunicationLost ? " · stopped: communication lost" : "")</p>
     </header>
 
     @* The run at a glance. *@
@@ -63,6 +63,8 @@ else if (_report is { } r)
             <div class="row-actions">
                 <a class="btn" href="download/@(r.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
                 <a class="btn" href="download/@(r.Id).json" download><Icon Kind="CodeBraces" Size="16" /> JSON</a>
+                <a class="btn" href="download/@(r.Id).csv" download><Icon Kind="Download" Size="16" /> CSV</a>
+                <a class="btn" href="reports/@(r.Id)/print" target="_blank" rel="noopener"><Icon Kind="FileDocument" Size="16" /> Print / PDF</a>
             </div>
         </section>
     </div>

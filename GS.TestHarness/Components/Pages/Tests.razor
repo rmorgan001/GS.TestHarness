@@ -1,0 +1,121 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/tests"
+
+@* Every check the harness makes (Engine/TestCatalog.cs): what it is for, how it is tested, how the result is judged
+   and what it is based on. CatalogTests keeps the catalog in step with the checks. *@
+
+<PageTitle>Tests · GS Test Harness</PageTitle>
+
+<header class="page-head">
+    <h1>Tests</h1>
+    <p class="muted">Every check a run can make, by group: its objective, how it is tested, how the result is verified, and the
+        reference material it is based on. In IDs, words in braces stand for each member, axis, direction or rate checked.</p>
+</header>
+
+<div class="summary catalog-toolbar">
+    <input type="search" placeholder="Search tests" aria-label="Search tests" @bind="_search" @bind:event="oninput" />
+    <div class="catalog-groups" role="group" aria-label="Groups">
+        <button class="chip @(_group is null ? "on" : null)" @onclick="() => _group = null">All <span class="chip-count">@TestCatalog.Entries.Count</span></button>
+        @foreach (var g in TestCatalog.Groups)
+        {
+            var count = TestCatalog.Entries.Count(e => TestCatalog.DisplayGroup(e) == g.Name);
+            <button class="chip @(_group == g.Name ? "on" : null)" @onclick="() => _group = g.Name">@g.Name <span class="chip-count">@count</span></button>
+        }
+    </div>
+</div>
+
+@{ var shown = 0; }
+@foreach (var g in TestCatalog.Groups.Where(g => _group is null || g.Name == _group))
+{
+    var entries = TestCatalog.Entries.Where(e => TestCatalog.DisplayGroup(e) == g.Name && Matches(e)).ToList();
+    if (entries.Count == 0) continue;
+    shown += entries.Count;
+    <section class="card catalog-group" id="group-@g.Name">
+        <h2>@g.Name <span class="muted catalog-when">Runs: @g.RunsWhen</span></h2>
+        <p class="muted">@g.Summary</p>
+        <div class="table-scroll">
+            <table class="results catalog">
+                <thead>
+                    <tr><th>Test</th><th>Objective</th><th>How it's tested</th><th>How it's verified</th><th>References</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in entries)
+                    {
+                        <tr>
+                            <td class="mono catalog-id">@e.DisplayId</td>
+                            <td>@e.Objective</td>
+                            <td>@e.Method</td>
+                            <td>@e.Verification</td>
+                            <td class="catalog-refs">
+                                @foreach (var key in e.Refs)
+                                {
+                                    var r = TestCatalog.Reference(key);
+                                    @if (r.Url is { } url)
+                                    {
+                                        <a href="@url" target="_blank" rel="noopener" title="@r.Title">@key</a>
+                                    }
+                                    else
+                                    {
+                                        <span title="@r.Title">@key</span>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+@if (shown == 0)
+{
+    <p class="muted">No test matches “@_search”.</p>
+}
+
+<section class="card catalog-group" id="references">
+    <h2>Reference material</h2>
+    <dl class="catalog-ref-list">
+        @foreach (var r in TestCatalog.References)
+        {
+            <dt class="mono">@r.Key</dt>
+            <dd>
+                @if (r.Url is { } url)
+                {
+                    <a href="@url" target="_blank" rel="noopener">@r.Title</a>
+                }
+                else
+                {
+                    @r.Title
+                }
+            </dd>
+        }
+    </dl>
+</section>
+
+@code {
+    private string _search = "";
+    private string? _group;
+
+    private bool Matches(CatalogEntry e)
+    {
+        if (string.IsNullOrWhiteSpace(_search)) return true;
+        var s = _search.Trim();
+        return new[] { e.Id, e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs) }
+            .Any(text => text.Contains(s, StringComparison.OrdinalIgnoreCase));
+    }
+}

@@ -42,8 +42,20 @@ public sealed class PropertyChecks : ICheckGroup
 
         var dec = await ctx.ReadMandatoryAsync("Declination", t => t.Declination, v => v is < -90 or > 90 ? "declination is -90 to 90 degrees" : null);
         var ra = await ctx.ReadMandatoryAsync("RightAscension", t => t.RightAscension, v => v is < 0 or >= 24 ? "right ascension is 0 up to 24 hours" : null);
-        await ctx.ReadMandatoryAsync("DeclinationRate", t => t.DeclinationRate);
-        await ctx.ReadMandatoryAsync("RightAscensionRate", t => t.RightAscensionRate);
+        foreach (var (member, capability, can, read) in new (string, string, bool, Func<ITelescopeV4, double>)[]
+                 {
+                     ("DeclinationRate", "CanSetDeclinationRate", c.CanSetDeclinationRate, t => t.DeclinationRate),
+                     ("RightAscensionRate", "CanSetRightAscensionRate", c.CanSetRightAscensionRate, t => t.RightAscensionRate)
+                 })
+        {
+            var offset = await ctx.ReadMandatoryAsync(member, read);
+            // As ConformU: an offset that can't be set can only be 0. (The documentation doesn't say so outright, hence a warning.)
+            if (!can && offset is { Ok: true } && offset.Value != 0)
+                ctx.Report($"{member}.Zero", member, Outcome.Warning, $"{member} is {CheckContext.Show(offset.Value)}, but {capability} is false.",
+                    expected: "0", actual: CheckContext.Show(offset.Value),
+                    fix: $"{capability} is false, so no client can have set an offset: {member} should read 0 (ConformU reports " +
+                         "anything else as an issue).");
+        }
         await ctx.ReadMandatoryAsync("DoesRefraction", t => t.DoesRefraction);
         await ctx.ReadMandatoryAsync("EquatorialSystem", t => t.EquatorialSystem,
             v => Enum.IsDefined(v) ? null : "it isn't one of the EquatorialCoordinateType values");

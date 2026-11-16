@@ -277,6 +277,9 @@ public sealed record RunReport
     public DateTimeOffset Started { get; init; } = DateTimeOffset.Now;
     public DateTimeOffset? Finished { get; set; }
     public bool Cancelled { get; set; }
+
+    /// <summary>The device stopped answering part way through, so the run stopped there.</summary>
+    public bool CommunicationLost { get; set; }
     public string HarnessVersion { get; init; } = typeof(RunReport).Assembly.GetName().Version?.ToString(3) ?? "";
 
     /// <summary>The site the mount was set to for the run; null when it ran at the server's own site.</summary>

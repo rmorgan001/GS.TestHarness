@@ -173,12 +173,19 @@
                     download it as Markdown (ready to paste into an issue) or JSON.</p>
                 <p>To delete reports, tick them (or tick <strong>Select all</strong>) and press <strong>Delete checked</strong>.
                     You're asked first; deleted reports can't be brought back.</p>
-                <p>A report opens with its totals and duration, the device's identity, the run's options, and the findings.</p>
+                <p>A report opens with its totals and duration, the device's identity, the run's options, and the findings.
+                    Its buttons download it as Markdown, JSON or <strong>CSV</strong> (opens in Excel), or open
+                    <strong>Print / PDF</strong>: the whole report laid out for paper, every problem with its details, ready for
+                    the browser's Print or Save as PDF.</p>
+                <p>A run whose device stopped answering part way (its COM server crashed, the Alpaca server went away) stops
+                    there with one <strong>CommunicationLost</strong> error that holds the last errors seen. The groups that need
+                    the device are skipped, and the findings up to that point are kept. Such runs are tagged
+                    <em>connection lost</em> in the list.</p>
             </section>
 
             <section id="compare">
                 <h2>The Compare tab</h2>
-                <p>Shows how the server on the Run tab does at each ticked site, side by side: its latest run at each,
+                <p><strong>Sites</strong> shows how the server on the Run tab does at each ticked site, side by side: its latest run at each,
                     one column per site. Change the server or the ticks on the Run tab and it follows.</p>
                 <dl>
                     <dt>Differs</dt>
@@ -192,6 +199,12 @@
                     <dd>Passed everywhere. Hidden until you click its count.</dd>
                 </dl>
                 <p>Runs at two or more of the ticked sites are needed.</p>
+                <p><strong>Versions</strong> compares two runs of the server, check by check, to see what a new driver version
+                    fixed or broke. It starts with the newest run and the newest earlier run at the same site with another
+                    DriverVersion; pick any two runs under Before and After. Regressed and New problem are what to look at;
+                    Problem changed, Still failing, Fixed, Not checked after and New check follow. If the two runs weren't
+                    made alike (another site, motion or settings writes on in one only), a note says so: those differences
+                    show as checks gone or added, not as regressions. <strong>CSV</strong> downloads the comparison.</p>
             </section>
 
             <section id="recommendations">

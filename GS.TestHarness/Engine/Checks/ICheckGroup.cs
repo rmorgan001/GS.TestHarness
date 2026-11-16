@@ -37,6 +37,19 @@ public interface ICheckGroup
 /// <summary>Raised by a check when the rest of the run can't go on (the mount wouldn't connect).</summary>
 public sealed class StopRunException(string message) : Exception(message);
 
+/// <summary>
+/// Raised by <see cref="CheckContext.TryAsync{T}"/> once the device can no longer be reached (its COM server
+/// died, the Alpaca server went away): the run stops, keeping the findings so far.
+/// </summary>
+public sealed class CommunicationLostException(string group, string message, string diagnostics) : Exception(message)
+{
+    /// <summary>The group that was running when it happened.</summary>
+    public string Group { get; } = group;
+
+    /// <summary>The last call's error and the check call's error, for the report.</summary>
+    public string Diagnostics { get; } = diagnostics;
+}
+
 /// <summary>Conversions for values that arrive untyped (DeviceState values, Alpaca JSON).</summary>
 public static class Values
 {
