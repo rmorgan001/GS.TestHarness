@@ -44,9 +44,13 @@ public class EngineTests(ITestOutputHelper output)
         await using var session = new DirectSession(fake);
         // Each extra client (the Clients checks) is another DirectSession with its own client number.
         var clients = 0;
-        return await runner.RunAsync(session, target ?? new TestTarget(), options ?? Everything,
+        var report = await runner.RunAsync(session, target ?? new TestTarget(), options ?? Everything,
             openSession: () => Task.FromResult<ITelescopeSession>(new DirectSession(fake, Interlocked.Increment(ref clients))),
             site: site);
+        // The Tests page must describe every finding a run can make.
+        var uncatalogued = report.Results.Select(r => r.Id).Where(id => TestCatalog.For(id) is null).Distinct().ToList();
+        Assert.True(uncatalogued.Count == 0, "Not in Engine/TestCatalog.cs: " + string.Join(", ", uncatalogued));
+        return report;
     }
 
     [Fact]
@@ -122,6 +126,7 @@ public class EngineTests(ITestOutputHelper output)
     [InlineData(Defect.TrackingSetWhenCantSet, "Settings.Tracking.NotImplemented", Outcome.Fail)]
     [InlineData(Defect.AzimuthFromSouth, "Properties.AltAz.Consistent", Outcome.Fail)]
     [InlineData(Defect.DeviceStateMissingTracking, "Common.DeviceState.Contents", Outcome.Fail)]
+    [InlineData(Defect.TrackingRateAcceptsUnlisted, "Settings.TrackingRate.UnsupportedKing", Outcome.Fail)]
     public async Task Each_defect_is_caught(Defect defect, string id, Outcome expected)
         => await DefectAsync(defect, id, expected, Everything with { AllowMotion = false });
 
@@ -201,8 +206,44 @@ public class MotionDefectTests(ITestOutputHelper output)
     [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.EastToWest.Flipped")]
     [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.WestToEast.Flipped")]
     [InlineData(Defect.SideOfPierSetIgnored, "Motion.Flip.SideOfPier.West")]
+    [InlineData(Defect.SyncIgnored, "Motion.SyncToCoordinates")]
+    [InlineData(Defect.SyncIgnored, "Motion.SyncToTarget")]
+    [InlineData(Defect.SyncDoesntSetTargets, "Motion.SyncToCoordinates.Targets")]
+    [InlineData(Defect.SyncToAltAzIgnored, "Motion.SyncToAltAz")]
+    [InlineData(Defect.RateOffsetKeptAtOtherRates, "Motion.RightAscensionRate.ZeroAtLunar")]
+    [InlineData(Defect.RateOffsetKeptAtOtherRates, "Motion.DeclinationRate.ZeroAtSolar")]
+    [InlineData(Defect.DecRateAcceptedAtOtherRates, "Motion.DeclinationRate.NotSiderealLunar")]
+    [InlineData(Defect.NegativeRateOffsetRefused, "Motion.RightAscensionRate.Offset")]
+    [InlineData(Defect.SlewingDuringRateOffset, "Motion.DeclinationRate.Offset.Slewing")]
     public Task Each_motion_defect_is_caught(Defect defect, string id)
         => new EngineTests(output).DefectAsync(defect, id, Outcome.Fail, EngineTests.Everything);
+
+    [Fact]
+    public async Task A_server_that_dies_mid_run_stops_the_run_with_one_error()
+    {
+        var report = await EngineTests.RunAsync(new FakeTelescope(Defect.ServerDiesAtFirstSlew));
+        foreach (var r in report.Results.Where(r => r.IsProblem)) output.WriteLine($"{r.Outcome,-8} {r.Id}: {r.Message}");
+        var lost = Assert.Single(report.Results, r => r.Id.EndsWith(".CommunicationLost"));
+        Assert.Equal(("Motion.CommunicationLost", Outcome.Error), (lost.Id, lost.Outcome));
+        Assert.Contains("RPC server is unavailable", lost.Actual);
+        Assert.True(report.CommunicationLost);
+        // The groups after it that need the device are skipped, not failed one check at a time.
+        Assert.Contains(report.Results, r => r is { Id: "ParkHome.Group", Outcome: Outcome.Skipped });
+        Assert.Contains(report.Results, r => r is { Id: "Disconnected.Group", Outcome: Outcome.Skipped });
+        Assert.DoesNotContain(report.Results, r => r.Group is "ParkHome" or "Disconnected" && r.Outcome == Outcome.Fail);
+        Assert.True(report.Results.Count(r => r is { Group: "Motion", Outcome: Outcome.Fail }) <= 1);
+        // The summary still runs.
+        Assert.Contains(report.Results, r => r.Group == "Performance" && r.Outcome != Outcome.Skipped);
+    }
+
+    [Fact]
+    public void Lost_connections_are_told_from_ordinary_errors()
+    {
+        Assert.True(AscomError.IsConnectionLost(new System.Runtime.InteropServices.COMException("x", unchecked((int)0x800706BA))));
+        Assert.True(AscomError.IsConnectionLost(new ASCOM.DriverException("wrapped", new HttpRequestException("No connection could be made"))));
+        Assert.False(AscomError.IsConnectionLost(new ASCOM.InvalidValueException("v")));
+        Assert.False(AscomError.IsConnectionLost(new CallTimeoutException(TimeSpan.FromSeconds(1))));
+    }
 
     [Fact]
     public Task A_client_disconnecting_others_is_caught()

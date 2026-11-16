@@ -88,6 +88,15 @@ app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
     await store.LoadAsync(id) is { } report
         ? Results.File(System.Text.Encoding.UTF8.GetBytes(ReportStore.ToMarkdown(report)), "text/markdown; charset=utf-8", $"{id}.md")
         : Results.NotFound());
+app.MapGet("/download/{id}.csv", async (string id, ReportStore store) =>
+    await TryLoadAsync(store, id) is { } report
+        ? Results.File(ReportCsv.Report(report), "text/csv; charset=utf-8", $"{ReportCsv.FileName(report.Label)}_{id}.csv")
+        : Results.NotFound());
+app.MapGet("/download/compare/{before}/{after}.csv", async (string before, string after, ReportStore store) =>
+    await TryLoadAsync(store, before) is { } a && await TryLoadAsync(store, after) is { } b
+        ? Results.File(ReportCsv.Comparison(a, b), "text/csv; charset=utf-8",
+            $"{ReportCsv.FileName($"{a.Label}_vs_{b.Identity.DriverVersion}")}.csv")
+        : Results.NotFound());
 app.MapGet("/download/{id}.json", async (string id, ReportStore store) =>
     await store.LoadAsync(id) is { } report
         ? Results.File(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(report, ReportStore.Json), "application/json", $"{id}.json")
@@ -101,3 +110,10 @@ app.MapRazorComponents<App>()
 
 app.Run();
 return 0;
+
+// A report by ID, or null when there's none (or the ID isn't one).
+static async Task<RunReport?> TryLoadAsync(ReportStore store, string id)
+{
+    try { return await store.LoadAsync(id); }
+    catch (ArgumentException) { return null; }
+}

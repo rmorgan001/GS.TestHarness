@@ -46,7 +46,18 @@ public enum Defect
     PulseGuideDecReversedThroughThePole,
     MoveAxisIgnoresSign,
     NoMeridianFlip,
-    SideOfPierSetIgnored
+    SideOfPierSetIgnored,
+    SyncIgnored,
+    SyncDoesntSetTargets,
+    SyncToAltAzIgnored,
+    RateOffsetKeptAtOtherRates,
+    DecRateAcceptedAtOtherRates,
+    NegativeRateOffsetRefused,
+    SlewingDuringRateOffset,
+    TrackingRateAcceptsUnlisted,
+
+    /// <summary>The driver's server program dies at the first asynchronous slew: every call after it fails as COM does.</summary>
+    ServerDiesAtFirstSlew
 }
 
 /// <summary>
@@ -89,7 +100,16 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     private void NeedConnected()
     {
+        NeedAlive();
         if (!IsConnected) throw new NotConnectedException("not connected");
+    }
+
+    private bool _dead;
+
+    /// <summary>After the server has died, every call fails with RPC_S_SERVER_UNAVAILABLE, as a COM proxy does.</summary>
+    private void NeedAlive()
+    {
+        if (_dead) throw new System.Runtime.InteropServices.COMException("The RPC server is unavailable.", unchecked((int)0x800706BA));
     }
 
     private double Lst => Values.LocalSiderealTime(DateTime.UtcNow, _lon);
@@ -144,7 +164,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     public bool Connected
     {
-        get => IsConnected;
+        get { NeedAlive(); return IsConnected; }
         set { if (value) Connect(); else Disconnect(); }
     }
     public bool Connecting => false;
@@ -300,11 +320,43 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     }
     public double SiderealTime { get { NeedConnected(); return Lst; } }
     public EquatorialCoordinateType EquatorialSystem { get { NeedConnected(); return EquatorialCoordinateType.Topocentric; } }
-    public bool Slewing { get { NeedConnected(); return _slewing || _axisRates.Any(r => r != 0); } }
+    public bool Slewing
+    {
+        get
+        {
+            NeedConnected();
+            return _slewing || _axisRates.Any(r => r != 0) || (Has(Defect.SlewingDuringRateOffset) && (_raRate != 0 || _decRate != 0));
+        }
+    }
     public bool IsPulseGuiding { get { NeedConnected(); return DateTime.UtcNow < _pulseUntil; } }
 
-    public double DeclinationRate { get { NeedConnected(); return _decRate; } set { NeedConnected(); NeedSidereal(); Bake(); _decRate = value; } }
-    public double RightAscensionRate { get { NeedConnected(); return _raRate; } set { NeedConnected(); NeedSidereal(); Bake(); _raRate = value; } }
+    public double DeclinationRate
+    {
+        get { NeedConnected(); return OffsetRead(_decRate); }
+        set
+        {
+            NeedConnected();
+            if (!Has(Defect.DecRateAcceptedAtOtherRates)) NeedSidereal();
+            CheckOffset(value);
+            Bake();
+            _decRate = value;
+        }
+    }
+
+    public double RightAscensionRate
+    {
+        get { NeedConnected(); return OffsetRead(_raRate); }
+        set { NeedConnected(); NeedSidereal(); CheckOffset(value); Bake(); _raRate = value; }
+    }
+
+    /// <summary>Offsets only apply at sidereal rate: at any other rate they read 0.</summary>
+    private double OffsetRead(double offset)
+        => _trackingRate == DriveRate.Sidereal || Has(Defect.RateOffsetKeptAtOtherRates) ? offset : 0;
+
+    private void CheckOffset(double value)
+    {
+        if (value < 0 && Has(Defect.NegativeRateOffsetRefused)) throw new InvalidValueException("offset", value.ToString(), "0 or more");
+    }
 
     private void NeedSidereal()
     {
@@ -389,10 +441,18 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public DriveRate TrackingRate
     {
         get { NeedConnected(); return _trackingRate; }
-        set { NeedConnected(); if (!Enum.IsDefined(value)) throw new InvalidValueException("rate"); _trackingRate = value; }
+        set
+        {
+            NeedConnected();
+            if (!Enum.IsDefined(value) || (!SupportedRates.Contains(value) && !Has(Defect.TrackingRateAcceptsUnlisted)))
+                throw new InvalidValueException("rate");
+            _trackingRate = value;
+        }
     }
 
-    public ITrackingRates TrackingRates { get { NeedConnected(); return new FakeTrackingRates([DriveRate.Sidereal, DriveRate.Lunar, DriveRate.Solar]); } }
+    private static readonly DriveRate[] SupportedRates = [DriveRate.Sidereal, DriveRate.Lunar, DriveRate.Solar];
+
+    public ITrackingRates TrackingRates { get { NeedConnected(); return new FakeTrackingRates([.. SupportedRates]); } }
 
     public DateTime UTCDate
     {
@@ -465,7 +525,11 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         NeedSyncSlews("SlewToCoordinates");
         Slew(rightAscension, declination, false);
     }
-    public void SlewToCoordinatesAsync(double rightAscension, double declination) => Slew(rightAscension, declination, true);
+    public void SlewToCoordinatesAsync(double rightAscension, double declination)
+    {
+        Slew(rightAscension, declination, true);
+        if (Has(Defect.ServerDiesAtFirstSlew)) _dead = true;
+    }
 
     public void SlewToTarget()
     {
@@ -505,7 +569,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         CheckCanMove();
         if (_tracking) throw new ASCOM.InvalidOperationException("tracking");
         var (sra, sdec) = FromAltAz(altitude, azimuth);
-        SetPos(sra, sdec);
+        if (!Has(Defect.SyncToAltAzIgnored)) SetPos(sra, sdec);
     }
 
     public void SyncToCoordinates(double rightAscension, double declination)
@@ -514,8 +578,8 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         CheckRaDec(rightAscension, declination);
         CheckCanMove();
         if (!_tracking) throw new ASCOM.InvalidOperationException("not tracking");
-        SetPos(rightAscension, declination);
-        (_targetRa, _targetDec) = (rightAscension, declination);
+        if (!Has(Defect.SyncIgnored)) SetPos(rightAscension, declination);
+        if (!Has(Defect.SyncDoesntSetTargets)) (_targetRa, _targetDec) = (rightAscension, declination);
     }
 
     public void SyncToTarget()

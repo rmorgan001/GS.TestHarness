@@ -78,6 +78,34 @@ public static class AscomError
         }
     }
 
+    // COM: the driver's server program has gone (RPC_S_SERVER_UNAVAILABLE, RPC_S_CALL_FAILED, RPC_S_CALL_FAILED_DNE,
+    // RPC_E_DISCONNECTED, RPC_E_SERVER_DIED, RPC_E_SERVER_DIED_DNE, CO_E_OBJNOTCONNECTED).
+    private static readonly HashSet<int> LostHResults =
+    [
+        unchecked((int)0x800706BA), unchecked((int)0x800706BE), unchecked((int)0x800706BF), unchecked((int)0x80010108),
+        unchecked((int)0x80010007), unchecked((int)0x80010012), unchecked((int)0x800401FD)
+    ];
+
+    /// <summary>
+    /// Whether <paramref name="ex"/> says the device can't be reached at all (its COM server died, or the Alpaca
+    /// server refused or dropped the connection), rather than that one call failed. Looks through inner exceptions,
+    /// since the ASCOM clients wrap the transport's error.
+    /// </summary>
+    public static bool IsConnectionLost(Exception? ex)
+    {
+        for (var e = Unwrap(ex); e is not null; e = e.InnerException)
+        {
+            if (e is InvalidComObjectException or System.Net.Sockets.SocketException or HttpRequestException) return true;
+            if (LostHResults.Contains(e.HResult)) return true;
+            if (e.Message.Contains("No connection could be made", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("actively refused", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("forcibly closed", StringComparison.OrdinalIgnoreCase)
+                || e.Message.Contains("RPC server is unavailable", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>The kind for an ASCOM error number (0x400-0xFFF, or the COM HRESULT 0x80040400-0x80040FFF).</summary>
     public static (AscomErrorKind Kind, int? Code) FromCode(int code)
     {

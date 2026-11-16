@@ -1,0 +1,109 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/reports/{Id}/print"
+@layout BareLayout
+@inject ReportStore Store
+
+@* The report laid out for paper: every problem with all its details (not folded away as on the Report page), then
+   everything else as a table. The browser's Print / Save as PDF makes the PDF; no PDF library is needed. *@
+
+<PageTitle>@(_report?.Label ?? "Report") · GS Test Harness</PageTitle>
+
+<div class="print-page">
+    @if (_missing)
+    {
+        <p>There's no report @Id.</p>
+    }
+    else if (_report is { } r)
+    {
+        <div class="print-actions">
+            @* A plain onclick, not Blazor's: it runs in the browser even before the circuit connects. *@
+            <button class="btn primary" onclick="window.print()"><Icon Kind="Download" Size="16" /> Print or save as PDF</button>
+            <a class="btn" href="reports/@r.Id">Back to the report</a>
+        </div>
+
+        <h1>ASCOM compliance: @r.Label</h1>
+        <table class="print-facts">
+            <tr><th>Target</th><td>@r.Target.Display (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</td></tr>
+            <tr><th>Site</th><td>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</td></tr>
+            <tr><th>Device</th><td>@r.Identity.Name — @r.Identity.Description</td></tr>
+            <tr><th>DriverInfo</th><td>@r.Identity.DriverInfo</td></tr>
+            <tr><th>DriverVersion</th><td>@r.Identity.DriverVersion (InterfaceVersion @r.Identity.InterfaceVersion)</td></tr>
+            <tr><th>Run</th><td>@r.Started.ToString("yyyy-MM-dd HH:mm"), @((r.Finished - r.Started)?.TotalSeconds.ToString("0")) s@(r.Cancelled ? ", stopped early" : "")@(r.CommunicationLost ? ", stopped: communication with the device was lost" : ""); GS Test Harness @r.HarnessVersion</td></tr>
+            <tr><th>Options</th><td>motion @OnOff(r.Options.AllowMotion), settings writes @OnOff(r.Options.AllowSettingsWrites), SetPark @OnOff(r.Options.AllowSetPark), protocol @OnOff(r.Options.IncludeProtocol), extended @OnOff(r.Options.Extended)</td></tr>
+        </table>
+        <p class="print-summary">
+            <b>@r.Count(Outcome.Fail) failed, @r.Count(Outcome.Error) errors, @r.Count(Outcome.Warning) warnings</b>;
+            @r.Count(Outcome.Pass) passed, @r.Count(Outcome.Info) info, @r.Count(Outcome.Skipped) skipped.
+        </p>
+
+        @foreach (var (outcome, title) in new[] { (Outcome.Fail, "Failures"), (Outcome.Error, "Errors"), (Outcome.Warning, "Warnings") })
+        {
+            var items = r.Results.Where(x => x.Outcome == outcome).ToList();
+            if (items.Count == 0) continue;
+            <h2>@title (@items.Count)</h2>
+            @foreach (var x in items)
+            {
+                <section class="print-finding">
+                    <h3>@x.Member: @x.Message</h3>
+                    <div class="mono">@x.Id</div>
+                    <dl>
+                        @if (x.Expected is not null) { <dt>Expected</dt><dd>@x.Expected</dd> }
+                        @if (x.Actual is not null) { <dt>Actual</dt><dd>@x.Actual.Split('\n')[0]</dd> }
+                        @if (x.Fix is not null) { <dt>Fix</dt><dd>@x.Fix</dd> }
+                        @if (x.Source is not null) { <dt>Where</dt><dd class="mono">@x.Source</dd> }
+                        @if (x.Reference is not null) { <dt>Reference</dt><dd>@x.Reference</dd> }
+                    </dl>
+                </section>
+            }
+        }
+
+        var other = r.Results.Where(x => !x.IsProblem).ToList();
+        @if (other.Count > 0)
+        {
+            <h2>Everything else (@other.Count)</h2>
+            <table class="print-table">
+                <thead><tr><th>Outcome</th><th>Check</th><th>Result</th></tr></thead>
+                <tbody>
+                    @foreach (var x in other)
+                    {
+                        <tr><td>@x.Outcome</td><td class="mono">@x.Id</td><td>@x.Message</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+    else
+    {
+        <p>Loading…</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+    private RunReport? _report;
+    private bool _missing;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try { _report = await Store.LoadAsync(Id); }
+        catch (ArgumentException) { _report = null; }
+        _missing = _report is null;
+    }
+
+    private static string OnOff(bool on) => on ? "on" : "off";
+}

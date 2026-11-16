@@ -10,7 +10,8 @@ A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server i
   transaction IDs, the JSON reply shape, error numbers versus HTTP 400, parameter casing and UDP discovery.
 
 Every run is saved. The Compare tab shows a server's latest run at each site side by side, check by check: what
-differs between sites, what fails at every site, and what some sites didn't check.
+differs between sites, what fails at every site, and what some sites didn't check. Its Versions view compares two runs
+of the same server, by default the newest against the last different DriverVersion: what was fixed, what regressed.
 
 ## What gets checked
 
@@ -41,6 +42,12 @@ puts them side by side.
 **Motion is off by default.** Turn it on only for a simulator, or for a real mount that is clear to move.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
 
+**The Tests tab** lists every check: its objective, how it's tested, how the result is verified, and the ASCOM
+documentation or ConformU code it's based on.
+
+**If the device stops answering** part way (a COM server crash, an Alpaca server gone), the run stops with one
+`CommunicationLost` error and keeps what it found so far.
+
 ## Running it
 
 ```
@@ -70,7 +77,7 @@ repository, so `GSServer` and `GreenSwampAlpaca` cloned next to it are found aut
 file and line, such as `GS.Ascom.SkyTelescope/Telescope.cs:1265`.
 
 Reports are saved to `Documents\GS.TestHarness\Reports` (setting `ReportsFolder`), as JSON, and can be downloaded
-as Markdown, ready to paste into an issue.
+as Markdown (ready to paste into an issue), JSON or CSV, or printed / saved as PDF from the browser.
 
 ## Tests
 

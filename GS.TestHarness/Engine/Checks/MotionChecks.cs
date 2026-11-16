@@ -535,15 +535,27 @@ public sealed class MotionChecks : ICheckGroup
         if (pos is null) return;
         var (ra, dec) = pos.Value;
 
-        // Sync to where the mount already is: a valid sync that changes the pointing model as little as possible.
-        var sync = await ctx.TryAsync(t => t.SyncToCoordinates(ra, dec));
-        await CheckPositionAfterSync(ctx, "SyncToCoordinates", sync, ra, dec);
-
-        var target = await ctx.TryAsync(t => { t.TargetRightAscension = ra; t.TargetDeclination = dec; });
-        if (target.Ok)
+        // As ConformU: sync to a position a degree away (so a sync that does nothing shows), check the position and
+        // the targets, then sync back by the same amount so the pointing model is left as it was.
+        var (syncRa, syncDec) = SyncOffset(ra, dec);
+        var sync = await ctx.TryAsync(t => t.SyncToCoordinates(syncRa, syncDec));
+        await CheckPositionAfterSync(ctx, "SyncToCoordinates", sync, syncRa, syncDec, ra, dec);
+        if (sync.Ok)
         {
-            var toTarget = await ctx.TryAsync(t => t.SyncToTarget());
-            await CheckPositionAfterSync(ctx, "SyncToTarget", toTarget, ra, dec);
+            await CheckTargetsAfterSync(ctx, "SyncToCoordinates", syncRa, syncDec);
+            await UndoSyncAsync(ctx, "SyncToCoordinates", ra - syncRa, dec - syncDec);
+        }
+
+        if (await PositionAsync(ctx) is { } here)
+        {
+            var (targetRa, targetDec) = SyncOffset(here.Ra, here.Dec);
+            var target = await ctx.TryAsync(t => { t.TargetRightAscension = targetRa; t.TargetDeclination = targetDec; });
+            if (target.Ok)
+            {
+                var toTarget = await ctx.TryAsync(t => t.SyncToTarget());
+                await CheckPositionAfterSync(ctx, "SyncToTarget", toTarget, targetRa, targetDec, here.Ra, here.Dec);
+                if (toTarget.Ok) await UndoSyncAsync(ctx, "SyncToTarget", here.Ra - targetRa, here.Dec - targetDec);
+            }
         }
 
         await ctx.ExpectErrorAsync("SyncToCoordinates.InvalidRa", "SyncToCoordinates", "SyncToCoordinates(25, dec)",
@@ -555,22 +567,58 @@ public sealed class MotionChecks : ICheckGroup
         // ConformU doesn't test it.
     }
 
-    private static async Task CheckPositionAfterSync(CheckContext ctx, string member, Call<bool> sync, double ra, double dec)
+    /// <summary>How far a sync check tells the mount it is out (ConformU's SYNC_SIMULATED_ERROR), in degrees.</summary>
+    private const double SyncError = 1.0;
+
+    /// <summary>A position <see cref="SyncError"/> west and south of (<paramref name="ra"/>, <paramref name="dec"/>), clear of the poles.</summary>
+    private static (double Ra, double Dec) SyncOffset(double ra, double dec)
+        => (Values.Wrap24(ra - SyncError / 15), dec - SyncError < -89 ? dec + SyncError : dec - SyncError);
+
+    private static async Task CheckPositionAfterSync(CheckContext ctx, string member, Call<bool> sync, double ra, double dec,
+        double beforeRa, double beforeDec)
     {
         if (!sync.Ok)
         {
             ctx.Report(member, member, Outcome.Fail, $"{member} raised an error.", actual: sync.ErrorText, ms: sync.Ms,
-                fix: $"CanSync is true, so {member} to the mount's own position must work.");
+                fix: $"CanSync is true, so {member} to a position a degree from where the mount points must work.");
             return;
         }
         var after = await PositionAsync(ctx);
         if (after is null) return;
         var sep = Values.Separation(after.Value.Ra, after.Value.Dec, ra, dec);
-        ctx.Report(member, member, sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass,
-            $"{member}: position afterwards is {sep * 3600:0.0}\" from the sync coordinates.",
+        // Still reading (about) the position before the sync: the sync was ignored.
+        var ignored = sep > PositionOk && Values.Separation(after.Value.Ra, after.Value.Dec, beforeRa, beforeDec) < sep;
+        ctx.Report(member, member, ignored || sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass,
+            ignored ? $"{member} didn't change the position: it still reads where the mount was before the sync."
+                : $"{member}: position afterwards is {sep * 3600:0.0}\" from the sync coordinates.",
             expected: $"RA {CheckContext.Show(ra)} h, Dec {CheckContext.Show(dec)}°",
             actual: $"RA {CheckContext.Show(after.Value.Ra)} h, Dec {CheckContext.Show(after.Value.Dec)}°", ms: sync.Ms,
-            fix: $"After {member}, RightAscension and Declination must read the coordinates synced to.");
+            fix: $"After {member}, RightAscension and Declination must read the coordinates synced to: the sync tells the " +
+                 "mount where it really points, so the position (or the pointing model's offset) must change to match.");
+    }
+
+    /// <summary>As ConformU: a sync sets the targets to the coordinates synced to.</summary>
+    private static async Task CheckTargetsAfterSync(CheckContext ctx, string member, double ra, double dec)
+    {
+        var tra = await ctx.TryAsync(t => t.TargetRightAscension);
+        var tdec = await ctx.TryAsync(t => t.TargetDeclination);
+        var ok = tra.Ok && tdec.Ok && Math.Abs(Values.HoursDiff(tra.Value, ra)) * 15 * 3600 <= 10 && Math.Abs(tdec.Value - dec) * 3600 <= 10;
+        ctx.Report($"{member}.Targets", member, ok ? Outcome.Pass : Outcome.Fail,
+            ok ? $"After {member}, the targets are the coordinates synced to." : $"After {member}, the targets aren't the coordinates synced to.",
+            expected: $"{CheckContext.Show(ra)} h, {CheckContext.Show(dec)}°",
+            actual: !tra.Ok ? tra.ErrorText : !tdec.Ok ? tdec.ErrorText : $"{CheckContext.Show(tra.Value)} h, {CheckContext.Show(tdec.Value)}°",
+            fix: $"{member} must set TargetRightAscension and TargetDeclination to the coordinates given (ConformU reports this as an issue).");
+    }
+
+    /// <summary>Syncs back by the opposite of the test sync, so the mount's pointing is as it was before it.</summary>
+    private static async Task UndoSyncAsync(CheckContext ctx, string member, double dRa, double dDec)
+    {
+        if (await PositionAsync(ctx) is not { } now) return;
+        var undo = await ctx.TryAsync(t => t.SyncToCoordinates(Values.Wrap24(now.Ra + dRa), Math.Clamp(now.Dec + dDec, -90, 90)));
+        if (!undo.Ok)
+            ctx.Report($"{member}.Restore", "SyncToCoordinates", Outcome.Error,
+                $"Couldn't sync back after the {member} check: the mount's pointing may be {SyncError}° out.", actual: undo.ErrorText,
+                fix: "Sync the mount on a known star (or restart the simulator) before using it.");
     }
 
     // ---------- Alt/az ----------
@@ -629,10 +677,36 @@ public sealed class MotionChecks : ICheckGroup
                 var here = await AltAzPositionAsync(ctx);
                 if (here is { } h)
                 {
-                    var sync = await ctx.TryAsync(t => t.SyncToAltAz(h.Az, h.Alt));
-                    ctx.Report("SyncToAltAz", "SyncToAltAz", sync.Ok ? Outcome.Pass : Outcome.Fail,
-                        sync.Ok ? "SyncToAltAz to the mount's own position worked." : "SyncToAltAz raised an error.",
-                        actual: sync.ErrorText, ms: sync.Ms, fix: "CanSyncAltAz is true, so SyncToAltAz (with tracking off) must work.");
+                    // As ConformU: sync a degree off in altitude and azimuth, check Altitude/Azimuth read it, then sync back.
+                    var (syncAlt, syncAz) = (h.Alt > 80 ? h.Alt - SyncError : h.Alt + SyncError, (h.Az + SyncError) % 360);
+                    var sync = await ctx.TryAsync(t => t.SyncToAltAz(syncAz, syncAlt));
+                    if (!sync.Ok)
+                    {
+                        ctx.Report("SyncToAltAz", "SyncToAltAz", Outcome.Fail, "SyncToAltAz raised an error.",
+                            actual: sync.ErrorText, ms: sync.Ms, fix: "CanSyncAltAz is true, so SyncToAltAz (with tracking off) must work.");
+                    }
+                    else if (await AltAzPositionAsync(ctx) is { } after)
+                    {
+                        var sep = Values.AltAzSeparation(after.Alt, after.Az, syncAlt, syncAz);
+                        var ignored = sep > PositionOk && Values.AltAzSeparation(after.Alt, after.Az, h.Alt, h.Az) < sep;
+                        ctx.Report("SyncToAltAz", "SyncToAltAz", ignored || sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass,
+                            ignored ? "SyncToAltAz didn't change the position: Altitude/Azimuth still read where the mount was."
+                                : $"SyncToAltAz: Altitude/Azimuth afterwards are {sep * 3600:0.0}\" from the sync coordinates.",
+                            expected: $"alt {CheckContext.Show(syncAlt)}°, az {CheckContext.Show(syncAz)}°",
+                            actual: $"alt {CheckContext.Show(after.Alt)}°, az {CheckContext.Show(after.Az)}°", ms: sync.Ms,
+                            fix: "After SyncToAltAz, Altitude and Azimuth must read the coordinates synced to (the parameters are " +
+                                 "azimuth, then altitude).");
+                        var undo = await ctx.TryAsync(t => t.SyncToAltAz(
+                            ((after.Az + h.Az - syncAz) % 360 + 360) % 360, Math.Clamp(after.Alt + h.Alt - syncAlt, -90, 90)));
+                        if (!undo.Ok)
+                            ctx.Report("SyncToAltAz.Restore", "SyncToAltAz", Outcome.Error,
+                                $"Couldn't sync back after the SyncToAltAz check: the mount's pointing may be {SyncError}° out.",
+                                actual: undo.ErrorText, fix: "Sync the mount on a known star (or restart the simulator) before using it.");
+                    }
+                    else
+                    {
+                        ctx.Report("SyncToAltAz", "SyncToAltAz", Outcome.Pass, "SyncToAltAz worked (Altitude/Azimuth can't be read, so the position wasn't checked).", ms: sync.Ms);
+                    }
                     await ctx.ExpectErrorAsync("SyncToAltAz.InvalidAlt", "SyncToAltAz", "SyncToAltAz(az, 100)",
                         t => t.SyncToAltAz(h.Az, 100), AscomErrorKind.InvalidValue, "an altitude of 100 degrees is invalid");
                 }
@@ -916,44 +990,137 @@ public sealed class MotionChecks : ICheckGroup
         await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
         try
         {
-            foreach (var (member, can, set, get, value) in new (string, bool, Action<ITelescopeV4, double>, Func<ITelescopeV4, double>, double)[]
-                     {
-                         ("RightAscensionRate", c.CanSetRightAscensionRate, (t, v) => t.RightAscensionRate = v, t => t.RightAscensionRate, 0.05),
-                         ("DeclinationRate", c.CanSetDeclinationRate, (t, v) => t.DeclinationRate = v, t => t.DeclinationRate, 0.5)
-                     })
-            {
-                if (!can) continue;
-                var write = await ctx.TryAsync(t => set(t, value));
-                var read = write.Ok ? await ctx.TryAsync(get) : null;
-                await ctx.TryAsync(t => set(t, 0));
-                var ok = write.Ok && read is { Ok: true } && Math.Abs(read.Value - value) < 1e-6;
-                ctx.Report($"{member}.Offset", member, ok ? Outcome.Pass : Outcome.Fail,
-                    ok ? $"{member} set to {value} and read back (then put back to 0)." : $"{member} = {value} didn't read back.",
-                    expected: CheckContext.Show(value), actual: !write.Ok ? write.ErrorText : read!.Ok ? CheckContext.Show(read.Value) : read.ErrorText,
-                    ms: write.Ms, fix: $"With TrackingRate driveSidereal, {member} must accept an offset and read it back unchanged " +
-                                       "(RightAscensionRate is in seconds of RA per sidereal second, DeclinationRate in arc-seconds per SI second).");
-            }
+            foreach (var o in Offsets(c))
+                await OffsetWritesAsync(ctx, o);
         }
         finally
         {
+            foreach (var o in Offsets(c)) await ctx.TryAsync(t => o.Set(t, 0));
             if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
         }
 
-        // Rate offsets only apply at sidereal rate: at any other rate, writing one is an invalid operation.
-        var other = (ctx.Facts.GetValueOrDefault("TrackingRates") as List<DriveRate>)?.FirstOrDefault(r => r != DriveRate.Sidereal);
-        if (other is { } rate && rate != DriveRate.Sidereal && c.CanSetRightAscensionRate && (await ctx.TryAsync(t => t.TrackingRate = rate)).Ok)
+        // Rate offsets only apply at sidereal rate, at every other rate the mount lists.
+        var others = (ctx.Facts.GetValueOrDefault("TrackingRates") as List<DriveRate>)?.Where(r => r != DriveRate.Sidereal).ToList() ?? [];
+        foreach (var rate in others)
         {
             try
             {
-                var r = await ctx.ExpectErrorAsync("RightAscensionRate.NotSidereal", "RightAscensionRate",
-                    $"RightAscensionRate = 0.05 with TrackingRate {rate}", t => t.RightAscensionRate = 0.05,
-                    AscomErrorKind.InvalidOperation, "TrackingRate isn't driveSidereal", property: true);
-                if (r.Ok) await ctx.TryAsync(t => t.RightAscensionRate = 0);
+                await OffsetsAtOtherRateAsync(ctx, rate);
             }
             finally
             {
+                await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
+                foreach (var o in Offsets(c)) await ctx.TryAsync(t => o.Set(t, 0));
                 if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
             }
+        }
+    }
+
+    /// <summary>A rate offset property, and the test values for it (ConformU's 0.05 and 40 arc-seconds per second, each way).</summary>
+    private sealed record RateOffset(string Member, string Capability, Func<ITelescopeV4, double> Get, Action<ITelescopeV4, double> Set,
+        double Low, double High, string Unit);
+
+    /// <summary>The rate offsets the mount says can be set. RightAscensionRate is in seconds of RA per sidereal second.</summary>
+    private static IEnumerable<RateOffset> Offsets(Capabilities c)
+    {
+        if (c.CanSetRightAscensionRate)
+            yield return new RateOffset("RightAscensionRate", "CanSetRightAscensionRate", t => t.RightAscensionRate, (t, v) => t.RightAscensionRate = v,
+                0.05 / 15, 40.0 / 15, "s of RA per sidereal second");
+        if (c.CanSetDeclinationRate)
+            yield return new RateOffset("DeclinationRate", "CanSetDeclinationRate", t => t.DeclinationRate, (t, v) => t.DeclinationRate = v,
+                0.05, 40.0, "arc-seconds per second");
+    }
+
+    /// <summary>
+    /// As ConformU: with TrackingRate driveSidereal, each offset (small and large, both signs) is accepted and read back,
+    /// and Slewing stays false while it is applied. A large value may be refused (the mount's range isn't known).
+    /// </summary>
+    private static async Task OffsetWritesAsync(CheckContext ctx, RateOffset o)
+    {
+        var problems = new List<string>();
+        var refusedLarge = new List<string>();
+        var slewingAt = new List<string>();
+        var accepted = 0;
+        foreach (var value in new[] { o.Low, -o.Low, o.High, -o.High })
+        {
+            var write = await ctx.TryAsync(t => o.Set(t, value));
+            if (!write.Ok)
+            {
+                if (Math.Abs(value) == o.High && write.Kind is AscomErrorKind.InvalidValue or AscomErrorKind.InvalidOperation)
+                    refusedLarge.Add(CheckContext.Show(value));
+                else
+                    problems.Add($"{CheckContext.Show(value)} was refused ({write.ErrorText})");
+                continue;
+            }
+            accepted++;
+            await Task.Delay(1000, ctx.Token); // as ConformU: let the mount settle at the new rate
+            var read = await ctx.TryAsync(o.Get);
+            if (!read.Ok) problems.Add($"reading back {CheckContext.Show(value)} failed ({read.ErrorText})");
+            else if (Math.Abs(read.Value - value) > 1e-6) problems.Add($"{CheckContext.Show(value)} read back as {CheckContext.Show(read.Value)}");
+            if ((await ctx.TryAsync(t => t.Slewing)) is { Ok: true, Value: true }) slewingAt.Add(CheckContext.Show(value));
+        }
+        await ctx.TryAsync(t => o.Set(t, 0));
+
+        var note = refusedLarge.Count > 0 ? $" {string.Join(" and ", refusedLarge)} refused (allowed: may be beyond the mount's range)." : "";
+        ctx.Report($"{o.Member}.Offset", o.Member, problems.Count == 0 ? Outcome.Pass : Outcome.Fail,
+            problems.Count == 0 ? $"{o.Member} accepted ±{CheckContext.Show(o.Low)} and read each back.{note}"
+                : $"{o.Member}: {string.Join("; ", problems)}.",
+            expected: $"±{CheckContext.Show(o.Low)} and ±{CheckContext.Show(o.High)} {o.Unit} read back unchanged",
+            fix: $"With TrackingRate driveSidereal, {o.Member} must accept an offset of either sign and read it back unchanged " +
+                 "(RightAscensionRate is in seconds of RA per sidereal second, DeclinationRate in arc-seconds per SI second). A negative " +
+                 "offset moves the other way; it isn't invalid.");
+        if (accepted > 0)
+            ctx.Report($"{o.Member}.Offset.Slewing", "Slewing", slewingAt.Count == 0 ? Outcome.Pass : Outcome.Fail,
+                slewingAt.Count == 0 ? $"Slewing stayed false with a {o.Member} offset applied."
+                    : $"Slewing is true while {o.Member} = {string.Join(", ", slewingAt)}.",
+                expected: "Slewing false", actual: slewingAt.Count == 0 ? "false" : "true",
+                fix: $"A {o.Member} offset is tracking, not slewing: Slewing must stay false while it is applied (ConformU " +
+                     "reports this as an issue), or clients wait forever for the mount to settle.", sourceMember: "Slewing");
+    }
+
+    /// <summary>
+    /// "Reading this property must return a value of zero if TrackingRate is not driveSidereal", and writing one is an
+    /// invalid operation. An offset is set at sidereal rate first, so a mount that just keeps it shows.
+    /// </summary>
+    private static async Task OffsetsAtOtherRateAsync(CheckContext ctx, DriveRate rate)
+    {
+        var c = ctx.Caps;
+        foreach (var o in Offsets(c)) await ctx.TryAsync(t => o.Set(t, o.Low));
+        var switched = await ctx.TryAsync(t => t.TrackingRate = rate);
+        if (!switched.Ok)
+        {
+            // Not a failure of the offsets (Settings checks TrackingRate itself), but say why they weren't checked here.
+            foreach (var member in new[] { "RightAscensionRate", "DeclinationRate" })
+                ctx.Report($"{member}.ZeroAt{rate}", member, Outcome.Info,
+                    $"With an offset set, TrackingRate = {rate} was refused, so {member} at that rate wasn't checked.",
+                    actual: switched.ErrorText, ms: switched.Ms);
+            return;
+        }
+
+        foreach (var (member, get) in new (string, Func<ITelescopeV4, double>)[]
+                 { ("RightAscensionRate", t => t.RightAscensionRate), ("DeclinationRate", t => t.DeclinationRate) })
+        {
+            var read = await ctx.TryAsync(get);
+            var outcome = read.Ok ? (read.Value == 0 ? Outcome.Pass : Outcome.Fail)
+                : read.Kind == AscomErrorKind.InvalidOperation ? Outcome.Warning : Outcome.Fail;
+            ctx.Report($"{member}.ZeroAt{rate}", member, outcome,
+                outcome == Outcome.Pass ? $"{member} reads 0 with TrackingRate {rate}."
+                    : read.Ok ? $"{member} reads {CheckContext.Show(read.Value)} with TrackingRate {rate}."
+                    : $"Reading {member} with TrackingRate {rate} raised an error.",
+                expected: "0", actual: read.Ok ? CheckContext.Show(read.Value) : read.ErrorText, ms: read.Ms,
+                fix: read.Kind == AscomErrorKind.InvalidOperation
+                    ? $"The ITelescopeV4 notes say \"Reading this property must return a value of zero if TrackingRate is not " +
+                      $"driveSidereal\" (its exception list also names InvalidOperationException, but clients and ConformU expect 0). Return 0."
+                    : $"{member} must read 0 while TrackingRate isn't driveSidereal: offsets only apply at sidereal rate, so " +
+                      "report 0 (and stop applying any offset set earlier) when the rate changes.");
+        }
+
+        foreach (var o in Offsets(c))
+        {
+            var r = await ctx.ExpectErrorAsync($"{o.Member}.NotSidereal{rate}", o.Member,
+                $"{o.Member} = {CheckContext.Show(o.Low)} with TrackingRate {rate}", t => o.Set(t, o.Low),
+                AscomErrorKind.InvalidOperation, $"TrackingRate is {rate}, not driveSidereal", property: true);
+            if (r.Ok) await ctx.TryAsync(t => o.Set(t, 0));
         }
     }
 

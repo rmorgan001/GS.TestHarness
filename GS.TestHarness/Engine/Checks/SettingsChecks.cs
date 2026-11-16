@@ -204,8 +204,23 @@ public sealed class SettingsChecks : ICheckGroup
                 expected: rate.ToString(), actual: set.Ok ? read?.Ok == true ? read.Value.ToString() : read?.ErrorText : set.ErrorText,
                 ms: set.Ms, fix: "Every rate in TrackingRates must be accepted by TrackingRate and then read back.");
         }
-        await ctx.ExpectErrorAsync("TrackingRate.Invalid", "TrackingRate", "TrackingRate = 99", t => t.TrackingRate = (DriveRate)99,
-            AscomErrorKind.InvalidValue, "99 isn't a DriveRate", property: true);
+        // "InvalidValueException If the value being written is not one of the DriveRates or if the requested rate is not
+        // supported by the mount": ConformU's -1 and 5, and every DriveRate missing from TrackingRates.
+        foreach (var (id, bad) in new[] { ("TrackingRate.InvalidLow", -1), ("TrackingRate.InvalidHigh", 5) })
+        {
+            var r = await ctx.ExpectErrorAsync(id, "TrackingRate", $"TrackingRate = {bad}", t => t.TrackingRate = (DriveRate)bad,
+                AscomErrorKind.InvalidValue, $"{bad} isn't a DriveRate", property: true);
+            if (r.Ok) await ctx.TryAsync(t => t.TrackingRate = original);
+        }
+        // Only when TrackingRates was read: otherwise which rates are supported isn't known.
+        var listed = ctx.Facts.GetValueOrDefault("TrackingRates") as List<DriveRate>;
+        foreach (var unsupported in listed is null ? Enumerable.Empty<DriveRate>() : Enum.GetValues<DriveRate>().Where(r => !listed.Contains(r)))
+        {
+            var r = await ctx.ExpectErrorAsync($"TrackingRate.Unsupported{unsupported}", "TrackingRate",
+                $"TrackingRate = {unsupported} (not in TrackingRates)", t => t.TrackingRate = unsupported,
+                AscomErrorKind.InvalidValue, $"{unsupported} isn't one of the rates TrackingRates lists", property: true);
+            if (r.Ok) await ctx.TryAsync(t => t.TrackingRate = original);
+        }
         await ctx.TryAsync(t => t.TrackingRate = original);
     }
 

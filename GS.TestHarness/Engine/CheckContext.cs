@@ -17,6 +17,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using ASCOM.Common.DeviceInterfaces;
+using GS.TestHarness.Engine.Checks;
 
 namespace GS.TestHarness.Engine;
 
@@ -94,19 +95,68 @@ public sealed class CheckContext(
     public TimeSpan CallTimeout => TimeSpan.FromSeconds(Options.CallTimeoutSeconds);
     public TimeSpan SlewTimeout => TimeSpan.FromSeconds(Options.SlewTimeoutSeconds);
 
-    /// <summary>Calls the mount, catching whatever it raises.</summary>
+    /// <summary>
+    /// Whether to stop the run when the device can no longer be reached (set once it has connected: before that
+    /// the Connection checks report an unreachable device themselves).
+    /// </summary>
+    public bool WatchForLostConnection { get; set; }
+
+    /// <summary>Why the device was found to be unreachable, once it has been; every later call then throws.</summary>
+    public CommunicationLostException? Lost { get; private set; }
+
+    /// <summary>Timeouts in a row: one slow call isn't a lost device, several are worth a look.</summary>
+    private int _timeoutsInARow;
+
+    private const int TimeoutsBeforeProbe = 3;
+
+    /// <summary>
+    /// Calls the mount, catching whatever it raises. When the device has gone (its COM server died, the Alpaca
+    /// server stopped answering), throws <see cref="CommunicationLostException"/> so the run stops with one clear
+    /// finding instead of every remaining check failing on its own.
+    /// </summary>
     public async Task<Call<T>> TryAsync<T>(Func<ITelescopeV4, T> call, TimeSpan? timeout = null)
     {
         Token.ThrowIfCancellationRequested();
+        if (Lost is not null) throw Lost;
         var watch = Stopwatch.StartNew();
         try
         {
             var value = await Session.RunAsync(call, timeout ?? CallTimeout);
+            _timeoutsInARow = 0;
             return new Call<T>(value, null, watch.Elapsed.TotalMilliseconds);
         }
         catch (Exception ex)
         {
-            return new Call<T>(default, AscomError.Unwrap(ex), watch.Elapsed.TotalMilliseconds);
+            var error = AscomError.Unwrap(ex);
+            var result = new Call<T>(default, error, watch.Elapsed.TotalMilliseconds);
+            var timedOut = error is TimeoutException;
+            _timeoutsInARow = timedOut ? _timeoutsInARow + 1 : 0;
+            if (WatchForLostConnection && (AscomError.IsConnectionLost(error) || _timeoutsInARow >= TimeoutsBeforeProbe)
+                && await ProbeAsync() is { } probeError)
+            {
+                Lost = new CommunicationLostException(Group,
+                    timedOut ? $"{_timeoutsInARow} calls in a row got no answer, and the device no longer answers at all."
+                        : "The device can no longer be reached.",
+                    $"Last call: {AscomError.Describe(error)}\nCheck call (Connected): {AscomError.Describe(probeError)}");
+                throw Lost;
+            }
+            return result;
+        }
+    }
+
+    /// <summary>Reads Connected with a short timeout: null if the device answered (whatever the value), else the error.</summary>
+    private async Task<Exception?> ProbeAsync()
+    {
+        try
+        {
+            await Session.RunAsync(t => t.Connected, TimeSpan.FromSeconds(Math.Min(10, Math.Max(3, Options.CallTimeoutSeconds))));
+            _timeoutsInARow = 0;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            var error = AscomError.Unwrap(ex);
+            return AscomError.IsConnectionLost(error) || error is TimeoutException ? error : null;
         }
     }
 
