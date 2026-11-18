@@ -100,6 +100,63 @@ public class ConformUTests(ITestOutputHelper output)
         Assert.True(plan.NeedsExtended);
     }
 
+    [Fact]
+    public async Task A_real_ConformU_debug_log_of_the_Alpaca_simulator_is_read()
+    {
+        // ConformU 4.6.0 against GreenSwampAlpaca's GS Simulator (GEM), debug logging on: 8 RightAscensionRate ISSUEs and
+        // 2 Connected ISSUEs (ConformU called Disconnect() and Connected still read True), each repeated in the summary.
+        var path = Path.Combine(AppContext.BaseDirectory, "TestFiles", "ASCOM.ConformU.0903.406570.txt");
+        using var reader = File.OpenText(path);
+        var log = await ConformULog.ParseAsync(Path.GetFileName(path), reader);
+
+        Assert.True(log.IsDebug);
+        Assert.Equal("4.6.0.56430", log.ConformUVersion);
+        Assert.Equal("GS Simulator (GEM)", log.DeviceName);
+        Assert.Equal(10, log.Count(ConformUSeverity.Issue));
+        Assert.Equal(["RightAscensionRate", "Connected"], log.Areas.Select(a => a.Member));
+        // The Connected problem is checked through the members that go with it.
+        Assert.Equal(["Connect", "Connected", "Connecting", "Disconnect", "RightAscensionRate"], log.Plan().Members.Order());
+    }
+
+    [Fact]
+    public async Task Connected_true_after_Disconnect_is_reproduced()
+    {
+        var log = await ConformULog.ParseAsync("conformu.txt", """
+            09:04:39.389 ASCOM Universal Device Conformance Checker Version 4.6.0.56430, Build time: Mon 26 October 2026 15:12:58
+            09:28:51.920 Disconnect                          DEBUG    Interface version: 4
+            09:28:51.931 Connected                           ISSUE    Exception when setting Connected to False: The device disconnected without error but Connected Get returned True.
+            """);
+        var plan = log.Plan();
+        var options = EngineTests.Everything with { AllowMotion = false, Groups = plan.Groups, Members = plan.Members, Extended = true };
+
+        var bad = await EngineTests.RunAsync(new FakeTelescope(Defect.ConnectedAfterDisconnect), options, conformU: log);
+        var disconnect = Assert.Single(bad.Results, r => r.Id == "Disconnected.Disconnect");
+        Assert.Equal(Outcome.Fail, disconnect.Outcome);
+        Assert.Contains("no other client held the device", disconnect.Message);
+        var verdict = Assert.Single(bad.Results, r => r.Id == "ConformU.Connected.Reproduced");
+        Assert.Contains("Disconnected.Disconnect", verdict.Actual);
+
+        var good = await EngineTests.RunAsync(new FakeTelescope(), options, conformU: log);
+        Assert.Equal(Outcome.Pass, Assert.Single(good.Results, r => r.Id == "Disconnected.Disconnect").Outcome);
+        // The Disconnect findings count toward the verdict now, not only the reads of Connected.
+        var notReproduced = Assert.Single(good.Results, r => r.Id == "ConformU.Connected.NotReproduced");
+        var counted = int.Parse(System.Text.RegularExpressions.Regex.Match(notReproduced.Message, @"harness's (\d+) checks").Groups[1].Value);
+        Assert.True(counted > 2, $"only {counted} checks counted: {notReproduced.Message}");
+    }
+
+    [Fact]
+    public async Task A_disconnected_client_must_read_Connected_false_while_another_is_connected()
+    {
+        var options = EngineTests.Everything with { AllowMotion = false, Extended = true, Groups = ["Connection", "Clients"] };
+        var shared = await EngineTests.RunAsync(new FakeTelescope(Defect.ConnectedSharedByClients), options);
+        var bad = Assert.Single(shared.Results, r => r.Id == "Clients.DisconnectedClient.Connected");
+        Assert.Equal(Outcome.Fail, bad.Outcome);
+        Assert.Contains("another client is still connected", bad.Message);
+
+        var own = await EngineTests.RunAsync(new FakeTelescope(), options);
+        Assert.Equal(Outcome.Pass, Assert.Single(own.Results, r => r.Id == "Clients.DisconnectedClient.Connected").Outcome);
+    }
+
     [Theory]
     [InlineData("CanMoveAxis:Primary", "", "CanMoveAxis", "Capabilities")]
     [InlineData("CanSlewAsync", "", "CanSlewAsync", "Capabilities")]

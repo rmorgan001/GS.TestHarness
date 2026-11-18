@@ -105,9 +105,10 @@ public sealed record ConformULog
         var groups = new HashSet<string>(ConformUMap.AlwaysRun);
         foreach (var a in Areas) groups.UnionWith(a.Groups);
         groups.Add("ConformU");
-        // In the runner's order, for display. The members: every problem area's (the runner's RunOptions.Members).
+        // In the runner's order, for display. The members: every problem area's, with the members that go with it
+        // (Connected with Connect, Disconnect and Connecting), as the runner's RunOptions.Members.
         return new ConformUPlan([.. ConformUMap.GroupOrder.Where(groups.Contains)],
-            [.. Areas.Select(a => a.Member).Distinct(StringComparer.OrdinalIgnoreCase)]);
+            [.. Areas.SelectMany(a => ConformUMap.Related(a.Member)).Distinct(StringComparer.OrdinalIgnoreCase)]);
     }
 
     // "10:31:25.441 SlewToCoordinatesAsync              ISSUE    Slewed 1.2 arc seconds away..."
@@ -213,6 +214,18 @@ public static class ConformUMap
 
     /// <summary>The topic for Alpaca protocol problems (ConformU's protocol tests).</summary>
     public const string Protocol = "AlpacaProtocol";
+
+    /// <summary>
+    /// Members that are one topic with another: a ConformU problem with one of them is checked through all of them
+    /// (its "Connected" problem is ConformU calling Disconnect() and reading Connected).
+    /// </summary>
+    private static readonly string[][] Topics = [["Connected", "Connect", "Disconnect", "Connecting"]];
+
+    /// <summary>The member and the members that go with it (just the member, for most).</summary>
+    public static IReadOnlyList<string> Related(string member)
+        => Topics.FirstOrDefault(t => t.Contains(member, StringComparer.OrdinalIgnoreCase)) is { } topic
+            ? [member, .. topic.Where(m => !m.Equals(member, StringComparison.OrdinalIgnoreCase))]
+            : [member];
 
     private static readonly Dictionary<string, string[]> Members = new(StringComparer.OrdinalIgnoreCase)
     {

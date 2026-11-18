@@ -67,6 +67,20 @@ public sealed class ClientsChecks : ICheckGroup
             await ConnectAsync(b);
             await ConnectAsync(c);
             await DisconnectAsync(b);
+            // B has disconnected while C still holds the device: B's own Connected must read false (ConformU reports
+            // "The device disconnected without error but Connected Get returned True" when it doesn't).
+            var own = await Try(() => b.RunAsync(t => t.Connected, Timeout));
+            ctx.Report("DisconnectedClient.Connected", "Connected", own is (false, null) ? Outcome.Pass : Outcome.Fail,
+                own is (false, null) ? "A client that disconnected reads Connected false, while another client is still connected."
+                    : own.Error is null ? "A client that disconnected still reads Connected true, because another client is still connected."
+                    : "Reading Connected on a client that disconnected raised an error.",
+                expected: "false for the client that disconnected",
+                actual: own.Error is null ? own.Value.ToString() : AscomError.Describe(own.Error),
+                fix: "Connected is each client's own state: after a client's Disconnect() has finished, its Connected must read false, " +
+                     "even while other clients keep the device connected. Keep a per-client connected flag and report that (the " +
+                     "hardware stays connected until the last client goes). ConformU reports this as \"The device disconnected " +
+                     "without error but Connected Get returned True\" whenever another client is connected during its run.",
+                sourceMember: "Connected", sourcePatterns: ["SetConnected", "clientKey"]);
             var connected = await Try(() => c.RunAsync(t => t.Connected, Timeout));
             var ra = await Try(() => c.RunAsync(t => t.RightAscension, Timeout));
             var ok = connected is (true, null) && ra.Error is null;
