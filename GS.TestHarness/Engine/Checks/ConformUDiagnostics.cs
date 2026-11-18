@@ -161,8 +161,20 @@ internal static class ConformUDiagnostics
             results.Add(await MeasureRateAsync(ctx, Offset(arcsec), seconds, ra));
 
         var ok = results.Where(r => r.Fitted is not null).ToList();
+        // Signed, but a value that rounds to zero is plain "0.0000" (not "-+0.0000").
+        string Signed(double v)
+        {
+            var (format, suffix) = ra ? ("0.0000", " s") : ("0.000", "\"");
+            var rounded = Math.Round(v, format.Length - 2);
+            return (rounded == 0 ? format : rounded.ToString("+" + format + ";-" + format, CultureInfo.InvariantCulture)) + suffix;
+        }
+        string Size(double v) => ra ? v.ToString("0.0000", CultureInfo.InvariantCulture) + " s" : v.ToString("0.000", CultureInfo.InvariantCulture) + "\"";
+        // Each offset: the fitted rate, ConformU's two-reading rate, and where those two readings sit against the line
+        // fitted through all of them, beside how far the readings in between wander from it.
         var actual = string.Join('\n', results.Select(r => $"{area.Member} = {Show(r.Value)} {unit}: " + (r.Fitted is { } f
-            ? $"fitted rate {f:0.000} × expected ({Pct(f)}), first-to-last reading as ConformU {r.TwoPoint:0.000} × ({Pct(r.TwoPoint!.Value)})"
+            ? $"fitted rate {f:0.000} × expected ({Pct(f)}), first-to-last reading as ConformU {r.TwoPoint:0.000} × ({Pct(r.TwoPoint!.Value)}); " +
+              $"first and last readings {Signed(r.FirstOff)} and {Signed(r.LastOff)} off the fitted line, the readings between within ±{Size(r.Wander)} " +
+              $"(RMS {Size(r.Scatter)})"
             : r.Note)));
         var smallMove = (ra ? SmallArcsec / 15 : SmallArcsec) * seconds;
         var spread = ra ? noise.RaSpreadSec : noise.DecSpreadArcsec;
@@ -208,7 +220,8 @@ internal static class ConformUDiagnostics
             // The small offset ConformU's way was off: by a stray reading at an end, or by the readings' general scatter.
             var worstSmall = ok.Where(r => Math.Abs(r.Value) == Offset(SmallArcsec)).MaxBy(r => Math.Abs(r.TwoPoint!.Value - 1))!;
             string Amount(double v) => ra ? $"{v:0.000} s" : $"{v:0.00}\"";
-            var stray = worstSmall.EndOff > Math.Max(3 * worstSmall.Scatter, 0.1 * smallMove);
+            // A stray reading stands well outside where the readings in between wander; within it, they're just coarse.
+            var stray = worstSmall.EndOff > Math.Max(Math.Max(2 * worstSmall.Wander, 3 * worstSmall.Scatter), 0.1 * smallMove);
             var rateRight = $"The rate is right (the 40\"/s offsets track within {fittedDev * 100:0.0}%, and ConformU's small one fitted over every " +
                             "reading is too), but measured as ConformU does, from one reading at each end, " +
                             $"{area.Member} = {Show(worstSmall.Value)} is off by {Math.Abs(worstSmall.TwoPoint!.Value - 1) * 100:0}%: ";
@@ -216,7 +229,8 @@ internal static class ConformUDiagnostics
                 rateRight + (stray
                     ? $"one of those two readings was {Amount(worstSmall.EndOff)} out of line with the readings around it (which scatter by only " +
                       $"{Amount(worstSmall.Scatter)}), against a movement of {moveText} in {seconds:0} s. A single stray reading, not the rate."
-                    : $"it moves only {moveText} in {seconds:0} s, and the readings scatter by {spreadText} with no offset at all."),
+                    : $"it moves only {moveText} in {seconds:0} s, while the readings wander up to ±{Amount(worstSmall.Wander)} about a steady " +
+                      $"line as it moves (and spread {spreadText} with no offset at all), so each of ConformU's two readings can be that far out."),
                 expected: conformU, actual: actual,
                 fix: Recommend(ctx, stray ? Cause.StrayReading : Cause.Resolution, smallMove, spread, ra), sourceMember: ra ? "RightAscension" : "Declination");
             return;
@@ -241,11 +255,16 @@ internal static class ConformUDiagnostics
     /// One offset's measurement, as ratios to the expected rate: fitted to readings every 100 ms (with the fit's standard
     /// error), and from the first and last reading only (as ConformU).
     /// </summary>
-    /// <param name="EndOff">How far the first or last reading (the ones ConformU uses) is from the fitted line, the larger
-    /// (seconds of RA, or arc-seconds).</param>
-    /// <param name="Scatter">The other readings' typical distance from the line (RMS, same units).</param>
+    /// <param name="FirstOff">The first reading's distance from the fitted line, signed (seconds of RA, or arc-seconds).</param>
+    /// <param name="LastOff">The last reading's, signed. With FirstOff, the two readings ConformU uses.</param>
+    /// <param name="Scatter">The readings in between: their typical distance from the line (RMS, same units).</param>
+    /// <param name="Wander">The readings in between: the furthest any is from the line (same units).</param>
     private sealed record Measured(double Value, double? Fitted, double? FittedError, double? TwoPoint, string Note,
-        double EndOff = 0, double Scatter = 0);
+        double FirstOff = 0, double LastOff = 0, double Scatter = 0, double Wander = 0)
+    {
+        /// <summary>The further of the two end readings from the line.</summary>
+        public double EndOff => Math.Max(Math.Abs(FirstOff), Math.Abs(LastOff));
+    }
 
     /// <summary>
     /// Sets the offset, lets it settle a second, then reads the position every 100 ms for <paramref name="seconds"/>.
@@ -283,11 +302,12 @@ internal static class ConformUDiagnostics
             var residuals = samples.Sum(s => Math.Pow(s.V - (mv + slope * (s.T - mt)), 2));
             var error = Math.Sqrt(residuals / (samples.Count - 2) / sxx);
             var twoPoint = (samples[^1].V - samples[0].V) / (samples[^1].T - samples[0].T);
-            double Off((double T, double V) x) => Math.Abs(x.V - (mv + slope * (x.T - mt)));
+            double Off((double T, double V) x) => x.V - (mv + slope * (x.T - mt));
             var inner = samples.Skip(1).SkipLast(1).ToList();
             var scatter = inner.Count > 0 ? Math.Sqrt(inner.Average(x => Off(x) * Off(x))) : 0;
+            var wander = inner.Count > 0 ? inner.Max(x => Math.Abs(Off(x))) : 0;
             return new Measured(value, slope / expected, error / Math.Abs(expected), twoPoint / expected, "",
-                Math.Max(Off(samples[0]), Off(samples[^1])), scatter);
+                Off(samples[0]), Off(samples[^1]), scatter, wander);
         }
         finally
         {
