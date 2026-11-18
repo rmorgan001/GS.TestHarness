@@ -205,13 +205,20 @@ internal static class ConformUDiagnostics
                     $"each way, over {seconds:0} s, and ConformU's way of measuring it came within 5% too.", expected: conformU, actual: actual);
                 return;
             }
+            // The small offset ConformU's way was off: by a stray reading at an end, or by the readings' general scatter.
+            var worstSmall = ok.Where(r => Math.Abs(r.Value) == Offset(SmallArcsec)).MaxBy(r => Math.Abs(r.TwoPoint!.Value - 1))!;
+            string Amount(double v) => ra ? $"{v:0.000} s" : $"{v:0.00}\"";
+            var stray = worstSmall.EndOff > Math.Max(3 * worstSmall.Scatter, 0.1 * smallMove);
+            var rateRight = $"The rate is right (the 40\"/s offsets track within {fittedDev * 100:0.0}%, and ConformU's small one fitted over every " +
+                            "reading is too), but measured as ConformU does, from one reading at each end, " +
+                            $"{area.Member} = {Show(worstSmall.Value)} is off by {Math.Abs(worstSmall.TwoPoint!.Value - 1) * 100:0}%: ";
             ctx.Report(id, area.Member, Outcome.Warning,
-                $"The rate is right (the 40\"/s offsets track within {fittedDev * 100:0.0}%, and ConformU's small one is within what the readings can " +
-                "tell), but measured as ConformU does, from one reading at each end, " +
-                $"ConformU's offset is off by up to {conformUDev * 100:0}%: it moves only {moveText} in {seconds:0} s, and the readings scatter by " +
-                $"{spreadText} with no offset at all.",
+                rateRight + (stray
+                    ? $"one of those two readings was {Amount(worstSmall.EndOff)} out of line with the readings around it (which scatter by only " +
+                      $"{Amount(worstSmall.Scatter)}), against a movement of {moveText} in {seconds:0} s. A single stray reading, not the rate."
+                    : $"it moves only {moveText} in {seconds:0} s, and the readings scatter by {spreadText} with no offset at all."),
                 expected: conformU, actual: actual,
-                fix: Recommend(ctx, Cause.Resolution, smallMove, spread, ra), sourceMember: ra ? "RightAscension" : "Declination");
+                fix: Recommend(ctx, stray ? Cause.StrayReading : Cause.Resolution, smallMove, spread, ra), sourceMember: ra ? "RightAscension" : "Declination");
             return;
         }
 
@@ -234,7 +241,11 @@ internal static class ConformUDiagnostics
     /// One offset's measurement, as ratios to the expected rate: fitted to readings every 100 ms (with the fit's standard
     /// error), and from the first and last reading only (as ConformU).
     /// </summary>
-    private sealed record Measured(double Value, double? Fitted, double? FittedError, double? TwoPoint, string Note);
+    /// <param name="EndOff">How far the first or last reading (the ones ConformU uses) is from the fitted line, the larger
+    /// (seconds of RA, or arc-seconds).</param>
+    /// <param name="Scatter">The other readings' typical distance from the line (RMS, same units).</param>
+    private sealed record Measured(double Value, double? Fitted, double? FittedError, double? TwoPoint, string Note,
+        double EndOff = 0, double Scatter = 0);
 
     /// <summary>
     /// Sets the offset, lets it settle a second, then reads the position every 100 ms for <paramref name="seconds"/>.
@@ -272,7 +283,11 @@ internal static class ConformUDiagnostics
             var residuals = samples.Sum(s => Math.Pow(s.V - (mv + slope * (s.T - mt)), 2));
             var error = Math.Sqrt(residuals / (samples.Count - 2) / sxx);
             var twoPoint = (samples[^1].V - samples[0].V) / (samples[^1].T - samples[0].T);
-            return new Measured(value, slope / expected, error / Math.Abs(expected), twoPoint / expected, "");
+            double Off((double T, double V) x) => Math.Abs(x.V - (mv + slope * (x.T - mt)));
+            var inner = samples.Skip(1).SkipLast(1).ToList();
+            var scatter = inner.Count > 0 ? Math.Sqrt(inner.Average(x => Off(x) * Off(x))) : 0;
+            return new Measured(value, slope / expected, error / Math.Abs(expected), twoPoint / expected, "",
+                Math.Max(Off(samples[0]), Off(samples[^1])), scatter);
         }
         finally
         {
@@ -398,7 +413,7 @@ internal static class ConformUDiagnostics
 
     // ---------- What each pattern points to ----------
 
-    private enum Cause { Resolution, Scale, Direction, Inconsistent, StalePosition, GuideRate, PulseTime }
+    private enum Cause { Resolution, StrayReading, Scale, Direction, Inconsistent, StalePosition, GuideRate, PulseTime }
 
     /// <summary>
     /// The recommendation for a pattern: what to look at, and for GSServer where in its code (the simulator's or the
@@ -440,6 +455,19 @@ internal static class ConformUDiagnostics
                     lines.Add("Make the position readings finer or steadier (compute them for the moment they're read), or run ConformU's rate " +
                               "test for longer to confirm.");
                 }
+                break;
+
+            case Cause.StrayReading:
+                lines.Add("Nothing is wrong with the rate itself. One position reading at the start or end of ConformU's measurement was out " +
+                          "of line with the readings around it, and from only those two readings ConformU can't tell. Run ConformU again: if " +
+                          "it doesn't come back, it was a one-off.");
+                if (gs)
+                    lines.Add($"In GSServer{both}: if it keeps happening, look at what RightAscension and Declination (GS.Ascom.SkyTelescope/Telescope.cs) " +
+                              "return between position updates: SkyServer.UpdateServerEvent works out SkyServer.RightAscensionXForm and " +
+                              "DeclinationXForm from the axis positions and the sidereal time, and both must come from the same moment.");
+                else
+                    lines.Add("If it keeps happening, look at how the position properties are worked out: the axis positions and the sidereal " +
+                              "time used must come from the same moment, and a reading mustn't see a half-updated position.");
                 break;
 
             case Cause.Scale or Cause.Direction or Cause.Inconsistent:

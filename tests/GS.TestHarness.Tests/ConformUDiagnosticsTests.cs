@@ -69,6 +69,8 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         var d = Finding(report, "Diagnose.RightAscensionRate");
         Assert.Equal(Outcome.Warning, d.Outcome);
         Assert.Contains("The rate is right", d.Message);
+        // The readings' general scatter, not one stray reading.
+        Assert.Contains("the readings scatter by", d.Message);
         // The simulator's code path, not the SkyWatcher's.
         Assert.Contains("GS.Simulator/Controllers.cs", d.Fix);
         Assert.DoesNotContain("Real mount:", d.Fix);
@@ -77,6 +79,18 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         Assert.Equal(Outcome.Warning, verdict.Outcome);
         Assert.Equal(d.Fix, verdict.Fix);
         Assert.DoesNotContain(report.Results, r => r.Id == "ConformU.RightAscensionRate.Reproduced");
+    }
+
+    [Fact]
+    public async Task A_stray_reading_is_told_from_the_readings_scatter()
+    {
+        var report = await DiagnoseAsync(RateLog, MountKind.Simulator, Defect.StrayReadingAfterRateSet);
+        var d = Finding(report, "Diagnose.RightAscensionRate");
+        Assert.Equal(Outcome.Warning, d.Outcome);
+        Assert.Contains("A single stray reading, not the rate", d.Message);
+        Assert.DoesNotContain("scatter by 0.000 s with no offset", d.Message);
+        Assert.Contains("Run ConformU again", d.Fix);
+        Assert.Equal(Outcome.Warning, Finding(report, "RightAscensionRate.Explained").Outcome);
     }
 
     [Fact]
