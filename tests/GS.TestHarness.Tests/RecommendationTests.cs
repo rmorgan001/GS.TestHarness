@@ -184,7 +184,7 @@ public class RecommendationTests
         var md = RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build([Run(Codebase.GreenSwampAlpaca, null, 0, result)]));
 
         Assert.Contains("- Recommendation: first line second line", md);
-        Assert.Contains("- Where: ``Odd`Name.cs:3``", md);
+        Assert.Contains("- Code to check: ``Odd`Name.cs:3``", md);
         Assert.Contains("    Exception: boom", md);
         Assert.Contains("       at Bar()", md);
         Assert.DoesNotContain("\r", md.Replace(Environment.NewLine, "\n"));

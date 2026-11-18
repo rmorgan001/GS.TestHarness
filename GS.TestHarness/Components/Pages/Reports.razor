@@ -15,14 +15,17 @@
  *@
 
 @page "/reports"
+@implements IDisposable
 @inject ReportStore Store
 @inject DialogService Dialogs
+@inject RunPageState State
 
 <PageTitle>Reports · GS Test Harness</PageTitle>
 
 <header class="page-head">
     <h1>Reports</h1>
-    <p class="muted">Every finished run, newest first. Saved in <span class="mono">@Store.Folder</span>.</p>
+    <p class="muted">@(ConformUOnly ? "Every finished ConformU Debug Log Test run, newest first." : "Every finished ASCOM Conformance Check run, newest first.")
+        Saved in <span class="mono">@Store.Folder</span>.</p>
 </header>
 
 @if (_reports is null)
@@ -31,7 +34,7 @@
 }
 else if (_reports.Count == 0)
 {
-    <div class="empty-state"><Icon Kind="FileDocument" Size="32" /><p>No runs yet.</p><a class="btn primary" href="">Start one</a></div>
+    <div class="empty-state"><Icon Kind="FileDocument" Size="32" /><p>@(ConformUOnly ? "No ConformU runs yet." : "No ASCOM Conformance Check runs yet.")</p><a class="btn primary" href="">Start one</a></div>
 }
 else
 {
@@ -97,10 +100,29 @@ else
 }
 
 @code {
-    private List<RunReport>? _reports;
+    // Every saved run, and the ones shown: the top tab's own (ConformU runs, or ASCOM Conformance Check runs).
+    private List<RunReport>? _all, _reports;
     private readonly HashSet<string> _checked = [];
 
-    protected override async Task OnInitializedAsync() => _reports = await Store.ListAsync();
+    private bool ConformUOnly => State.Tab == RunPageTab.ConformU;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = await Store.ListAsync();
+        _reports = State.Shown(_all);
+        State.Changed += OnTabChanged;
+    }
+
+    /// <summary>The top tab changed with this page open: show its runs, and untick the rest so none is deleted unseen.</summary>
+    private void OnTabChanged() => InvokeAsync(() =>
+    {
+        if (_all is null) return;
+        _reports = State.Shown(_all);
+        _checked.Clear();
+        StateHasChanged();
+    });
+
+    public void Dispose() => State.Changed -= OnTabChanged;
 
     private static string Pct(int n, int total) => FormattableString.Invariant($"{100.0 * n / total:0.##}%");
 
@@ -124,6 +146,7 @@ else
             return;
         foreach (var id in _checked) Store.Delete(id);
         _reports!.RemoveAll(r => _checked.Contains(r.Id));
+        _all!.RemoveAll(r => _checked.Contains(r.Id));
         _checked.Clear();
     }
 }

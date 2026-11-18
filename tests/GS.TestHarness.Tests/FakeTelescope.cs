@@ -57,7 +57,21 @@ public enum Defect
     TrackingRateAcceptsUnlisted,
 
     /// <summary>The driver's server program dies at the first asynchronous slew: every call after it fails as COM does.</summary>
-    ServerDiesAtFirstSlew
+    ServerDiesAtFirstSlew,
+
+    // For the ConformU diagnoses (ConformUDiagnosticsTests).
+
+    /// <summary>RightAscension and Declination are cached, refreshed every 300 ms (as GSServer's DisplayInterval).</summary>
+    StalePosition,
+
+    /// <summary>Every pulse moves for 100 ms less than its duration (it starts late).</summary>
+    PulseLosesTime,
+
+    /// <summary>A RightAscensionRate offset moves the mount 1.5 times as fast as it should.</summary>
+    RaOffsetScaled,
+
+    /// <summary>RA jitters as GSServer's simulator's does: the axis moves in 20 ms steps while sidereal time runs on.</summary>
+    PositionJitter
 }
 
 /// <summary>
@@ -77,6 +91,9 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private bool _slewing; // a timed motion (slew, park, home) is under way
     private readonly double[] _axisRates = new double[3];
     private DateTime _pulseUntil;
+    // The pulse under way on each axis: from Start (a Stopwatch timestamp), for Seconds, at these rates (hours and
+    // degrees per second). A pulse moves the mount gradually, so a position read during or just after it shows that.
+    private (long Start, double Seconds, double Ra, double Dec)? _pulseRa, _pulseDec;
     private PointingState? _forcedSide;
     private DriveRate _trackingRate = DriveRate.Sidereal;
     private double _raRate, _decRate, _guideRa = 0.004, _guideDec = 0.004;
@@ -281,25 +298,67 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public double FocalLength { get { NeedConnected(); return 1.0; } }
     public bool AtHome { get { NeedConnected(); return _atHome; } }
     public bool AtPark { get { NeedConnected(); return _atPark; } }
-    public double Declination { get { NeedConnected(); return Pos().Dec; } }
-    public double RightAscension { get { NeedConnected(); return Pos().Ra; } }
+    public double Declination { get { NeedConnected(); return Reported().Dec; } }
+    public double RightAscension { get { NeedConnected(); return Reported().Ra; } }
+
+    /// <summary>The position as the properties report it: now, or with a defect, cached or jittering.</summary>
+    private (double Ra, double Dec) Reported()
+    {
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        var f = System.Diagnostics.Stopwatch.Frequency;
+        if (Has(Defect.StalePosition))
+        {
+            // Refreshed on a 300 ms timer: the position at the last tick (never before the latest change of anchor).
+            var tick = now - now % (long)(0.3 * f);
+            return Pos(Math.Max(tick, _anchor));
+        }
+        var (ra, dec) = Pos(now);
+        if (Has(Defect.PositionJitter))
+        {
+            // The axis advances every 20 ms; RA is worked out with the sidereal time now: up to 20 ms of sidereal motion ahead.
+            var sinceStep = (double)(now % (long)(0.02 * f)) / f;
+            ra = Values.Wrap24(ra + sinceStep * 1.0027379 / 3600);
+        }
+        return (ra, dec);
+    }
 
     /// <summary>
     /// Where the mount points now: tracking, the anchored position moved by any rate offsets; not tracking, a fixed
     /// hour angle (so RA follows sidereal time). Either way, MoveAxis turns the primary axis (RA) and the secondary
     /// axis (Dec) at their rates in degrees per second.
     /// </summary>
-    private (double Ra, double Dec) Pos()
+    private (double Ra, double Dec) Pos(long? at = null)
     {
         lock (_gate)
         {
-            var seconds = (double)(System.Diagnostics.Stopwatch.GetTimestamp() - _anchor) / System.Diagnostics.Stopwatch.Frequency;
+            var when = at ?? System.Diagnostics.Stopwatch.GetTimestamp();
+            var seconds = (double)(when - _anchor) / System.Diagnostics.Stopwatch.Frequency;
             var axisRa = _axisRates[0] * seconds / 15;
             var axisDec = _axisRates[1] * seconds;
+            // The pulses' movement so far.
+            foreach (var p in new[] { _pulseRa, _pulseDec })
+            {
+                if (p is not { } pulse) continue;
+                var done = Math.Clamp((double)(when - pulse.Start) / System.Diagnostics.Stopwatch.Frequency, 0, pulse.Seconds);
+                axisRa += pulse.Ra * done;
+                axisDec += pulse.Dec * done;
+            }
             if (!_tracking) return (Values.Wrap24(Lst - _ha + axisRa), Math.Clamp(_dec + axisDec, -90, 90));
-            return (Values.Wrap24(_ra + _raRate * seconds * 1.0027379 / 3600 + axisRa),
+            var raRate = Has(Defect.RaOffsetScaled) ? _raRate * 1.5 : _raRate;
+            return (Values.Wrap24(_ra + raRate * seconds * 1.0027379 / 3600 + axisRa),
                 Math.Clamp(_dec + _decRate * seconds / 3600 + axisDec, -90, 90));
         }
+    }
+
+    /// <summary>A pulse's remaining part from now, or null once it has ended (its movement so far is in the new anchor).</summary>
+    private static (long Start, double Seconds, double Ra, double Dec)? Rest((long Start, double Seconds, double Ra, double Dec)? p, long now)
+    {
+        if (p is not { } pulse) return null;
+        var done = Math.Max(0, (double)(now - pulse.Start) / System.Diagnostics.Stopwatch.Frequency);
+        var left = pulse.Seconds - Math.Min(done, pulse.Seconds);
+        if (left <= 0) return null;
+        // Not started yet (a late start): unchanged. Under way: the rest, from now.
+        return done > 0 ? (now, left, pulse.Ra, pulse.Dec) : pulse;
     }
 
     private void SetPos(double ra, double dec)
@@ -309,6 +368,9 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
             (_ra, _dec) = (Values.Wrap24(ra), dec);
             _ha = Values.HoursDiff(Lst, _ra);
             _anchor = System.Diagnostics.Stopwatch.GetTimestamp();
+            // The new position includes the pulses' movement so far: keep only what's left of them.
+            _pulseRa = Rest(_pulseRa, _anchor);
+            _pulseDec = Rest(_pulseDec, _anchor);
         }
     }
 
@@ -607,19 +669,24 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         CheckCanMove();
         if (!Has(Defect.PulseGuideWhileNotTracking) && !_tracking) throw new ASCOM.InvalidOperationException("not tracking");
         if (_slewing) throw new ASCOM.InvalidOperationException("slewing");
-        _pulseUntil = DateTime.UtcNow.AddMilliseconds(duration);
-        // The whole pulse's movement at once: North raises Dec and East raises RA, on either side of the pier.
-        var seconds = duration / 1000.0;
+        var until = DateTime.UtcNow.AddMilliseconds(duration);
+        if (until > _pulseUntil) _pulseUntil = until;
+        // The pulse moves the mount over its duration: North raises Dec and East raises RA, on either side of the pier.
         var flip = Has(Defect.PulseGuideDecReversedThroughThePole) && SideOfPier == PointingState.ThroughThePole ? -1 : 1;
-        var (ra, dec) = Pos();
-        switch (direction)
+        var lost = Has(Defect.PulseLosesTime) ? 0.1 : 0;
+        Bake();
+        var start = System.Diagnostics.Stopwatch.GetTimestamp() + (long)(lost * System.Diagnostics.Stopwatch.Frequency);
+        var seconds = Math.Max(0, duration / 1000.0 - lost);
+        lock (_gate)
         {
-            case GuideDirection.North: dec += flip * _guideDec * seconds; break;
-            case GuideDirection.South: dec -= flip * _guideDec * seconds; break;
-            case GuideDirection.East: ra += _guideRa * seconds / 15; break;
-            case GuideDirection.West: ra -= _guideRa * seconds / 15; break;
+            switch (direction)
+            {
+                case GuideDirection.North: _pulseDec = (start, seconds, 0, flip * _guideDec); break;
+                case GuideDirection.South: _pulseDec = (start, seconds, 0, -flip * _guideDec); break;
+                case GuideDirection.East: _pulseRa = (start, seconds, _guideRa / 15, 0); break;
+                case GuideDirection.West: _pulseRa = (start, seconds, -_guideRa / 15, 0); break;
+            }
         }
-        SetPos(ra, dec);
     }
 
     public void FindHome()

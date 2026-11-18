@@ -28,6 +28,9 @@
         <span>Server's current settings <small>Whatever the server is set to now; nothing is changed.</small></span>
     </label>
 
+    @* The Northern and Southern Hemisphere sites are off for now (SiteStore.HemisphereSites). *@
+    @if (SiteStore.HemisphereSites)
+    {
     @foreach (var north in new[] { true, false })
     {
         var site = north ? _s.North : _s.South;
@@ -50,6 +53,7 @@
     }
     <p class="muted small">A run at North or South writes SiteElevation, SiteLatitude and SiteLongitude after connecting, and puts
         the server's own values back before disconnecting (also if the run fails or is stopped). Longitude is east positive.</p>
+    }
 </div>
 
 @code {

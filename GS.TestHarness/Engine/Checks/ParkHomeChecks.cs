@@ -26,6 +26,14 @@ public sealed class ParkHomeChecks : ICheckGroup
 
     public string? SkipReason(CheckContext ctx) => ctx.Options.AllowMotion ? null : "motion is turned off for this run";
 
+    /// <summary>
+    /// The members <see cref="ParkAsync"/> checks: Park and Unpark, and the calls a parked mount must refuse (which is
+    /// how a ConformU problem found while parked reaches it).
+    /// </summary>
+    private static readonly string[] ParkMembers =
+        ["Park", "Unpark", "AtPark", "AbortSlew", "FindHome", "MoveAxis", "PulseGuide", "SlewToAltAzAsync", "SlewToCoordinates",
+         "SlewToCoordinatesAsync", "SlewToTargetAsync", "SyncToCoordinates", "Tracking"];
+
     public async Task RunAsync(CheckContext ctx)
     {
         var c = ctx.Caps;
@@ -38,10 +46,11 @@ public sealed class ParkHomeChecks : ICheckGroup
                 await ctx.TryAsync(t => t.Unpark(), ctx.SlewTimeout);
                 await ctx.WaitUntilAsync(t => !t.AtPark && !t.Slewing, ctx.SlewTimeout);
             }
-            await AbortParkAndHomeAsync(ctx);
-            await FindHomeAsync(ctx);
-            await ParkAsync(ctx);
-            await SetParkAsync(ctx);
+            // Each section only if the run wants one of its members (a ConformU run wants only its problem members).
+            if (ctx.Wants("AbortSlew", "AtHome", "AtPark", "FindHome", "Park")) await AbortParkAndHomeAsync(ctx);
+            if (ctx.Wants("FindHome", "AtHome")) await FindHomeAsync(ctx);
+            if (ctx.Wants(ParkMembers)) await ParkAsync(ctx);
+            if (ctx.Wants("SetPark", "CanSetPark")) await SetParkAsync(ctx);
         }
         finally
         {

@@ -65,7 +65,7 @@
                         @if (x.Expected is not null) { <dt>Expected</dt><dd>@x.Expected</dd> }
                         @if (x.Actual is not null) { <dt>Actual</dt><dd>@x.Actual.Split('\n')[0]</dd> }
                         @if (x.Fix is not null) { <dt>Fix</dt><dd>@x.Fix</dd> }
-                        @if (x.Source is not null) { <dt>Where</dt><dd class="mono">@x.Source</dd> }
+                        @if (x.Source is not null) { <dt>Code to check</dt><dd class="mono">@x.Source</dd> }
                         @if (x.Reference is not null) { <dt>Reference</dt><dd>@x.Reference</dd> }
                     </dl>
                 </section>

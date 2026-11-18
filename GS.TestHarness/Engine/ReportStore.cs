@@ -149,7 +149,7 @@ public sealed class ReportStore(string folder)
                 if (x.Expected is not null) sb.AppendLine($"- Expected: {x.Expected}");
                 if (x.Actual is not null) sb.AppendLine($"- Actual: {x.Actual.Split('\n')[0]}");
                 if (x.Fix is not null) sb.AppendLine($"- Fix: {x.Fix}");
-                if (x.Source is not null) sb.AppendLine($"- Where: `{x.Source}`");
+                if (x.Source is not null) sb.AppendLine($"- Code to check: `{x.Source}`");
                 if (x.Reference is not null) sb.AppendLine($"- Reference: {x.Reference}");
             }
         }

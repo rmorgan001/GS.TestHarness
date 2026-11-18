@@ -59,15 +59,18 @@ public sealed class MotionChecks : ICheckGroup
             }
             if (c.CanSetTracking) await ctx.TryAsync(t => t.Tracking = true);
 
-            await NotImplementedMethodsAsync(ctx);
-            await SlewsAsync(ctx);
-            await AbortAsync(ctx);
-            await SyncsAsync(ctx);
-            await AltAzAsync(ctx);
-            await MoveAxisAsync(ctx);
-            await PulseGuideAsync(ctx);
-            await TrackingAsync(ctx);
-            await RateOffsetsAsync(ctx);
+            // Each section only if the run wants one of its members (a ConformU run wants only its problem members).
+            if (ctx.Wants(NotImplementedMembers)) await NotImplementedMethodsAsync(ctx);
+            if (ctx.Wants("SlewToCoordinates", "SlewToCoordinatesAsync", "SlewToTarget", "SlewToTargetAsync", "SideOfPier",
+                    "DestinationSideOfPier", "Slewing", "SlewSettleTime", "TargetRightAscension", "TargetDeclination"))
+                await SlewsAsync(ctx);
+            if (ctx.Wants("AbortSlew")) await AbortAsync(ctx);
+            if (ctx.Wants("SyncToCoordinates", "SyncToTarget", "TargetRightAscension", "TargetDeclination")) await SyncsAsync(ctx);
+            if (ctx.Wants("SlewToAltAz", "SlewToAltAzAsync", "SyncToAltAz")) await AltAzAsync(ctx);
+            if (ctx.Wants("MoveAxis", "AxisRates", "CanMoveAxis")) await MoveAxisAsync(ctx);
+            if (ctx.Wants("PulseGuide", "IsPulseGuiding", "GuideRateRightAscension", "GuideRateDeclination")) await PulseGuideAsync(ctx);
+            if (ctx.Wants("Tracking")) await TrackingAsync(ctx);
+            if (ctx.Wants("RightAscensionRate", "DeclinationRate")) await RateOffsetsAsync(ctx);
         }
         finally
         {
@@ -86,6 +89,11 @@ public sealed class MotionChecks : ICheckGroup
 
     // ---------- Members a false capability says aren't there ----------
 
+    /// <summary>The members <see cref="NotImplementedMethodsAsync"/> calls.</summary>
+    private static readonly string[] NotImplementedMembers =
+        ["SlewToCoordinates", "SlewToCoordinatesAsync", "SlewToTarget", "SlewToTargetAsync", "SyncToCoordinates", "SyncToTarget",
+         "PulseGuide", "FindHome", "Park", "Unpark", "SlewToAltAz", "SlewToAltAzAsync", "SyncToAltAz", "MoveAxis"];
+
     private static async Task NotImplementedMethodsAsync(CheckContext ctx)
     {
         var c = ctx.Caps;
@@ -96,7 +104,7 @@ public sealed class MotionChecks : ICheckGroup
 
         async Task Check(string id, string member, bool capability, string capabilityName, Action<ITelescopeV4> call)
         {
-            if (capability) return;
+            if (capability || !ctx.Wants(member)) return;
             var result = await ctx.ExpectNotImplementedAsync(id, member, capabilityName, call);
             if (!result.Ok) return;
             // It did something it said it couldn't: stop it, and undo a park.
@@ -123,7 +131,7 @@ public sealed class MotionChecks : ICheckGroup
         for (var axis = 0; axis < 3; axis++)
         {
             var a = (TelescopeAxis)axis;
-            if (c.CanMoveAxis[axis]) continue;
+            if (c.CanMoveAxis[axis] || !ctx.Wants("MoveAxis")) continue;
             var result = await ctx.ExpectNotImplementedAsync($"MoveAxis.{a}.NotImplemented", "MoveAxis", $"CanMoveAxis({a})", t => t.MoveAxis(a, 0.1));
             if (result.Ok) await ctx.TryAsync(t => t.MoveAxis(a, 0));
         }
@@ -1129,10 +1137,10 @@ public sealed class MotionChecks : ICheckGroup
     private static readonly GuideDirection[] GuideDirections = [GuideDirection.North, GuideDirection.South, GuideDirection.East, GuideDirection.West];
 
     /// <summary>Half the sidereal rate, in degrees per second: the usual guide rate, used when the mount doesn't say.</summary>
-    private const double AssumedGuideRate = 0.5 * 15.041 / 3600;
+    internal const double AssumedGuideRate = 0.5 * 15.041 / 3600;
 
     /// <summary>The guide rates in degrees per second, or null where one can't be read (or isn't above 0).</summary>
-    private static async Task<(double? Ra, double? Dec)> GuideRatesAsync(CheckContext ctx)
+    internal static async Task<(double? Ra, double? Dec)> GuideRatesAsync(CheckContext ctx)
     {
         var ra = await ctx.TryAsync(t => t.GuideRateRightAscension);
         var dec = await ctx.TryAsync(t => t.GuideRateDeclination);
@@ -1143,7 +1151,7 @@ public sealed class MotionChecks : ICheckGroup
     /// Slews to this hour angle (positive: west of the meridian) at a safe declination and waits for the slew to end;
     /// false when the mount can't slew there, so the pulses are measured where it is.
     /// </summary>
-    private static async Task<bool> PlaceForGuidingAsync(CheckContext ctx, double hourAngle)
+    internal static async Task<bool> PlaceForGuidingAsync(CheckContext ctx, double hourAngle)
     {
         if (!ctx.Caps.CanSlewAsync) return false;
         var lst = await ctx.TryAsync(t => t.SiderealTime);

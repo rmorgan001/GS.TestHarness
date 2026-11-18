@@ -39,6 +39,7 @@ public sealed class TestRunner(SourceLocator locator)
         new TrackingChecks(),
         new ClientsChecks(),
         new RegistrationChecks(),
+        new ConformUChecks(),
         new PerformanceChecks(),
         new DisconnectedChecks()
     ];
@@ -125,18 +126,21 @@ public sealed class TestRunner(SourceLocator locator)
     /// </summary>
     /// <param name="openSession">Opens another client of the device (the Clients checks); by default a new session of the target.</param>
     /// <param name="previous">The last saved run of the same device, if any.</param>
+    /// <param name="conformU">A ConformU log to follow up: the ConformU checks run, and say for each of its problems
+    /// whether the harness reproduced it. Combine it with <see cref="RunOptions.Groups"/> from its plan.</param>
     public async Task<RunReport> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options,
         Action<CheckResult>? onResult = null, Action<RunProgress>? onProgress = null, CancellationToken token = default,
-        Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null, SiteLocation? site = null)
+        Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null, SiteLocation? site = null,
+        ConformULog? conformU = null)
     {
-        var report = new RunReport { Target = target, Options = options, Site = site };
+        var report = new RunReport { Target = target, Options = options, Site = site, ConformULog = conformU?.FileName };
         void Add(CheckResult r)
         {
             lock (report.Results) report.Results.Add(r);
             onResult?.Invoke(r);
         }
         var ctx = new CheckContext(session, target, options, locator, Add, token, report.Results,
-            openSession ?? (() => OpenAsync(target, options)), previous);
+            openSession ?? (() => OpenAsync(target, options)), previous) { ConformU = conformU };
         (double Latitude, double Longitude, double Elevation)? original = null;
 
         try
@@ -144,6 +148,9 @@ public sealed class TestRunner(SourceLocator locator)
             for (var i = 0; i < Groups.Count; i++)
             {
                 var group = Groups[i];
+                // Groups left out of this run (a ConformU run's plan, or the ConformU checks without a log) aren't mentioned.
+                if (options.Groups is { } only && !only.Contains(group.Name)) continue;
+                if (group is ConformUChecks && conformU is null) continue;
                 // The site goes back before the disconnected checks: a disconnected mount can't be written to.
                 if (group is DisconnectedChecks && original is { } back)
                 {
@@ -217,6 +224,8 @@ public sealed class TestRunner(SourceLocator locator)
             }
         }
         if (original is { } stillSet) await RestoreSiteAsync(ctx, stillSet);
+        // ConformU's problems against everything the run found, the disconnected checks included.
+        ConformUChecks.Summarise(ctx);
         report.Identity = ctx.Identity;
         report.Finished = DateTimeOffset.Now;
         onProgress?.Invoke(new RunProgress(Groups.Count, Groups.Count, "Done", report.Results.Count));

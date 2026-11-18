@@ -18,80 +18,52 @@
 @implements IDisposable
 @inject RunService Runs
 @inject TargetStore Saved
-@inject SourceLocator Locator
 @inject Workbench Bench
 @inject ServerList Servers
 @inject SiteStore Sites
 @inject DialogService Dialogs
+@inject RunPageState State
+@inject SourceLocator Locator
 
 <PageTitle>Run · GS Test Harness</PageTitle>
 
+@* Each top tab's own heading and introduction. *@
 <header class="page-head">
-    <h1>Run a compliance check</h1>
-    <p class="muted">Drag a server from the list onto the Server box, check it against ITelescopeV4 (and, for Alpaca, the
-        Alpaca protocol), and get each problem with how to fix it.</p>
+    @switch (State.Tab)
+    {
+        case RunPageTab.ConformU:
+            <h1>Run a ConformU Debug Log Test</h1>
+            <p class="muted">Drag a server from the list onto the Server box and drop a ConformU debug log on the card beside it.
+                The harness matches each problem ConformU found to its own checks, runs only those, and says whether each
+                problem is still there.</p>
+            break;
+        case RunPageTab.Options:
+            <h1>Choose What a Run May Do</h1>
+            <p class="muted">Whether a run may move the mount and write settings, and which extra checks it makes. They apply to
+                both the ASCOM Conformance Check and the ConformU Debug Log Test, and are remembered for the next run. The mount's
+                own settings (Mount, flip angle, timeouts) and its source code are under the server on each test.</p>
+            break;
+        default:
+            <h1>Run an ASCOM Conformance Check</h1>
+            <p class="muted">Drag a server from the list onto the Server box, tick the sites to run at, then run a full
+                conformance test against ITelescopeV4 (and, for Alpaca, the Alpaca protocol).</p>
+            break;
+    }
 </header>
 
-<div class="grid">
-    @{
-        var dragging = Bench.Dragging is not null && !Runs.IsRunning;
-        var server = Bench.Selected;
-    }
-    @* The drop handlers sit on the card itself so a fast drop can't miss them; dragleave isn't used (it fires
-       when moving over child elements). *@
-    <section class="card server-box @(dragging ? "dragging" : null) @(_over ? "over" : null)"
-             @ondragenter="() => _over = true"
-             @ondragover:preventDefault
-             @ondrop="Drop"
-             @ondrop:preventDefault>
-        <h2>Server and sites</h2>
-        @if (server is null)
-        {
-            <div class="drop-empty">
-                <Icon Kind="Telescope" Size="28" />
-                <p><b>Drag a server here</b></p>
-                <p class="muted">from the list on the left (or select one there and press Enter).</p>
-            </div>
-        }
-        else
-        {
-            <div class="picked">
-                <img class="kind-lg" src="@server.Image" alt="" />
-                <div>
-                    <div class="picked-name">@server.Name</div>
-                    <div class="muted">@server.KindText</div>
-                    <div class="mono small">@server.Address</div>
-                </div>
-                @* Start (or Stop) beside the server it runs on. *@
-                <div class="picked-actions">
-                    @if (Runs.IsRunning)
-                    {
-                        <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
-                    }
-                    else
-                    {
-                        var count = Sites.Selected().Count;
-                        <button class="btn primary" disabled="@(count == 0)"
-                                title="@(count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
-                                @onclick="Start"><Icon Kind="Play" Size="18" /> @(count > 1 ? $"Start {count} runs" : "Start run")</button>
-                        <button type="button" class="icon-btn" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
-                            <Icon Kind="Close" Size="18" />
-                        </button>
-                    }
-                </div>
-            </div>
-            <p class="muted small source">Source for "where to fix":
-                @(Locator.RootOf(server.Target.Codebase) is { } root ? root : "not found on this computer, so findings won't name a file")</p>
-        }
-        <SitesCard Disabled="Runs.IsRunning" />
-        @if (dragging)
-        {
-            <div class="drop-zone"><span>Test @Bench.Dragging!.Name</span></div>
-        }
-    </section>
+@{
+    var dragging = Bench.Dragging is not null && !Runs.IsRunning;
+    var server = Bench.Selected;
+    var log = State.Log;
+}
 
+@* Conformance test, ConformU Debug Log Test or Options, as picked in the layout's top tabs. The run's progress and
+   findings sit below, whichever is shown. *@
+<div class="subpanel">
+@if (State.Tab == RunPageTab.Options)
+{
     <section class="card">
-        <h2>What the run may do</h2>
+        <h2>Options</h2>
         <label class="check danger">
             <input type="checkbox" @bind="_motion" disabled="@Runs.IsRunning" />
             <span><b>Move the mount</b>: slew, sync, move axes, pulse guide, park, find home.
@@ -112,19 +84,230 @@
         </label>
         <label class="check">
             <input type="checkbox" @bind="_extended" disabled="@Runs.IsRunning" />
-            <span>Extended checks <small>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads, connect cycles.</small></span>
+            <span>Extended checks <small>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads, connect cycles.
+                A ConformU Debug Log Test turns them on by itself when its problems need them.</small></span>
         </label>
         <label class="check">
             <input type="checkbox" @bind="_disconnected" disabled="@Runs.IsRunning" />
             <span>Disconnect at the end <small>Checks NotConnected errors (only possible when no other client holds the device).</small></span>
         </label>
-        <div class="fields">
-            <label class="narrow">Slew timeout (s) <input type="number" min="10" @bind="_slewTimeout" disabled="@Runs.IsRunning" /></label>
-            <label class="narrow">Call timeout (s) <input type="number" min="2" @bind="_callTimeout" disabled="@Runs.IsRunning" /></label>
-            <label class="narrow" title="Degrees either side of the meridian where the mount can point from either side of the pier. Inside it the flip checks use the SideOfPier command; a goto past it must flip the mount.">
-                Flip angle (°) <input type="number" min="0" max="90" step="1" @bind="_flipAngle" disabled="@(Runs.IsRunning || !_motion)" /></label>
-        </div>
     </section>
+}
+else
+{
+    var conformU = State.Tab == RunPageTab.ConformU;
+    <div class="grid">
+        @* The drop handlers sit on the card itself so a fast drop can't miss them; dragleave isn't used (it fires
+           when moving over child elements). *@
+        <section class="card server-box @(dragging ? "dragging" : null) @(_over ? "over" : null)"
+                 @ondragenter="() => _over = true"
+                 @ondragover:preventDefault
+                 @ondrop="Drop"
+                 @ondrop:preventDefault>
+            <h2>@(conformU ? "Server" : "Server and sites")</h2>
+            @if (server is null)
+            {
+                <div class="drop-empty">
+                    <Icon Kind="Telescope" Size="28" />
+                    <p><b>Drag a server here</b></p>
+                    <p class="muted">from the list on the left (or select one there and press Enter).</p>
+                </div>
+            }
+            else
+            {
+                <div class="picked">
+                    <img class="kind-lg" src="@server.Image" alt="" />
+                    <div>
+                        <div class="picked-name">@server.Name</div>
+                        <div class="muted">@server.KindText</div>
+                        <div class="mono small">@server.Address</div>
+                    </div>
+                    @* Start (or Stop) beside the server it runs on: a full run here, the ConformU follow-up on its tab. *@
+                    <div class="picked-actions">
+                        @if (Runs.IsRunning)
+                        {
+                            <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
+                        }
+                        else
+                        {
+                            var count = Sites.Selected().Count;
+                            @if (conformU)
+                            {
+                                var ready = log is { Areas.Count: > 0 };
+                                <button class="btn primary" disabled="@(!ready)"
+                                        title="@(!ready ? "Drop a ConformU log with problems first" : $"Check {log!.Areas.Count} problem areas on {server.Name}")"
+                                        @onclick="StartConformU"><Icon Kind="Play" Size="18" /> Run ConformU checks</button>
+                            }
+                            else
+                            {
+                                <button class="btn primary" disabled="@(count == 0)"
+                                        title="@(count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
+                                        @onclick="Start"><Icon Kind="Play" Size="18" /> @(count > 1 ? $"Start {count} runs" : "Start run")</button>
+                            }
+                            <button type="button" class="icon-btn" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
+                                <Icon Kind="Close" Size="18" />
+                            </button>
+                        }
+                    </div>
+                </div>
+                @* Where this server's source is, for "where to check the code": each person's own path, set here on either test. *@
+                <SourceFolderField Codebase="server.Target.Codebase" Disabled="Runs.IsRunning" />
+                @* What the server drives: the ConformU diagnoses' recommendations follow GSServer's code path for it. Saved at once. *@
+                <label class="mount-field" title="GSServer takes different code paths for its simulator and a real mount: the ConformU diagnoses and their recommendations follow this.">
+                    <span>Mount <small class="muted">for the recommendations' code paths</small></span>
+                    <select @bind="_mount" @bind:after="SaveOptions" disabled="@Runs.IsRunning">
+                        <option value="@MountKind.Unknown">Not specified</option>
+                        <option value="@MountKind.Simulator">GSServer simulator</option>
+                        <option value="@MountKind.RealMount">Real mount</option>
+                    </select>
+                </label>
+                @* The mount's flip zone, for the flip checks (and a ConformU run that has them). Saved at once. *@
+                <label class="mount-field" title="Degrees either side of the meridian where the mount can point from either side of the pier. Inside it the flip checks use the SideOfPier command; a goto past it must flip the mount.">
+                    <span>Flip angle (°) <small class="muted">@(_motion ? "either side of the meridian, for the flip checks" : "needs Move the mount under Options")</small></span>
+                    <input type="number" min="0" max="90" step="1" class="narrow-input" @bind="_flipAngle" @bind:after="SaveOptions"
+                           disabled="@(Runs.IsRunning || !_motion)" />
+                </label>
+                @* How long the mount gets: a slew, and any single call, before it counts as never answered. Saved at once. *@
+                <div class="timeout-fields">
+                    <label class="mount-field" title="How long a slew (or park, or find home) may take before it counts as never finished.">
+                        <span>Slew timeout (s)</span>
+                        <input type="number" min="10" class="narrow-input" @bind="_slewTimeout" @bind:after="SaveOptions" disabled="@Runs.IsRunning" />
+                    </label>
+                    <label class="mount-field" title="How long any single call to the mount may take before it counts as never answered.">
+                        <span>Call timeout (s)</span>
+                        <input type="number" min="2" class="narrow-input" @bind="_callTimeout" @bind:after="SaveOptions" disabled="@Runs.IsRunning" />
+                    </label>
+                </div>
+            }
+            @* The ConformU Debug Log Test only follows up the log's problems, at the server's own site: no sites. *@
+            @if (!conformU)
+            {
+                <SitesCard Disabled="Runs.IsRunning" />
+            }
+            @if (dragging)
+            {
+                <div class="drop-zone"><span>Test @Bench.Dragging!.Name</span></div>
+            }
+        </section>
+
+        @if (conformU)
+        {
+            @* A ConformU log: drop it, see what it found and which checks look at each problem, and run just those. *@
+            <section class="card conformu">
+                <h2>ConformU debug log</h2>
+                <div class="conformu-drop @(_fileOver ? "over" : null) @(log is null ? null : "compact")"
+                     @ondragenter="FileDragEnter" @ondragleave="FileDragLeave" @ondrop="() => (_fileDepth, _fileOver) = (0, false)">
+                    <InputFile OnChange="LoadLog" accept=".txt,.log" title="Drop a ConformU debug log here, or click to choose one"
+                               disabled="@(Runs.IsRunning || _reading)" aria-label="ConformU debug log file" />
+                    <Icon Kind="FileDocument" Size="@(log is null ? 28 : 20)" />
+                    <div>
+                        @if (_reading)
+                        {
+                            <p><b>Reading…</b></p>
+                        }
+                        else if (log is null)
+                        {
+                            <p><b>Drop a ConformU debug log here</b>, or click to choose one.</p>
+                            <p class="muted small">A debug log only: run ConformU with debug logging turned on in its settings.</p>
+                            <p class="muted small">Its problems are matched to the harness's checks, and the run makes only those checks.</p>
+                        }
+                        else
+                        {
+                            <p><b>@log.FileName</b> <span class="muted small">· drop another log to replace it</span></p>
+                        }
+                    </div>
+                    @if (log is not null && !Runs.IsRunning)
+                    {
+                        @* Above the file input, so a click clears instead of opening the file picker. *@
+                        <button type="button" class="icon-btn conformu-clear" title="Clear the ConformU log" aria-label="Clear the ConformU log"
+                                @onclick="ClearLog"><Icon Kind="Close" Size="18" /></button>
+                    }
+                </div>
+                @if (State.Error is { } error)
+                {
+                    <p class="conformu-error">@error</p>
+                }
+                @if (log is not null)
+                {
+                    <div class="conformu-head">
+                        <div class="conformu-meta muted small">
+                            @if (log.DeviceName is not null) { <span>@log.DeviceName @log.DriverVersion</span> }
+                            @if (log.ConformUVersion is not null) { <span>ConformU @log.ConformUVersion</span> }
+                            <span>@log.Lines.ToString("N0") lines</span>
+                        </div>
+                        <div class="summary">
+                            <span class="chip error"><span class="chip-count">@log.Count(ConformUSeverity.Error)</span> Errors</span>
+                            <span class="chip fail"><span class="chip-count">@log.Count(ConformUSeverity.Issue)</span> Issues</span>
+                            <span class="chip warning"><span class="chip-count">@log.Count(ConformUSeverity.Warning)</span> Warnings</span>
+                            <span class="chip info"><span class="chip-count">@log.Count(ConformUSeverity.Alert)</span> Config alerts</span>
+                        </div>
+                    </div>
+                    @if (!log.Recognised)
+                    {
+                        <p class="conformu-error">This doesn't look like a ConformU log: no line had a time, a test name and an outcome (OK, INFO, ISSUE, ERROR…).</p>
+                    }
+                    else if (log.Areas.Count == 0)
+                    {
+                        <p class="muted">ConformU found no problems in this log: nothing to follow up.</p>
+                    }
+                    else
+                    {
+                        var plan = log.Plan();
+                        var missing = Missing(plan);
+                        <p class="muted small conformu-plan">The run checks only @string.Join(", ", plan.Members), using the
+                            @string.Join(", ", plan.Groups.Where(g => g != "ConformU")) checks (the parts that touch those members),
+                            reports only findings about them, then says for each problem below whether it was reproduced.
+                            @if (missing.Count > 0)
+                            {
+                                <br /><span class="conformu-needs">Turn on @string.Join(" and ", missing) under
+                                    <button type="button" class="link" @onclick="() => State.Tab = RunPageTab.Options">Options</button>,
+                                    or the problems that need it are reported as not checked.</span>
+                            }
+                        </p>
+                    }
+                }
+            </section>
+        }
+    </div>
+
+    @if (conformU && log is { Areas.Count: > 0 })
+    {
+        <section class="card">
+            <h2>Problems in the log <small class="muted">@log.Areas.Count areas</small></h2>
+            <table class="results conformu-areas">
+                <thead>
+                    <tr><th class="col-outcome">ConformU</th><th class="col-member">Member</th><th>What ConformU said</th><th>Harness check</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var a in log.Areas)
+                    {
+                        <tr>
+                            <td><span class="badge @SeverityCss(a.Severity)">@SeverityLabel(a.Severity)</span>
+                                @if (a.Problems.Count > 1) { <span class="muted small"> ×@a.Problems.Count</span> }</td>
+                            <td class="mono">@a.Member</td>
+                            <td>@a.Problems[0].Message
+                                <span class="muted small">(@a.Problems[0].Test, line @a.Problems[0].Line)</span></td>
+                            <td>
+                                @if (a.Covered)
+                                {
+                                    <span class="small">Existing: @string.Join(", ", a.Groups)</span>
+                                }
+                                else if (a.CanProbe)
+                                {
+                                    <span class="small">New: reads it while connected</span>
+                                }
+                                else
+                                {
+                                    <span class="small muted">None: reproduce by hand</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
 </div>
 
 @* The run's progress, and its reports when it's done; Stop stays at hand while the page scrolls. *@
@@ -172,26 +355,16 @@
 @if (Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
 {
     <section class="card">
-        <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }</h2>
+        <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }
+            @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
-    </section>
-}
-else
-{
-    <section class="card groups">
-        <h2>What gets checked</h2>
-        <ul>
-            @foreach (var g in TestRunner.Groups)
-            {
-                <li><b>@g.Name</b><span class="muted">@g.Description</span></li>
-            }
-        </ul>
     </section>
 }
 
 @code {
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
     private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 15;
+    private MountKind _mount = MountKind.Unknown;
     private bool _over;
 
     protected override void OnInitialized()
@@ -202,10 +375,12 @@ else
              options.SlewTimeoutSeconds, options.CallTimeoutSeconds);
         _extended = options.Extended;
         _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
+        _mount = options.Mount;
         Runs.Changed += OnChanged;
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
         Sites.Changed += OnBenchChanged;
+        State.Changed += OnBenchChanged;
     }
 
     private void Drop()
@@ -222,21 +397,159 @@ else
         "• Stay with the mount and watch it for the whole run. Be ready to stop the run or cut the mount's power if it heads for the pier, a leg or a cable.\n\n" +
         "By clicking Start you accept responsibility for starting the run and for monitoring the mount.";
 
+    /// <summary>
+    /// The start warning, then the settings on the Server card to check before the run: the Mount (which code paths the
+    /// recommendations name), the flip angle, the timeouts and the source code folder. One that looks wrong is marked ⚠.
+    /// </summary>
+    private string StartMessage(ServerEntry server)
+    {
+        var codebase = server.Target.Codebase;
+        var mount = _mount switch
+        {
+            MountKind.Simulator => "• Mount: GSServer simulator.",
+            MountKind.RealMount => "• Mount: real mount.",
+            _ => "⚠ Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is."
+        };
+        var flip = _motion
+            ? $"• Flip angle: {Math.Clamp(_flipAngle, 0, 90)}° either side of the meridian. It must match the mount's flip zone, or the flip checks will report the wrong thing."
+            : "• Flip angle: not used (Move the mount is off under Options).";
+        var (slew, call) = (Math.Max(10, _slewTimeout), Math.Max(2, _callTimeout));
+        var timeouts = slew < 60 && _motion && _mount != MountKind.Simulator
+            ? $"⚠ Timeouts: slew {slew} s, call {call} s. A long slew or a meridian flip on a real mount can take longer than {slew} s and would count as never finished."
+            : $"• Timeouts: slew {slew} s, call {call} s.";
+        var source = Locator.RootOf(codebase) is { } root
+            ? $"• Source code: {root}"
+            : $"⚠ Source code: {codebase}'s source wasn't found, so findings won't name the code to check. Set its folder under the server.";
+        return SafetyWarning + "\n\nCheck these settings under the server before you start:\n" + string.Join("\n", mount, flip, timeouts, source);
+    }
+
+    private RunOptions CurrentOptions() => new()
+    {
+        AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
+        IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
+        SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
+        FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount
+    };
+
+    /// <summary>Remembers the options now (the Mount on the Server card), not only when a run starts.</summary>
+    private void SaveOptions() => Saved.SaveOptions(CurrentOptions());
+
     private async Task Start()
     {
         if (Bench.Selected is not { } server) return;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true))) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", StartMessage(server), "Start", "Cancel", danger: true))) return;
         if (Runs.IsRunning) return;
-        var options = new RunOptions
-        {
-            AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
-            IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
-            SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
-            FlipAngle = Math.Clamp(_flipAngle, 0, 90)
-        };
+        var options = CurrentOptions();
         Saved.SaveOptions(options);
         Runs.Start(server.RunTarget, options, Sites.Selected());
     }
+
+    // ---------- ConformU log ----------
+
+    private bool _fileOver, _reading;
+
+    // dragenter and dragleave also fire for the elements inside the drop area, so count them.
+    private int _fileDepth;
+
+    private void FileDragEnter()
+    {
+        _fileDepth++;
+        // A server dragged from the list isn't a file.
+        _fileOver = Bench.Dragging is null;
+    }
+
+    private void FileDragLeave()
+    {
+        _fileDepth = Math.Max(0, _fileDepth - 1);
+        if (_fileDepth == 0) _fileOver = false;
+    }
+
+    private async Task LoadLog(InputFileChangeEventArgs e)
+    {
+        _fileOver = false;
+        var file = e.File;
+        if (file.Size > RunPageState.MaxBytes)
+        {
+            State.Error = $"{file.Name} is {file.Size / 1048576.0:0} MB; the largest log accepted is {RunPageState.MaxBytes / 1048576} MB.";
+            return;
+        }
+        _reading = true;
+        State.Error = null;
+        StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(RunPageState.MaxBytes);
+            using var reader = new StreamReader(stream);
+            var parsed = await ConformULog.ParseAsync(file.Name, reader);
+            // Debug logs only. A file that isn't a ConformU log at all is kept, so the card can say so.
+            if (parsed.Recognised && !parsed.IsDebug)
+            {
+                State.Log = null;
+                State.Error = $"{file.Name} is a normal ConformU log, not a debug log: it has no DEBUG lines. " +
+                              "Turn on debug logging in ConformU's settings, run it again and drop the new log.";
+            }
+            else State.Log = parsed;
+        }
+        catch (Exception ex)
+        {
+            State.Error = $"{file.Name} couldn't be read: {ex.Message}";
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private void ClearLog()
+    {
+        State.Log = null;
+        State.Error = null;
+    }
+
+    /// <summary>The Run-page options the plan needs that aren't ticked (motion is never turned on for you).</summary>
+    private List<string> Missing(ConformUPlan plan)
+    {
+        var missing = new List<string>();
+        if (plan.NeedsMotion && !_motion) missing.Add("Move the mount");
+        if (plan.NeedsWrites && !_writes) missing.Add("Write settings");
+        if (plan.NeedsProtocol && !_protocol && Bench.Selected?.Target.Kind != TargetKind.Com) missing.Add("Alpaca protocol checks");
+        if (plan.NeedsDisconnected && !_disconnected) missing.Add("Disconnect at the end");
+        return missing;
+    }
+
+    /// <summary>
+    /// Runs only the groups that check the log's problems, then the ConformU checks. Extended checks are turned on when
+    /// the plan has tracking or client problems (only those groups run); motion and writes stay as ticked.
+    /// </summary>
+    private async Task StartConformU()
+    {
+        if (Bench.Selected is not { } server || State.Log is not { } log) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", StartMessage(server), "Start", "Cancel", danger: true))) return;
+        if (Runs.IsRunning) return;
+        var plan = log.Plan();
+        var options = CurrentOptions();
+        Saved.SaveOptions(options);
+        // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
+        options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
+        // One run at the server's own site: the sites are for the conformance test, not the log follow-up.
+        Runs.Start(server.RunTarget, options, [null], log);
+    }
+
+    private static string SeverityCss(ConformUSeverity s) => s switch
+    {
+        ConformUSeverity.Error => "error",
+        ConformUSeverity.Issue => "fail",
+        ConformUSeverity.Warning => "warning",
+        _ => "info"
+    };
+
+    private static string SeverityLabel(ConformUSeverity s) => s switch
+    {
+        ConformUSeverity.Error => "Error",
+        ConformUSeverity.Issue => "Issue",
+        ConformUSeverity.Warning => "Warning",
+        _ => "Config"
+    };
 
     private void OnBenchChanged() => _ = InvokeAsync(() =>
     {
@@ -273,5 +586,6 @@ else
         Bench.Changed -= OnBenchChanged;
         Servers.Changed -= OnBenchChanged;
         Sites.Changed -= OnBenchChanged;
+        State.Changed -= OnBenchChanged;
     }
 }

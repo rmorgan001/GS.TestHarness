@@ -18,6 +18,7 @@
 @implements IDisposable
 @inject ReportStore Store
 @inject RunService Runs
+@inject RunPageState State
 
 <PageTitle>Recommendations · GS Test Harness</PageTitle>
 
@@ -25,8 +26,9 @@
    device at a site are left out, so a problem fixed since doesn't come back. *@
 <header class="page-head">
     <h1>Recommendations</h1>
-    <p class="muted">Every check that found a problem in the latest run of each device at each site, with the recommended
-        fix and where the code probably is. GSServer and GreenSwampAlpaca are listed apart: the fix is in each one's own code.</p>
+    <p class="muted">Every check that found a problem in the latest @(ConformUOnly ? "ConformU Debug Log Test run" : "ASCOM Conformance Check run") of each
+        device at each site, with the recommended fix and where the code probably is. GSServer and GreenSwampAlpaca are
+        listed apart: the fix is in each one's own code.</p>
 </header>
 
 @if (_set is null)
@@ -35,7 +37,7 @@
 }
 else if (_set.Runs.Count == 0)
 {
-    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>No runs yet.</p><a class="btn primary" href="">Start one</a></div>
+    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>@(ConformUOnly ? "No ConformU runs yet." : "No ASCOM Conformance Check runs yet.")</p><a class="btn primary" href="">Start one</a></div>
 }
 else
 {
@@ -118,7 +120,7 @@ else
                     </dd>
                     @if (r.Sources.Count > 0)
                     {
-                        <dt>Where</dt>
+                        <dt>Code to check</dt>
                         <dd>@foreach (var source in r.Sources) { <div class="mono">@source</div> }</dd>
                     }
                     @if (r.Reference is not null)
@@ -173,12 +175,27 @@ else
     private bool _showClean;
     private string? _lastRun;
 
+    // Every saved run; the recommendations are built from the top tab's own runs (ConformU, or ASCOM Conformance Check).
+    private List<RunReport>? _all;
+
+    private bool ConformUOnly => State.Tab == RunPageTab.ConformU;
+
     protected override async Task OnInitializedAsync()
     {
         _lastRun = Runs.LastReport?.Id;
-        _set = RecommendationBuilder.Build(await Store.ListAsync());
+        _all = await Store.ListAsync();
+        _set = RecommendationBuilder.Build(State.Shown(_all));
         Runs.Changed += OnRunsChanged;
+        State.Changed += OnTabChanged;
     }
+
+    /// <summary>The top tab changed with this page open: rebuild from its runs.</summary>
+    private void OnTabChanged() => InvokeAsync(() =>
+    {
+        if (_all is null) return;
+        _set = RecommendationBuilder.Build(State.Shown(_all));
+        StateHasChanged();
+    });
 
     /// <summary>The recommendations the server and search filters leave (not yet filtered by outcome).</summary>
     private List<Recommendation> Filtered => [.. _set!.Recommendations.Where(r =>
@@ -199,9 +216,14 @@ else
     {
         if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
         _lastRun = Runs.LastReport?.Id;
-        _set = RecommendationBuilder.Build(await Store.ListAsync());
+        _all = await Store.ListAsync();
+        _set = RecommendationBuilder.Build(State.Shown(_all));
         StateHasChanged();
     });
 
-    public void Dispose() => Runs.Changed -= OnRunsChanged;
+    public void Dispose()
+    {
+        Runs.Changed -= OnRunsChanged;
+        State.Changed -= OnTabChanged;
+    }
 }

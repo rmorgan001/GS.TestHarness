@@ -14,18 +14,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *@
 
-@page "/tests"
-
 @* Every check the harness makes (Engine/TestCatalog.cs): what it is for, how it is tested, how the result is judged
-   and what it is based on. CatalogTests keeps the catalog in step with the checks. *@
-
-<PageTitle>Tests · GS Test Harness</PageTitle>
-
-<header class="page-head">
-    <h1>Tests</h1>
-    <p class="muted">Every check a run can make, by group: its objective, how it is tested, how the result is verified, and the
-        reference material it is based on. In IDs, words in braces stand for each member, axis, direction or rate checked.</p>
-</header>
+   and what it is based on, searchable and by group. Shown in the help's "The tests" section (it was the Tests tab).
+   CatalogTests keeps the catalog in step with the checks. *@
 
 <div class="summary catalog-toolbar">
     <input type="search" placeholder="Search tests" aria-label="Search tests" @bind="_search" @bind:event="oninput" />
@@ -38,15 +29,14 @@
         }
     </div>
 </div>
-
 @{ var shown = 0; }
 @foreach (var g in TestCatalog.Groups.Where(g => _group is null || g.Name == _group))
 {
     var entries = TestCatalog.Entries.Where(e => TestCatalog.DisplayGroup(e) == g.Name && Matches(e)).ToList();
     if (entries.Count == 0) continue;
     shown += entries.Count;
-    <section class="card catalog-group" id="group-@g.Name">
-        <h2>@g.Name <span class="muted catalog-when">Runs: @g.RunsWhen</span></h2>
+    <section class="card catalog-group" id="tests-@g.Name">
+        <h3>@g.Name <span class="muted catalog-when">Runs: @g.RunsWhen</span></h3>
         <p class="muted">@g.Summary</p>
         <div class="table-scroll">
             <table class="results catalog">
@@ -87,8 +77,8 @@
     <p class="muted">No test matches “@_search”.</p>
 }
 
-<section class="card catalog-group" id="references">
-    <h2>Reference material</h2>
+<section class="card catalog-group" id="tests-references">
+    <h3>Reference material</h3>
     <dl class="catalog-ref-list">
         @foreach (var r in TestCatalog.References)
         {
