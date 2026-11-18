@@ -25,7 +25,7 @@ namespace GS.TestHarness;
 /// GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
 ///                [--sites server,north,south] [--mount simulator|real]
-///                [--source C:\src\GSServer] [--md report.md]
+///                [--source C:\src\GSServer] [--conformu ConformU-debug-log.txt] [--md report.md]
 /// GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
 /// The report is saved like a run from the web page. Exit code: 0 no failures, 1 failures or errors, 2 bad arguments.
@@ -83,10 +83,37 @@ public static class Cli
             }
         };
 
+        // --conformu <log>: follow up a ConformU debug log (as the ConformU Debug Log Test): only its problem members,
+        // with the ConformU verdicts and diagnoses, at the server's own site.
+        ConformULog? conformU = null;
+        if (Value("--conformu") is { Length: > 0 } logFile)
+        {
+            try
+            {
+                using var reader = File.OpenText(logFile);
+                conformU = await ConformULog.ParseAsync(Path.GetFileName(logFile), reader);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"--conformu {logFile}: {ex.Message}");
+                return 2;
+            }
+            if (!conformU.Recognised || !conformU.IsDebug)
+            {
+                Console.Error.WriteLine($"--conformu {logFile}: " + (!conformU.Recognised ? "this doesn't look like a ConformU log."
+                    : "a normal ConformU log, not a debug log. Turn on debug logging in ConformU's settings and run it again."));
+                return 2;
+            }
+            var plan = conformU.Plan();
+            options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
+            Console.WriteLine($"ConformU log {conformU.FileName}: {conformU.Problems.Count} problems in {conformU.Areas.Count} areas " +
+                              $"({string.Join(", ", plan.Members)}).");
+        }
+
         // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the
         // ones saved on the Run page (sites.json).
         var siteList = new List<SiteLocation?>();
-        foreach (var name in (Value("--sites") ?? "server").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var name in (conformU is null ? Value("--sites") ?? "server" : "server").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             switch (name.ToLowerInvariant())
             {
@@ -103,14 +130,14 @@ public static class Cli
         foreach (var site in siteList)
         {
             var code = await RunOneAsync(target, options, site, locator, store, Value("--md") is { } md && siteList.Count > 1
-                ? Path.ChangeExtension(md, null) + "-" + (site?.Hemisphere.ToLowerInvariant() ?? "server") + ".md" : Value("--md"));
+                ? Path.ChangeExtension(md, null) + "-" + (site?.Hemisphere.ToLowerInvariant() ?? "server") + ".md" : Value("--md"), conformU);
             worst = Math.Max(worst, code);
         }
         return worst;
     }
 
     private static async Task<int> RunOneAsync(TestTarget target, RunOptions options, SiteLocation? site, SourceLocator locator,
-        ReportStore store, string? markdownPath)
+        ReportStore store, string? markdownPath, ConformULog? conformU = null)
     {
         Console.WriteLine($"Checking {target.Display} at {site?.Label ?? "the server's own site"} (motion {(options.AllowMotion ? "on" : "off")})…");
         using var cts = new CancellationTokenSource();
@@ -128,13 +155,14 @@ public static class Cli
             report = await new TestRunner(locator).RunAsync(session, target, options,
                 r =>
                 {
-                    if (r.IsProblem) Console.WriteLine($"  {r.Outcome,-7} {r.Id}: {r.Message}");
+                    // Problems, and every ConformU verdict and diagnosis.
+                    if (r.IsProblem || r.Group == "ConformU") Console.WriteLine($"  {r.Outcome,-7} {r.Id}: {r.Message}");
                 },
                 p =>
                 {
                     if (p.Group != "Done") Console.WriteLine($"[{p.GroupIndex + 1}/{p.GroupCount}] {p.Group}");
                 },
-                cts.Token, previous: previous, site: site);
+                cts.Token, previous: previous, site: site, conformU: conformU);
         }
         catch (Exception ex)
         {

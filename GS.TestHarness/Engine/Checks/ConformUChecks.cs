@@ -103,12 +103,21 @@ public sealed partial class ConformUChecks : ICheckGroup
         var results = ctx.Results.Where(r => r.Group != "ConformU").ToList();
         foreach (var area in log.Areas)
         {
-            if (ctx.Fact($"ConformU.Probed.{area.Member}")) continue;
             var id = IdOf(area.Member);
             var conformU = Said(area);
             var related = results.Where(r => r.Outcome != Outcome.Skipped && About(r, area)).ToList();
             var problems = related.Where(r => r.IsProblem).ToList();
-            if (problems.Count > 0)
+            // A diagnosis made for this very problem decides the verdict (even for a probed property); other problems
+            // found with the member are listed apart.
+            var diagnosis = $"ConformU.Diagnose.{area.Member}";
+            var diagnoses = ctx.Results.Where(r => (r.Id == diagnosis || r.Id.StartsWith(diagnosis + ".", StringComparison.Ordinal))
+                                                   && r.Outcome is Outcome.Pass or Outcome.Info or Outcome.Warning or Outcome.Fail).ToList();
+            if (diagnoses.Count == 0 && ctx.Fact($"ConformU.Probed.{area.Member}")) continue;
+            if (diagnoses.Count > 0)
+            {
+                Diagnosed(ctx, area, id, conformU, diagnoses, problems);
+            }
+            else if (problems.Count > 0)
             {
                 var worst = problems.Any(r => r.Outcome is Outcome.Fail or Outcome.Error) ? Outcome.Fail : Outcome.Warning;
                 var first = problems.OrderByDescending(r => r.Outcome.Severity()).First();
@@ -146,6 +155,42 @@ public sealed partial class ConformUChecks : ICheckGroup
             }
         }
         ctx.Group = group;
+    }
+
+    /// <summary>
+    /// The verdict for a problem the harness diagnosed (<see cref="ConformUDiagnostics"/>): the diagnosis found the cause
+    /// in the driver (Fail: Reproduced), explained it as something else, such as a stale or coarse position reading
+    /// (Warning: Explained), or found the member within tolerance (Info: NotReproduced). Problems the harness's own
+    /// checks found with the same member are other problems, listed as "also found", not ConformU's.
+    /// </summary>
+    private static void Diagnosed(CheckContext ctx, ConformUArea area, string id, string conformU, List<CheckResult> diagnoses,
+        List<CheckResult> others)
+    {
+        var worst = diagnoses.MaxBy(d => d.Outcome.Severity())!;
+        var causes = string.Join(" ", diagnoses.Where(d => d.Outcome == worst.Outcome).Select(d => d.Message));
+        var actual = string.Join('\n', diagnoses.Select(d => $"{d.Id}: {d.Message}"));
+        if (others.Count > 0)
+            actual += $"\nAlso found, not ConformU's problem: {others.Count} other problem{(others.Count == 1 ? "" : "s")} with {area.Member}:\n" +
+                      string.Join('\n', others.Take(6).Select(r => $"{r.Id}: {r.Message}")) + (others.Count > 6 ? $"\n… and {others.Count - 6} more" : "");
+        var also = others.Count > 0 ? $" The harness also found {others.Count} other problem{(others.Count == 1 ? "" : "s")} with {area.Member} (listed below)." : "";
+        var fix = worst.Fix ?? diagnoses.Select(d => d.Fix).FirstOrDefault(f => f is not null);
+
+        switch (worst.Outcome)
+        {
+            case Outcome.Fail:
+                ctx.Report($"{id}.Reproduced", area.Member, Outcome.Fail,
+                    $"Reproduced, and diagnosed: {causes}{also}", expected: conformU, actual: actual, fix: fix, sourceMember: area.Member);
+                break;
+            case Outcome.Warning:
+                ctx.Report($"{id}.Explained", area.Member, Outcome.Warning,
+                    $"Explained: {causes}{also}", expected: conformU, actual: actual, fix: fix, sourceMember: area.Member);
+                break;
+            default:
+                ctx.Report($"{id}.NotReproduced", area.Member, Outcome.Info,
+                    $"Not reproduced: the {area.Member} diagnosis found it within tolerance. Either it has been fixed since the ConformU run, " +
+                    $"or it only happens in conditions this run didn't meet.{also}", expected: conformU, actual: actual);
+                break;
+        }
     }
 
     /// <summary>Whether a harness finding is about the area's member (its Member, or a part of its ID).</summary>

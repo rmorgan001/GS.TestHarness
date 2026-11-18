@@ -59,6 +59,7 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         var report = await DiagnoseAsync(RateLog, MountKind.Simulator);
         Assert.Equal(Outcome.Info, Finding(report, "Diagnose.RightAscensionRate").Outcome);
         Assert.Equal(Outcome.Info, Finding(report, "Diagnose.Readings").Outcome);
+        Assert.Equal(Outcome.Info, Finding(report, "RightAscensionRate.NotReproduced").Outcome);
     }
 
     [Fact]
@@ -71,6 +72,11 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         // The simulator's code path, not the SkyWatcher's.
         Assert.Contains("GS.Simulator/Controllers.cs", d.Fix);
         Assert.DoesNotContain("Real mount:", d.Fix);
+        // The verdict follows the diagnosis: explained by the readings, not reproduced in the rate.
+        var verdict = Finding(report, "RightAscensionRate.Explained");
+        Assert.Equal(Outcome.Warning, verdict.Outcome);
+        Assert.Equal(d.Fix, verdict.Fix);
+        Assert.DoesNotContain(report.Results, r => r.Id == "ConformU.RightAscensionRate.Reproduced");
     }
 
     [Fact]
@@ -84,6 +90,9 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         Assert.Contains("SideSec2ArcSec", d.Fix);
         Assert.Contains("Real mount:", d.Fix);
         Assert.DoesNotContain("Simulator:", d.Fix);
+        var verdict = Finding(report, "RightAscensionRate.Reproduced");
+        Assert.Equal(Outcome.Fail, verdict.Outcome);
+        Assert.Contains("diagnosed", verdict.Message);
     }
 
     [Fact]
@@ -92,6 +101,7 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         var report = await DiagnoseAsync(PulseLog, MountKind.Simulator);
         Assert.Equal(Outcome.Info, Finding(report, "Diagnose.PulseGuide.Dec").Outcome);
         Assert.Equal(Outcome.Info, Finding(report, "Diagnose.PulseGuide.RA").Outcome);
+        Assert.Equal(Outcome.Info, Finding(report, "PulseGuide.NotReproduced").Outcome);
     }
 
     [Fact]
@@ -106,6 +116,9 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
             Assert.Contains("DisplayInterval", d.Fix);
             Assert.Contains("GS.Simulator/Actions.cs", d.Fix);
         }
+        var verdict = Finding(report, "PulseGuide.Explained");
+        Assert.Equal(Outcome.Warning, verdict.Outcome);
+        Assert.Contains("stale", verdict.Message);
     }
 
     [Fact]
@@ -124,6 +137,7 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
             Assert.Contains("Simulator:", d.Fix);
             Assert.Contains("Real mount:", d.Fix);
         }
+        Assert.Equal(Outcome.Fail, Finding(report, "PulseGuide.Reproduced").Outcome);
     }
 
     [Fact]

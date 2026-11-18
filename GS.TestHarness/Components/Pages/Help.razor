@@ -154,9 +154,18 @@
                 <p>The <strong>ConformU</strong> findings then give a verdict for each problem:</p>
                 <dl>
                     <dt>Reproduced (Fail or Warning)</dt>
-                    <dd>A harness check of the same member found a problem: ConformU's problem is real, and the harness's fix applies.</dd>
+                    <dd>A harness check of the same member found a problem: ConformU's problem is real, and the harness's fix applies.
+                        For a member the harness diagnoses (see Diagnoses below), only the diagnosis counts: it found the cause in the driver.</dd>
+                    <dt>Explained (Warning)</dt>
+                    <dd>Diagnosed members only: the member works, and ConformU's result comes from something else, such as a stale or
+                        coarse position reading. The diagnosis's recommendation applies.</dd>
                     <dt>Not reproduced (Info)</dt>
-                    <dd>Every harness check of the member passed: fixed since the ConformU run, or ConformU tested something the harness doesn't.</dd>
+                    <dd>Every harness check of the member passed, or its diagnosis found it within tolerance: fixed since the ConformU run,
+                        or ConformU tested something the harness doesn't.</dd>
+                </dl>
+                <p>For a diagnosed member, other problems the harness's checks find with it (a wrong error type, say) are listed in the
+                    verdict as <em>also found</em>: they're real, but they aren't the problem ConformU reported.</p>
+                <dl>
                     <dt>Not checked (Skipped)</dt>
                     <dd>The checks that would look at it didn't run (motion off, for example). Turn it on and run again.</dd>
                     <dt>Generated check (Probe)</dt>
@@ -340,8 +349,12 @@
 GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                 <p>Other options: <code>--setpark</code>, <code>--no-writes</code>, <code>--no-protocol</code>,
                     <code>--no-disconnect</code>, <code>--extended</code>, <code>--drift-seconds &lt;s&gt;</code>,
-                    <code>--sites server,north,south</code> (the North and South saved here), <code>--slew-timeout &lt;s&gt;</code>
-                    and <code>--call-timeout &lt;s&gt;</code>.</p>
+                    <code>--sites server,north,south</code> (the North and South saved here), <code>--slew-timeout &lt;s&gt;</code>,
+                    <code>--call-timeout &lt;s&gt;</code>, <code>--flip-angle &lt;degrees&gt;</code>, <code>--mount simulator|real</code>
+                    and <code>--source &lt;folder&gt;</code>.</p>
+                <p><code>--conformu &lt;debug log&gt;</code> runs the ConformU Debug Log Test instead: only the log's problem members,
+                    with the verdicts and diagnoses, at the server's own site. For example:</p>
+                <pre><code>GS.TestHarness --run GSServer --motion --mount simulator --conformu ConformU.debug.txt</code></pre>
                 <p>The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.</p>
             </section>
 
