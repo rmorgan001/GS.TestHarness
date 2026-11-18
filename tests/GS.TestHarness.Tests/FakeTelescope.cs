@@ -71,7 +71,10 @@ public enum Defect
     RaOffsetScaled,
 
     /// <summary>RA jitters as GSServer's simulator's does: the axis moves in 20 ms steps while sidereal time runs on.</summary>
-    PositionJitter
+    PositionJitter,
+
+    /// <summary>The first RightAscension read after RightAscensionRate is set is 0.015 s of RA out (a single stray reading).</summary>
+    StrayReadingAfterRateSet
 }
 
 /// <summary>
@@ -91,6 +94,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private bool _slewing; // a timed motion (slew, park, home) is under way
     private readonly double[] _axisRates = new double[3];
     private DateTime _pulseUntil;
+    private bool _strayNext; // StrayReadingAfterRateSet: the next RightAscension read is out
     // The pulse under way on each axis: from Start (a Stopwatch timestamp), for Seconds, at these rates (hours and
     // degrees per second). A pulse moves the mount gradually, so a position read during or just after it shows that.
     private (long Start, double Seconds, double Ra, double Dec)? _pulseRa, _pulseDec;
@@ -299,7 +303,17 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public bool AtHome { get { NeedConnected(); return _atHome; } }
     public bool AtPark { get { NeedConnected(); return _atPark; } }
     public double Declination { get { NeedConnected(); return Reported().Dec; } }
-    public double RightAscension { get { NeedConnected(); return Reported().Ra; } }
+    public double RightAscension
+    {
+        get
+        {
+            NeedConnected();
+            var ra = Reported().Ra;
+            if (!_strayNext) return ra;
+            _strayNext = false;
+            return Values.Wrap24(ra - 0.015 / 3600);
+        }
+    }
 
     /// <summary>The position as the properties report it: now, or with a defect, cached or jittering.</summary>
     private (double Ra, double Dec) Reported()
@@ -408,7 +422,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public double RightAscensionRate
     {
         get { NeedConnected(); return OffsetRead(_raRate); }
-        set { NeedConnected(); NeedSidereal(); CheckOffset(value); Bake(); _raRate = value; }
+        set { NeedConnected(); NeedSidereal(); CheckOffset(value); Bake(); _raRate = value; _strayNext = Has(Defect.StrayReadingAfterRateSet); }
     }
 
     /// <summary>Offsets only apply at sidereal rate: at any other rate they read 0.</summary>
