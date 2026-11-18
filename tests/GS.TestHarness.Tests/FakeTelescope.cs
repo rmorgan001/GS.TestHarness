@@ -74,7 +74,13 @@ public enum Defect
     PositionJitter,
 
     /// <summary>The first RightAscension read after RightAscensionRate is set is 0.015 s of RA out (a single stray reading).</summary>
-    StrayReadingAfterRateSet
+    StrayReadingAfterRateSet,
+
+    /// <summary>Disconnect() returns without error but leaves the client connected (ConformU: "Connected Get returned True").</summary>
+    ConnectedAfterDisconnect,
+
+    /// <summary>Connected reads true for every client while any client is connected (not each client's own state).</summary>
+    ConnectedSharedByClients
 }
 
 /// <summary>
@@ -180,7 +186,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     private bool IsConnected
     {
-        get { lock (_clients) return _clients.Contains(Client); }
+        get { lock (_clients) return Has(Defect.ConnectedSharedByClients) ? _clients.Count > 0 : _clients.Contains(Client); }
     }
 
     public bool Connected
@@ -199,7 +205,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         lock (_clients)
         {
             if (Has(Defect.ClientDisconnectDropsAll)) _clients.Clear();
-            else _clients.Remove(Client);
+            else if (!Has(Defect.ConnectedAfterDisconnect)) _clients.Remove(Client);
         }
     }
     public string Description => "Fake GEM for the GS.TestHarness tests";

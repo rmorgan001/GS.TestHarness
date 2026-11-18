@@ -45,6 +45,20 @@ public sealed class DisconnectedChecks : ICheckGroup
                 fix: "Set Connecting back to false when disconnecting has finished.");
 
         var connected = await ctx.TryAsync(t => t.Connected);
+        if (connected is { Ok: true, Value: true } && !ctx.Fact("WasConnected"))
+        {
+            // Nobody held the device when the run started (Connected read false before connecting), and the run's own
+            // extra clients have gone: there's no other client to keep it connected.
+            ctx.Report("Disconnect", "Disconnect", Outcome.Fail,
+                "Connected is still true after Disconnect(), though no other client held the device: Connected was false before " +
+                "the run connected, and the run's other clients have disconnected.",
+                expected: "Connected false once Disconnect() has finished (Connecting false)", actual: "Connected true", ms: disconnect.Ms,
+                fix: "After Disconnect() returns and Connecting is false, Connected must read false for this client (ConformU reports " +
+                     "\"The device disconnected without error but Connected Get returned True\"). If the server shares one connection " +
+                     "among its clients, count them: report Connected per client, and disconnect the hardware only when the last one goes.",
+                sourceMember: "Connected");
+            return;
+        }
         if (connected is { Ok: true, Value: true })
         {
             // GSServer keeps the mount connected while any other client holds it, and an Alpaca device is one for

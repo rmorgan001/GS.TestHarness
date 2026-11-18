@@ -197,9 +197,11 @@ public sealed partial class ConformUChecks : ICheckGroup
     private static bool About(CheckResult r, ConformUArea area)
     {
         if (area.Member == ConformUMap.Protocol) return r.Group == "Protocol";
-        if (r.Member.Equals(area.Member, StringComparison.OrdinalIgnoreCase)) return true;
+        // The member, or one that goes with it (Connected with Connect, Disconnect and Connecting).
+        var members = ConformUMap.Related(area.Member);
+        if (members.Contains(r.Member, StringComparer.OrdinalIgnoreCase)) return true;
         var parts = r.Id.Split('.');
-        return parts.Skip(1).Any(p => p.Equals(area.Member, StringComparison.OrdinalIgnoreCase));
+        return parts.Skip(1).Any(p => members.Contains(p, StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>What ConformU reported for the area, for a finding's Expected.</summary>

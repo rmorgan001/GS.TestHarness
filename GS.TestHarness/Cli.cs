@@ -107,7 +107,7 @@ public static class Cli
             var plan = conformU.Plan();
             options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
             Console.WriteLine($"ConformU log {conformU.FileName}: {conformU.Problems.Count} problems in {conformU.Areas.Count} areas " +
-                              $"({string.Join(", ", plan.Members)}).");
+                              $"(checking {string.Join(", ", plan.Members)}).");
         }
 
         // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the

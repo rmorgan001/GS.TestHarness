@@ -322,6 +322,7 @@ public static class TestCatalog
             E("Tracking", "DeclinationRate.Moves", "DeclinationRate moves Dec at the rate set.", "Sets an arc-seconds per second offset towards the equator and measures Dec.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
 
             // ---------- Clients (extended) ----------
+            E("Clients", "DisconnectedClient.Connected", "A client that disconnected must read Connected false, even while another client keeps the device connected (ConformU: \"Connected Get returned True\").", "Clients B and C connect; B disconnects; B reads Connected.", "Pass when B reads false; Fail when it reads true or raises an error.", "V4", "ConformU"),
             E("Clients", "OneDisconnects", "One client disconnecting mustn't cut off another.", "Clients B and C connect; B disconnects.", "Fail unless C (and the run's own client) is still connected and answering.", "V4", "Harness"),
             E("Clients", "ParallelReads", "Several clients can read at once.", "Four clients read the same properties at the same time.", "Fail on an error, a slow answer, or clients that disagree.", "Harness"),
             E("Clients", "ConnectCycles", "Quick connect/disconnect cycles leave no trouble.", "Ten connect/disconnect cycles from another client.", "Fail on an error or Connected not true after each connect.", "Harness"),
