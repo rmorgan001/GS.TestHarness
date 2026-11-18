@@ -57,8 +57,8 @@
     var log = State.Log;
 }
 
-@* Conformance test, ConformU Debug Log Test or Options, as picked in the layout's top tabs. The run's progress and
-   findings sit below, whichever is shown. *@
+@* Conformance test, ConformU Debug Log Test or Options, as picked in the layout's top tabs. The run's progress sits
+   below while it runs; its findings only on its own test's tab. *@
 <div class="subpanel">
 @if (State.Tab == RunPageTab.Options)
 {
@@ -310,8 +310,12 @@ else
 }
 </div>
 
-@* The run's progress, and its reports when it's done; Stop stays at hand while the page scrolls. *@
-@if (Runs.IsRunning || Runs.Status is not null || Runs.LastReport is not null)
+@* The run's progress, and its reports when it's done; Stop stays at hand while the page scrolls. While a run is going
+   the bar (with Stop) shows on every tab, the mount may be moving; once it's done, its reports and findings show only
+   on the tab of the test that made it (a ConformU run under ConformU Debug Log Test, a full check under ASCOM
+   Conformance Check), never under Options. *@
+@{ var runsHere = State.Tab == (Runs.ConformU is null ? RunPageTab.Conformance : RunPageTab.ConformU); }
+@if (Runs.IsRunning || (runsHere && (Runs.Status is not null || Runs.LastReport is not null)))
 {
 <div class="run-bar">
     @if (Runs.IsRunning)
@@ -336,7 +340,12 @@ else
             <div class="progress"><div style="width:@(100.0 * p.GroupIndex / Math.Max(1, p.GroupCount))%"></div></div>
         }
     </div>
-    @if (!Runs.IsRunning && Runs.LastReports.Count > 1)
+    @if (!runsHere)
+    {
+        @* Running from the other test's tab, or Options: say where its findings are. *@
+        <span class="muted small">Findings on the @(Runs.ConformU is null ? "ASCOM Conformance Check" : "ConformU Debug Log Test") tab.</span>
+    }
+    else if (!Runs.IsRunning && Runs.LastReports.Count > 1)
     {
         @foreach (var r in Runs.LastReports)
         {
@@ -352,7 +361,7 @@ else
 </div>
 }
 
-@if (Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
+@if (runsHere && Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
 {
     <section class="card">
         <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }

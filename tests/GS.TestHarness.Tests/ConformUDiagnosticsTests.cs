@@ -70,7 +70,9 @@ public class ConformUDiagnosticsTests(ITestOutputHelper output)
         Assert.Equal(Outcome.Warning, d.Outcome);
         Assert.Contains("The rate is right", d.Message);
         // The readings' general scatter, not one stray reading.
-        Assert.Contains("the readings scatter by", d.Message);
+        Assert.Contains("the readings wander up to", d.Message);
+        // The report shows where ConformU's two readings sat against the line through all of them.
+        Assert.Contains("first and last readings", d.Actual);
         // The simulator's code path, not the SkyWatcher's.
         Assert.Contains("GS.Simulator/Controllers.cs", d.Fix);
         Assert.DoesNotContain("Real mount:", d.Fix);
