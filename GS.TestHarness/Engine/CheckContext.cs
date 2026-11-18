@@ -45,7 +45,7 @@ public sealed class Capabilities
 
 /// <summary>
 /// What a check group works with: the mount, the run's options, and the helpers that call the mount and report
-/// findings. Findings about a problem get where to fix it from the <see cref="SourceLocator"/>.
+/// findings. Findings about a problem get where to check the code from the <see cref="SourceLocator"/>.
 /// </summary>
 public sealed class CheckContext(
     ITelescopeSession session,
@@ -73,6 +73,9 @@ public sealed class CheckContext(
 
     /// <summary>The last saved run of the same device, if any (to compare what must not change, like UniqueID).</summary>
     public RunReport? Previous { get; } = previous;
+
+    /// <summary>The ConformU log the run follows up, if it was started from one (the ConformU checks).</summary>
+    public ConformULog? ConformU { get; init; }
 
     public const string DocsBase = "https://ascom-standards.org/newdocs/telescope.html#Telescope.";
 
@@ -163,13 +166,40 @@ public sealed class CheckContext(
     public Task<Call<bool>> TryAsync(Action<ITelescopeV4> call, TimeSpan? timeout = null)
         => TryAsync(t => { call(t); return true; }, timeout);
 
+    // ---------- A run narrowed to some members (a ConformU run) ----------
+
+    /// <summary>
+    /// Whether the run wants checks of any of these members: always, unless it's narrowed to some
+    /// (<see cref="RunOptions.Members"/>). A group skips a section none of whose members is wanted.
+    /// </summary>
+    public bool Wants(params string[] members)
+        => Options.Members is not { } only || members.Any(m => only.Contains(m, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The findings that say why checks didn't run or the run stopped: kept in a narrowed run, too.</summary>
+    private static readonly HashSet<string> Explains = ["Group", "Prepare", "CommunicationLost", "Stopped", "Unexpected"];
+
+    /// <summary>
+    /// Whether a finding belongs in the run: every one, unless the run is narrowed to some members. Then only the
+    /// ones about them (by Member, or a part of the ID, as the ConformU verdicts match them), the ConformU checks'
+    /// own, the Alpaca protocol's when that's wanted, and the skips and errors that explain a missing check.
+    /// </summary>
+    private bool Keeps(CheckResult r)
+    {
+        if (Options.Members is not { } only || r.Group == "ConformU") return true;
+        var last = r.Id[(r.Id.LastIndexOf('.') + 1)..];
+        if (r.Outcome is Outcome.Skipped or Outcome.Error && Explains.Contains(last)) return true;
+        if (r.Group == "Protocol" && only.Contains(ConformUMap.Protocol)) return true;
+        return only.Contains(r.Member, StringComparer.OrdinalIgnoreCase)
+               || r.Id.Split('.').Skip(1).Any(p => only.Contains(p, StringComparer.OrdinalIgnoreCase));
+    }
+
     /// <summary>Records a finding. A problem gets the source location of <paramref name="member"/> or of the patterns.</summary>
     public void Report(string id, string member, Outcome outcome, string message,
         string? expected = null, string? actual = null, string? fix = null, string? reference = null,
         double ms = 0, string[]? sourcePatterns = null, string? sourceMember = null)
     {
         var problem = outcome is Outcome.Fail or Outcome.Warning or Outcome.Error;
-        report(new CheckResult
+        var result = new CheckResult
         {
             Id = $"{Group}.{id}",
             Group = Group,
@@ -182,7 +212,8 @@ public sealed class CheckContext(
             Source = problem ? Locator.Find(Target.Codebase, sourceMember ?? member, sourcePatterns ?? []) : null,
             Reference = reference ?? (IsInterfaceMember(member) ? DocsBase + member : null),
             DurationMs = Math.Round(ms, 1)
-        });
+        };
+        if (Keeps(result)) report(result);
     }
 
     private static bool IsInterfaceMember(string member) => member.Length > 0 && char.IsUpper(member[0]) && member.All(char.IsLetterOrDigit);

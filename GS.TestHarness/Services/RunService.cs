@@ -46,6 +46,9 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
 
     /// <summary>The site of the run under way (null: the server's own), and its place in the batch.</summary>
     public SiteLocation? Site { get; private set; }
+
+    /// <summary>The ConformU log the run under way (or the last run) follows up; null for an ordinary run.</summary>
+    public ConformULog? ConformU { get; private set; }
     public int SiteIndex { get; private set; }
     public int SiteCount { get; private set; } = 1;
 
@@ -60,7 +63,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     /// <summary>
     /// Starts one run per site, in turn (null: the server's own site); false if a run is already under way.
     /// </summary>
-    public bool Start(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites)
+    public bool Start(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU = null)
     {
         if (sites.Count == 0) return false;
         lock (_gate)
@@ -69,6 +72,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             IsRunning = true;
             Target = target;
             Options = options;
+            ConformU = conformU;
             Progress = null;
             LastReport = null;
             LastReports = [];
@@ -80,7 +84,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             _cts = new CancellationTokenSource();
         }
         Changed?.Invoke();
-        _ = Task.Run(() => RunAllAsync(target, options, sites, _cts.Token));
+        _ = Task.Run(() => RunAllAsync(target, options, sites, conformU, _cts.Token));
         return true;
     }
 
@@ -95,7 +99,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         Changed?.Invoke();
     }
 
-    private async Task RunAllAsync(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, CancellationToken token)
+    private async Task RunAllAsync(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU,
+        CancellationToken token)
     {
         var reports = new List<RunReport>();
         try
@@ -108,7 +113,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                     SiteIndex = i;
                     if (i > 0) _results.Clear();
                 }
-                if (await RunAsync(target, options, sites[i], token) is { } report)
+                if (await RunAsync(target, options, sites[i], conformU, token) is { } report)
                 {
                     reports.Add(report);
                     lock (_gate) LastReports = [.. reports];
@@ -140,7 +145,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         return SiteCount > 1 ? $"{text} · site {SiteIndex + 1} of {SiteCount}" : text;
     }
 
-    private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, SiteLocation? site, CancellationToken token)
+    private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, SiteLocation? site, ConformULog? conformU,
+        CancellationToken token)
     {
         RunReport? report = null;
         var where = site is null ? "" : $" at {site.Label}";
@@ -161,7 +167,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                     Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})") + SiteSuffix(site);
                     Changed?.Invoke();
                 },
-                token, previous: previous, site: site);
+                token, previous: previous, site: site, conformU: conformU);
             await store.SaveAsync(report);
             Status = report.Cancelled ? $"Stopped{where}; the findings so far are saved." : $"Finished{where} and saved.";
             log.LogInformation("Run finished: {Label}: {Fail} failed, {Warn} warnings", report.Label, report.Count(Outcome.Fail), report.Count(Outcome.Warning));

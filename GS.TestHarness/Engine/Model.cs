@@ -177,6 +177,39 @@ public sealed record RunOptions
     /// The flip checks flip the mount with SideOfPier inside it, and expect a goto past it to flip the mount.
     /// </summary>
     public int FlipAngle { get; init; } = 15;
+
+    /// <summary>
+    /// Only these check groups (by name); null runs them all. Set by a run started from a ConformU log, to the groups
+    /// that check what the log found wrong.
+    /// </summary>
+    public IReadOnlyList<string>? Groups { get; init; }
+
+    /// <summary>
+    /// Only these members (ConformUMap.Protocol for the Alpaca protocol); null for all. Set by a run started from a
+    /// ConformU log, to the members it found problems with: the groups skip the sections that don't touch them, and
+    /// only findings about them are kept (with the ConformU verdicts, and anything that explains a skipped check).
+    /// </summary>
+    public IReadOnlyList<string>? Members { get; init; }
+
+    /// <summary>
+    /// What the server drives: GSServer's simulator or a real mount. GSServer takes different code paths for each
+    /// (GS.Simulator or GS.SkyWatcher), so the diagnostics and their recommendations depend on it.
+    /// </summary>
+    public MountKind Mount { get; init; } = MountKind.Unknown;
+}
+
+/// <summary>What the server under test drives (the Mount option).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MountKind>))]
+public enum MountKind
+{
+    /// <summary>Not said: recommendations cover both code paths.</summary>
+    Unknown,
+
+    /// <summary>GSServer's built-in simulator (GS.Simulator).</summary>
+    Simulator,
+
+    /// <summary>A real mount (GSServer's SkyWatcher code, GS.SkyWatcher).</summary>
+    RealMount
 }
 
 /// <summary>A check's result.</summary>
@@ -284,6 +317,9 @@ public sealed record RunReport
 
     /// <summary>The site the mount was set to for the run; null when it ran at the server's own site.</summary>
     public SiteLocation? Site { get; init; }
+
+    /// <summary>The ConformU log the run followed up (its file name); null for an ordinary run.</summary>
+    public string? ConformULog { get; init; }
 
     /// <summary>Where the run was: the site's label, or the server's own site.</summary>
     [JsonIgnore]

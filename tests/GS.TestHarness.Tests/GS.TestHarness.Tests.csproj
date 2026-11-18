@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Real ConformU logs, for the parser's regression tests. -->
+    <None Include="..\..\GS.TestHarness\TestFiles\*.txt" Link="TestFiles\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\GS.TestHarness\GS.TestHarness.csproj" />
   </ItemGroup>
 

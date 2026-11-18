@@ -1,0 +1,80 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject SourceStore Store
+@inject SourceLocator Locator
+@inject DialogService Dialogs
+
+@* Where the picked server's source is on this computer, for "where to check the code", in the Server card of each test. It's
+   this person's own setting (source-folders.json beside the reports folder), shared by both tests. Empty uses the
+   default from appsettings.json, looked for beside the app. *@
+@{
+    var root = Locator.RootOf(Codebase);
+    var set = Store.FolderOf(Codebase);
+}
+<div class="source-folder">
+    <label>
+        <span><Icon Kind="CodeBraces" Size="14" /> @Codebase source code <small class="muted">for "where to check the code"</small></span>
+        <span class="source-input">
+            <input type="text" value="@set" placeholder="@(Locator.DefaultRootOf(Codebase) ?? $@"C:\...\{Codebase}")"
+                   spellcheck="false" disabled="@Disabled" aria-label="@Codebase source folder"
+                   title="The repository's top folder. Left empty, a folder named @Codebase beside this program is used if there is one."
+                   @onchange="e => Set(e.Value as string)" />
+            <button type="button" class="icon-btn" title="Choose the folder" aria-label="Choose the @Codebase source folder"
+                    disabled="@Disabled" @onclick="ChooseAsync"><Icon Kind="FolderOpen" Size="18" /></button>
+        </span>
+    </label>
+    @if (_problem is not null)
+    {
+        <p class="field-error">@_problem</p>
+    }
+    else if (root is not null)
+    {
+        <p class="muted small">Findings name files in <span class="mono">@root</span>@(set.Length == 0 ? " (found beside this program)" : "").</p>
+    }
+    else
+    {
+        <p class="muted small">Not found on this computer: paste the repository's top folder, or findings won't name a file.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Codebase Codebase { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private string? _problem;
+
+    protected override void OnInitialized() => Locator.Changed += OnChanged;
+
+    // A folder set earlier that has since gone (or never held the driver) says so.
+    protected override void OnParametersSet()
+        => _problem = Store.FolderOf(Codebase) is { Length: > 0 } f ? Locator.Check(Codebase, f) : null;
+
+    private void Set(string? folder) => _problem = Store.Set(Codebase, folder);
+
+    /// <summary>The folder popup, starting at the folder in use; folders holding the driver file are marked.</summary>
+    private async Task ChooseAsync()
+    {
+        var dialog = new FolderDialogModel($"{Codebase} source code", Locator.RootOf(Codebase) ?? Store.FolderOf(Codebase),
+            Locator.DriverFilesOf(Codebase), $"{Codebase} source");
+        if (await Dialogs.ShowAsync(dialog) && dialog.Selected is { } folder) Set(folder);
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Locator.Changed -= OnChanged;
+}

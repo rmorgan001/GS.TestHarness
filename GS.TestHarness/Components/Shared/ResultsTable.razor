@@ -66,7 +66,7 @@ else
                                 @if (r.Expected is not null) { <dt>Expected</dt><dd>@r.Expected</dd> }
                                 @if (r.Actual is not null) { <dt>Actual</dt><dd class="pre">@r.Actual</dd> }
                                 @if (r.Fix is not null) { <dt>How to fix</dt><dd class="fix">@r.Fix</dd> }
-                                @if (r.Source is not null) { <dt>Where</dt><dd class="mono">@r.Source</dd> }
+                                @if (r.Source is not null) { <dt>Code to check</dt><dd class="mono">@r.Source</dd> }
                                 @if (r.Reference is not null) { <dt>Reference</dt><dd><a href="@r.Reference" target="_blank" rel="noopener">@r.Reference</a></dd> }
                             </dl>
                         </td>

@@ -1,0 +1,76 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* Picks a folder on the computer running the harness: places to start, the folder's path (type one and press Enter),
+   Up, and its folders (click one to open it). Folders holding the server's driver file are marked. *@
+<h2 class="dialog-title">@Model.Title</h2>
+
+<div class="folder-places">
+    @foreach (var (label, path) in Model.Places)
+    {
+        <button type="button" class="chip @(path == Model.Current ? "on" : null)" @onclick="() => Open(path)">@label</button>
+    }
+</div>
+
+<div class="folder-path">
+    <button type="button" class="icon-btn" title="Up one folder" aria-label="Up one folder" disabled="@(Model.Current.Length == 0)" @onclick="Up">
+        <Icon Kind="ArrowUp" Size="18" />
+    </button>
+    <input type="text" class="mono" value="@(Model.Current.Length == 0 ? "This PC" : Model.Current)" spellcheck="false"
+           aria-label="Folder" @onchange="e => Open(e.Value as string ?? Model.Current)" />
+</div>
+@if (Model.Error is { } error)
+{
+    <p class="field-error">@error</p>
+}
+@if (Model.CurrentMarked)
+{
+    <p class="folder-here"><Icon Kind="CodeBraces" Size="16" /> This is the @Model.MarkText.</p>
+}
+
+<ul class="folder-list" role="listbox" aria-label="Folders">
+    @if (Model.Folders.Count == 0)
+    {
+        <li class="muted small">No folders here.</li>
+    }
+    @foreach (var (name, path, marked) in Model.Folders)
+    {
+        <li>
+            <button type="button" class="folder-item @(marked ? "marked" : null)" title="@path" @onclick="() => Open(path)">
+                <Icon Kind="@(marked ? "FolderOpen" : "Folder")" Size="18" />
+                <span>@name</span>
+                @if (marked)
+                {
+                    <small>@Model.MarkText</small>
+                }
+            </button>
+        </li>
+    }
+</ul>
+
+<div class="dialog-buttons">
+    <button type="button" class="btn primary" disabled="@(Model.Selected is null)"
+            title="@(Model.Selected is { } s ? $"Use {s}" : "Open a folder first")" @onclick="() => Model.Close(true)">Select this folder</button>
+    <button type="button" class="btn" @onclick="() => Model.Close(false)">Cancel</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FolderDialogModel Model { get; set; } = default!;
+
+    private void Open(string path) => Model.Open(path);
+
+    private void Up() => Model.Up();
+}

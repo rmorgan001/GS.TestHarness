@@ -39,6 +39,12 @@ public sealed class SiteStore
     private readonly ILogger<SiteStore>? _log;
     private Saved _saved;
 
+    /// <summary>
+    /// Whether the Northern and Southern Hemisphere sites are offered. Off for now: the Sites card shows only the
+    /// server's current settings, and saved North/South ticks are ignored. Set true to bring them back.
+    /// </summary>
+    public static readonly bool HemisphereSites = false;
+
     public event Action? Changed;
 
     public SiteStore(ReportStore reports, ILogger<SiteStore> log) : this(Path.Combine(Path.GetDirectoryName(reports.Folder)!, "sites.json"), log)
@@ -85,8 +91,8 @@ public sealed class SiteStore
         var s = Current;
         var list = new List<SiteLocation?>();
         if (s.UseServer) list.Add(null);
-        if (s.UseNorth) list.Add(s.North);
-        if (s.UseSouth) list.Add(s.South);
+        if (HemisphereSites && s.UseNorth) list.Add(s.North);
+        if (HemisphereSites && s.UseSouth) list.Add(s.South);
         return list;
     }
 

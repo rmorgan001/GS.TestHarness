@@ -200,7 +200,10 @@ else
 }
 
 @code {
-    private List<RunReport>? _all;  // every saved run, newest first
+    private List<RunReport>? _all;  // every saved ASCOM Conformance Check run, newest first (no ConformU runs)
+
+    /// <summary>Compare sits under the ASCOM Conformance Check tab: full runs only, never a ConformU follow-up.</summary>
+    private async Task<List<RunReport>> FullRunsAsync() => [.. (await Store.ListAsync()).Where(r => !RunPageState.IsConformU(r))];
     private SiteChange? _filter;
 
     private enum Mode { Sites, Versions }
@@ -250,7 +253,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _lastRun = Runs.LastReport?.Id;
-        _all = await Store.ListAsync();
+        _all = await FullRunsAsync();
         Sites.Changed += OnChanged;
         Bench.Changed += OnChanged;
         Servers.Changed += OnChanged;
@@ -273,7 +276,7 @@ else
     {
         if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
         _lastRun = Runs.LastReport?.Id;
-        _all = await Store.ListAsync();
+        _all = await FullRunsAsync();
         StateHasChanged();
     });
 

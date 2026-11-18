@@ -15,9 +15,12 @@
  *@
 
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject RunPageState State
+@inject NavigationManager Nav
 
 @* As GS.Point3DWeb: a header across the top, the server list on the left, and the page on the right under its
-   Run / Reports / Compare / Recommendations tabs. *@
+   Conformance test / ConformU Debug Log Test / Options tabs. *@
 <div class="shell">
     <header class="app-header">
         <div class="brand">
@@ -38,13 +41,40 @@
             <ServerSidebar />
         </aside>
         <main class="main">
-            <nav class="tabs" aria-label="Pages">
-                <NavLink class="tab" href="" Match="NavLinkMatch.All"><Icon Kind="Play" Size="18" /><span>Run</span></NavLink>
-                <NavLink class="tab" href="reports"><Icon Kind="FileDocument" Size="18" /><span>Reports</span></NavLink>
-                <NavLink class="tab" href="compare"><Icon Kind="Compare" Size="18" /><span>Compare</span></NavLink>
-                <NavLink class="tab" href="recommendations"><Icon Kind="Lightbulb" Size="18" /><span>Recommendations</span></NavLink>
-                <NavLink class="tab" href="tests"><Icon Kind="ListChecks" Size="18" /><span>Tests</span></NavLink>
+            @* ASCOM Conformance Check, ConformU Debug Log Test and Options across the top; each test's pages in a row
+               under it (SubPages). The three tabs are panels of the Run page (/). *@
+            @{ var top = ActiveTop; var pages = SubPages(top); }
+            @* "solo": no pages row beneath, so the active tab opens into the page. *@
+            <nav class="tabs @(pages.Length == 0 ? "solo" : null)" aria-label="Tests">
+                @foreach (var (tab, label, icon) in TopTabs)
+                {
+                    <button type="button" class="tab @(top == tab ? "active" : null)" aria-current="@(top == tab ? "page" : null)"
+                            @onclick="() => Show(tab)">
+                        <Icon Kind="@icon" Size="18" /><span>@label</span>
+                        @if (tab == RunPageTab.ConformU && State.Log is { Areas.Count: > 0 } log)
+                        {
+                            <span class="subtab-count" title="Problem areas in @log.FileName">@log.Areas.Count</span>
+                        }
+                    </button>
+                }
             </nav>
+            @if (pages.Length > 0)
+            {
+                <nav class="subnav" aria-label="@TopTabs.First(t => t.Tab == top).Label">
+                    @foreach (var p in pages)
+                    {
+                        @if (p.Href.Length == 0)
+                        {
+                            @* Run opens this tab's panel of the Run page. *@
+                            <NavLink class="subtab" href="" Match="NavLinkMatch.All" @onclick="() => State.Tab = top"><Icon Kind="@p.Icon" Size="16" /><span>@p.Label</span></NavLink>
+                        }
+                        else
+                        {
+                            <NavLink class="subtab" href="@p.Href"><Icon Kind="@p.Icon" Size="16" /><span>@p.Label</span></NavLink>
+                        }
+                    }
+                </nav>
+            }
             @* Only the page scrolls; the tabs stay put. *@
             <div class="page-scroll">
                 <div class="page">
@@ -65,4 +95,62 @@
 
 @code {
     private static readonly string? Version = typeof(Program).Assembly.GetName().Version?.ToString(3);
+
+    private static readonly (RunPageTab Tab, string Label, string Icon)[] TopTabs =
+    [
+        (RunPageTab.Conformance, "ASCOM Conformance Check", "ListChecks"),
+        (RunPageTab.ConformU, "ConformU Debug Log Test", "FileDocument"),
+        (RunPageTab.Options, "Options", "Pencil")
+    ];
+
+    private static readonly (string Href, string Label, string Icon) Run = ("", "Run", "Play"),
+        Reports = ("reports", "Reports", "FileDocument"), Compare = ("compare", "Compare", "Compare"),
+        Recommendations = ("recommendations", "Recommendations", "Lightbulb");
+
+    /// <summary>
+    /// The pages under each top tab. The ConformU Debug Log Test has the ones its runs use: its runs are saved as
+    /// reports and feed the recommendations (the test catalog is in the help). Compare is left out: its
+    /// Sites view needs the hemisphere sites and its Versions view compares full runs. Options has none.
+    /// </summary>
+    private static (string Href, string Label, string Icon)[] SubPages(RunPageTab tab) => tab switch
+    {
+        RunPageTab.Conformance => [Run, Reports, Compare, Recommendations],
+        RunPageTab.ConformU => [Run, Reports, Recommendations],
+        _ => []
+    };
+
+    /// <summary>The page's first path segment: "" for the Run page, "reports" for a report too.</summary>
+    private string Section => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Split('/')[0];
+
+    private bool OnRunPage => Section.Length == 0;
+
+    /// <summary>
+    /// The tab picked, while the page open is one of its own (Options only has the Run page); otherwise the page
+    /// belongs to the conformance check (Compare, for one).
+    /// </summary>
+    private RunPageTab ActiveTop => OnRunPage || SubPages(State.Tab).Any(p => p.Href.Equals(Section, StringComparison.OrdinalIgnoreCase))
+        ? State.Tab : RunPageTab.Conformance;
+
+    private void Show(RunPageTab tab)
+    {
+        State.Tab = tab;
+        // Stay on the page open if the tab has it too (Reports under either test); otherwise the tab's Run page.
+        if (!OnRunPage && !SubPages(tab).Any(p => p.Href.Equals(Section, StringComparison.OrdinalIgnoreCase))) Nav.NavigateTo("");
+    }
+
+    protected override void OnInitialized()
+    {
+        State.Changed += Refresh;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => Refresh();
+
+    public void Dispose()
+    {
+        State.Changed -= Refresh;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
 }

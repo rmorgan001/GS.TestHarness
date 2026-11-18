@@ -118,16 +118,50 @@ h3 { font-size: 1.1rem; margin: 0 0 .4rem; }
 .page-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .page { padding: 1.5rem 2rem 3rem; max-width: 1400px; }
 
-/* Run / Reports / Compare. */
-.tabs { flex: none; display: flex; gap: .25rem; padding: 0 2rem; border-bottom: 1px solid var(--line); background: rgba(7, 11, 14, .6); }
-.tab {
-    display: inline-flex; align-items: center; gap: .45rem; padding: .7rem 1rem .6rem; margin-bottom: -1px;
-    border-bottom: 2px solid transparent; color: var(--mare); font-family: var(--font-display); font-size: 1.1rem; font-weight: 600;
-    letter-spacing: .02em; transition: color .15s, border-color .15s;
+/* ---- Top tabs (ASCOM Conformance Check, ConformU Debug Log Test, Options) ----
+   Folder tabs: the active one is raised onto the panel colour, with a yellow bar along its top, and opens into its
+   pages' row beneath (.subnav, the same colour). With no row beneath (Options), it opens into the page instead. */
+.tabs {
+    flex: none; display: flex; align-items: flex-end; gap: .4rem; padding: .65rem 2rem 0;
+    border-bottom: 1px solid var(--line); background: linear-gradient(var(--sky), rgba(16, 24, 28, .55));
 }
-.tab:hover { color: var(--moon); text-decoration: none; border-bottom-color: var(--line-strong); }
-.tab.active { color: var(--moon); border-bottom-color: var(--yellow); }
-.tab.active .icon { color: var(--yellow); }
+.tab {
+    position: relative; display: inline-flex; align-items: center; gap: .5rem; padding: .6rem 1.15rem .55rem; margin-bottom: -1px;
+    border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0; background: none;
+    color: var(--mare); font-family: var(--font-display); font-size: 1.08rem; font-weight: 600; letter-spacing: .02em;
+    white-space: nowrap; cursor: pointer; transition: color .15s, background-color .15s, border-color .15s;
+}
+.tab .icon { opacity: .75; transition: color .15s, opacity .15s; }
+.tab:hover { color: var(--moon); background: rgba(23, 34, 38, .6); text-decoration: none; }
+.tab:hover .icon { opacity: 1; }
+.tab.active { color: var(--moon); background: var(--panel); border-color: var(--line); }
+.tab.active::before {
+    content: ""; position: absolute; left: .7rem; right: .7rem; top: -1px; height: 3px;
+    border-radius: 0 0 3px 3px; background: var(--yellow);
+}
+.tab.active .icon { color: var(--yellow); opacity: 1; }
+.tabs.solo .tab.active { background: var(--bg); }
+.tab:focus-visible { outline: 2px solid var(--yellow); outline-offset: -3px; }
+.tab .subtab-count { margin-left: .1rem; font-family: var(--font); }
+
+/* ---- The active top tab's pages (Run, Reports, Compare, Recommendations): pills on the tab's panel colour ---- */
+.subnav {
+    flex: none; display: flex; align-items: center; gap: .35rem; padding: .5rem 2rem;
+    background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto;
+}
+.subtab {
+    display: inline-flex; align-items: center; gap: .45rem; padding: .36rem .9rem; border: 1px solid transparent; border-radius: 999px;
+    color: var(--muted); font-size: .95rem; font-weight: 500; white-space: nowrap;
+    transition: color .15s, background-color .15s, border-color .15s;
+}
+.subtab .icon { opacity: .75; transition: color .15s, opacity .15s; }
+.subtab:hover { color: var(--text); background: var(--panel-raised); text-decoration: none; }
+.subtab:hover .icon { opacity: 1; }
+.subtab.active { color: var(--yellow); background: var(--yellow-soft); border-color: rgba(242, 200, 75, .35); }
+.subtab.active .icon { color: var(--yellow); opacity: 1; }
+.subtab:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.subtab-count { min-width: 1.4rem; padding: 0 .35rem; border-radius: 999px; background: var(--fail); color: #fff; font-size: .75rem; font-weight: 600; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .tab, .tab .icon, .subtab, .subtab .icon { transition: none; } }
 
 .page-head { margin-bottom: 1.5rem; }
 .page-head p { margin: 0; max-width: 90ch; }
@@ -142,7 +176,8 @@ img.kind { height: 1.4rem; }
     html[data-sidebar="collapsed"] .sidebar { width: auto; }
     .sidebar { max-width: none; }
     .page-scroll { overflow: visible; }
-    .tabs { padding: 0 16px; overflow-x: auto; }
+    .tabs { padding: .5rem 16px 0; overflow-x: auto; }
+    .subnav { padding: .45rem 16px; }
     .page { padding: 1rem 16px 2rem; }
 }
 
@@ -215,9 +250,6 @@ button.link.danger, .danger { color: var(--fail); }
 .progress { height: 6px; background: var(--well); border-radius: 3px; overflow: hidden; }
 .progress div { height: 100%; background: linear-gradient(90deg, var(--green), var(--green-hover)); border-radius: 3px; transition: width .3s; }
 
-.groups ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .6rem; }
-.groups li { display: flex; flex-direction: column; gap: .2rem; padding: .7rem .85rem; border: 1px solid var(--line); border-radius: var(--radius-sm); background: rgba(10, 17, 20, .6); font-size: .9rem; }
-.groups li b { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; color: var(--yellow); }
 
 /* ---- Results ---- */
 .summary { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
@@ -370,13 +402,69 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .picked > div:nth-child(2) { min-width: 0; }
 .picked-actions { margin-left: auto; align-self: center; display: flex; align-items: center; gap: .35rem; flex: none; }
 .picked-actions .btn { padding: .55rem 1.1rem; }
-.source { margin: .9rem 0 0; }
+/* The picked server's source folder, in the Server card. */
+.source-folder { margin: .9rem 0 0; display: grid; gap: .3rem; }
+.source-folder label { display: grid; gap: .3rem; font-size: .9rem; }
+.source-folder label > span { display: inline-flex; align-items: center; gap: .35rem; }
+.source-input { display: flex; gap: .4rem; align-items: center; }
+/* The Mount choice, under the source code field. */
+.mount-field { display: grid; gap: .3rem; margin-top: .7rem; font-size: .9rem; }
+.mount-field select { justify-self: start; min-width: 14rem; max-width: 100%; }
+.mount-field .narrow-input { justify-self: start; width: 6rem; }
+.timeout-fields { display: flex; flex-wrap: wrap; gap: 0 1.5rem; }
+.source-folder input { flex: 1; min-width: 0; width: 100%; font-family: var(--mono); font-size: .85rem; }
+
+/* ---- Folder popup ---- */
+.folder-places { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .7rem; }
+.folder-path { display: flex; gap: .4rem; align-items: center; margin-bottom: .5rem; }
+.folder-path input { flex: 1; min-width: 0; font-size: .85rem; }
+.folder-here { display: flex; align-items: center; gap: .4rem; margin: 0 0 .5rem; color: var(--green); font-size: .9rem; }
+.folder-list { list-style: none; margin: 0; padding: .25rem; display: grid; gap: 1px; max-height: 45vh; overflow-y: auto;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--well); }
+.folder-item { width: 100%; display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem; border: 0; border-radius: var(--radius-sm);
+    background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.folder-item .icon { color: var(--mare); flex: none; }
+.folder-item span { overflow-wrap: anywhere; }
+.folder-item:hover, .folder-item:focus-visible { background: var(--panel-raised); outline: none; }
+.folder-item.marked .icon { color: var(--green); }
+.folder-item small { margin-left: auto; color: var(--green); font-size: .78rem; white-space: nowrap; }
+.source-folder p { margin: 0; overflow-wrap: anywhere; }
 .drop-zone {
     position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--radius);
     background: var(--green-soft); border: 2px dashed var(--green); color: var(--green-hover); font-family: var(--font-display);
     font-size: 1.25rem; font-weight: 600; pointer-events: none;
 }
 .server-box.over .drop-zone { background: rgba(82, 183, 136, .3); }
+
+.subpanel { margin-bottom: 1rem; }
+
+
+/* ---- ConformU log (drop a file) on the Run page ---- */
+.conformu-clear { position: relative; z-index: 1; margin-left: auto; }
+.conformu-plan { margin: .8rem 0 0; }
+/* The file input covers the whole area, invisible, so a dropped file or a click goes to it. */
+.conformu-drop {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: .75rem; text-align: center;
+    padding: 1.2rem .75rem; color: var(--muted); border: 2px dashed var(--line); border-radius: var(--radius);
+    transition: background .15s ease, border-color .15s ease;
+}
+.conformu-drop.compact { justify-content: flex-start; text-align: left; padding: .55rem .75rem; }
+.conformu-drop p { margin: 0; }
+.conformu-drop b { color: var(--text); overflow-wrap: anywhere; }
+.conformu-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.conformu-drop input[type=file]:disabled { cursor: default; }
+.conformu-drop:hover, .conformu-drop:focus-within { border-color: var(--mare); }
+.conformu-drop.over { background: var(--green-soft); border-color: var(--green); color: var(--green-hover); }
+.conformu-error { color: var(--fail); margin: .6rem 0 0; }
+.conformu-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin: .9rem 0 .6rem; }
+.conformu-head .summary { margin: 0; }
+.conformu-meta { display: flex; flex-wrap: wrap; gap: .25rem .9rem; }
+.conformu-areas td { vertical-align: top; }
+.conformu-areas td:nth-child(3) { overflow-wrap: anywhere; }
+.conformu-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .9rem; }
+.conformu-actions p { flex: 1 1 260px; margin: 0; }
+.conformu-needs { color: var(--warning); }
+@media (prefers-reduced-motion: reduce) { .conformu-drop { transition: none; } }
 
 /* ---- Dialogs ---- */
 .dialog-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(3, 6, 8, .72); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 16px; }
@@ -497,7 +585,7 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 /* ---- Tests (the catalog of checks) ---- */
 .catalog-groups { display: flex; flex-wrap: wrap; gap: .4rem; }
 .catalog-group { margin-bottom: 1rem; }
-.catalog-group > h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
+.catalog-group > h2, .catalog-group > h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; }
 .catalog-when { font-family: var(--font); font-size: .8rem; font-weight: 400; }
 .catalog-group > p { margin: 0 0 .6rem; }
 .results.catalog td { font-size: .9rem; }

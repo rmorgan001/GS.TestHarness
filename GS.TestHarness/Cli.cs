@@ -24,7 +24,8 @@ namespace GS.TestHarness;
 /// <code>
 /// GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
-///                [--sites server,north,south] [--md report.md]
+///                [--sites server,north,south] [--mount simulator|real]
+///                [--source C:\src\GSServer] [--md report.md]
 /// GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
 /// The report is saved like a run from the web page. Exit code: 0 no failures, 1 failures or errors, 2 bad arguments.
@@ -48,6 +49,11 @@ public static class Cli
             Console.Error.WriteLine("--run must be followed by GSServer (COM) or GreenSwampAlpaca (Alpaca).");
             return 2;
         }
+
+        // --source <folder>: the server's source for this run only (else the folder set in the app, else the default).
+        if (Value("--source") is { Length: > 0 } source && locator.SetFolder(server, source) is { } problem)
+            Console.Error.WriteLine($"--source {source}: {problem} Findings won't name a file.");
+
         var target = new TestTarget
         {
             Host = Value("--host") ?? "localhost",
@@ -67,7 +73,14 @@ public static class Cli
             DriftSeconds = int.TryParse(Value("--drift-seconds"), out var ds) ? Math.Max(5, ds) : 20,
             SlewTimeoutSeconds = int.TryParse(Value("--slew-timeout"), out var st) ? st : 120,
             CallTimeoutSeconds = int.TryParse(Value("--call-timeout"), out var ct) ? ct : 15,
-            FlipAngle = int.TryParse(Value("--flip-angle"), out var fa) ? Math.Clamp(fa, 0, 90) : 15
+            FlipAngle = int.TryParse(Value("--flip-angle"), out var fa) ? Math.Clamp(fa, 0, 90) : 15,
+            // --mount simulator|real: which GSServer code path the mount uses (for the diagnostics' recommendations).
+            Mount = Value("--mount")?.ToLowerInvariant() switch
+            {
+                "simulator" or "sim" => MountKind.Simulator,
+                "real" or "mount" => MountKind.RealMount,
+                _ => MountKind.Unknown
+            }
         };
 
         // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the

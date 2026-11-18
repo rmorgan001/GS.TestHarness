@@ -53,7 +53,7 @@ public sealed class SettingsChecks : ICheckGroup
 
             // DoesRefraction: written back unchanged.
             var refraction = await ctx.TryAsync(t => t.DoesRefraction);
-            if (refraction.Ok)
+            if (refraction.Ok && ctx.Wants("DoesRefraction"))
             {
                 var write = await ctx.TryAsync(t => t.DoesRefraction = refraction.Value);
                 ctx.Report("DoesRefraction.Write", "DoesRefraction",
@@ -71,6 +71,7 @@ public sealed class SettingsChecks : ICheckGroup
                          ("DeclinationRate", "CanSetDeclinationRate", c.CanSetDeclinationRate, t => t.DeclinationRate, (t, v) => t.DeclinationRate = v)
                      })
             {
+                if (!ctx.Wants(member)) continue;
                 if (can)
                 {
                     var current = await ctx.TryAsync(read);
@@ -89,7 +90,7 @@ public sealed class SettingsChecks : ICheckGroup
 
             // Tracking: written back unchanged when it can be set, refused when it can't.
             var tracking = await ctx.TryAsync(t => t.Tracking);
-            if (tracking.Ok)
+            if (tracking.Ok && ctx.Wants("Tracking"))
             {
                 if (c.CanSetTracking)
                 {
@@ -106,7 +107,7 @@ public sealed class SettingsChecks : ICheckGroup
             }
 
             // SideOfPier: a write would flip the mount, so it is only checked here when it can't be set.
-            if (!c.CanSetPierSide)
+            if (!c.CanSetPierSide && ctx.Wants("SideOfPier"))
             {
                 var side = await ctx.TryAsync(t => t.SideOfPier);
                 if (side.Ok && side.Value != PointingState.Unknown)
@@ -134,6 +135,7 @@ public sealed class SettingsChecks : ICheckGroup
     private static async Task DoubleSettingAsync(CheckContext ctx, List<(string, Action<ITelescopeV4>)> restore, string member,
         Func<ITelescopeV4, double> read, Action<ITelescopeV4, double> write, double[] invalid, string rule)
     {
+        if (!ctx.Wants(member)) return;
         var current = await ctx.TryAsync(read);
         if (current.Kind == AscomErrorKind.NotImplemented)
         {
@@ -180,6 +182,7 @@ public sealed class SettingsChecks : ICheckGroup
     private static async Task NotImplementedWriteAsync(CheckContext ctx, List<(string, Action<ITelescopeV4>)> restore, string member,
         string capability, Func<ITelescopeV4, double> read, Action<ITelescopeV4, double> write)
     {
+        if (!ctx.Wants(member)) return;
         var current = await ctx.TryAsync(read);
         // The current value, so a server that wrongly accepts the write changes nothing.
         var value = current.Ok ? current.Value : 0;
@@ -188,6 +191,7 @@ public sealed class SettingsChecks : ICheckGroup
 
     private static async Task TrackingRateAsync(CheckContext ctx, List<(string, Action<ITelescopeV4>)> restore)
     {
+        if (!ctx.Wants("TrackingRate", "TrackingRates")) return;
         var current = await ctx.TryAsync(t => t.TrackingRate);
         if (!current.Ok) return;
         var original = current.Value;
@@ -227,6 +231,7 @@ public sealed class SettingsChecks : ICheckGroup
     /// <summary>As ConformU: write UTCDate an hour ahead, read it back, then set it to the real time again.</summary>
     private static async Task UtcDateAsync(CheckContext ctx)
     {
+        if (!ctx.Wants("UTCDate")) return;
         var ahead = DateTime.UtcNow.AddHours(1);
         var write = await ctx.TryAsync(t => t.UTCDate = ahead);
         if (write.Kind == AscomErrorKind.NotImplemented)
@@ -253,6 +258,7 @@ public sealed class SettingsChecks : ICheckGroup
 
     private static async Task TargetsAsync(CheckContext ctx)
     {
+        if (!ctx.Wants("TargetRightAscension", "TargetDeclination")) return;
         var position = ctx.Facts.GetValueOrDefault("Position") as (double Ra, double Dec)?;
         var (ra, dec) = position ?? (12.0, 0.0);
 

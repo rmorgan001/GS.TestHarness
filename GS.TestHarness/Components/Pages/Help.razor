@@ -37,13 +37,15 @@
                 <li><a href="help#servers">The server list</a></li>
                 <li><a href="help#run">The Run tab</a></li>
                 <li><a href="help#sites">Sites</a></li>
-                <li><a href="help#options">What the run may do</a></li>
+                <li><a href="help#conformu">ConformU Debug Log Test</a></li>
+                <li><a href="help#options">Options</a></li>
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
                 <li><a href="help#compare">The Compare tab</a></li>
                 <li><a href="help#recommendations">The Recommendations tab</a></li>
                 <li><a href="help#checks">What gets checked</a></li>
-                <li><a href="help#source">Where to fix</a></li>
+                <li><a href="help#tests">The tests</a></li>
+                <li><a href="help#source">Where to check the code</a></li>
                 <li><a href="help#cli">From the command line</a></li>
                 <li><a href="help#files">Where things are stored</a></li>
                 <li><a href="help#trouble">Troubleshooting</a></li>
@@ -64,8 +66,9 @@
                     <li>Add the server to the <strong>Servers</strong> list on the left (see <a href="help#servers">The server list</a>).</li>
                     <li>Drag it onto the <strong>Server and sites</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
                     <li>Tick the sites to run at, choose what the run may do, and press <strong>Start run</strong> beside the server.
-                        A warning asks you to remove the OTAs and watch the mount for the whole run; clicking <strong>Start</strong>
-                        there accepts responsibility for the run.</li>
+                        A warning asks you to remove the OTAs and watch the mount for the whole run, and lists the settings under
+                        the server to check first (Mount, flip angle, timeouts and source code), with ⚠ on any that look wrong. Clicking
+                        <strong>Start</strong> there accepts responsibility for the run.</li>
                     <li>Read the findings as they come in. Each run is saved; open it later on the <strong>Reports</strong> tab.</li>
                 </ol>
                 <p class="warning">Moving the mount is off by default. Turn it on only for a simulator, or a real mount that's clear to move.</p>
@@ -96,9 +99,36 @@
 
             <section id="run">
                 <h2>The Run tab</h2>
+                <p>Three tabs run across the top: <strong>ASCOM Conformance Check</strong> (a full check),
+                    <strong>ConformU Debug Log Test</strong> (following up a ConformU debug log, see <a href="help#conformu">ConformU Debug Log Test</a>)
+                    and <strong>Options</strong> (what a run may do, for both). Under <strong>ASCOM Conformance Check</strong> a second
+                    row holds its pages: <strong>Run</strong>, <strong>Reports</strong>, <strong>Compare</strong>
+                    and <strong>Recommendations</strong>. Under <strong>ConformU Debug Log Test</strong>
+                    the same row holds the pages its runs use: <strong>Run</strong>, <strong>Reports</strong>
+                    and <strong>Recommendations</strong> (not Compare). Each tab's pages
+                    show only its own runs: under ConformU Debug Log Test, Reports and Recommendations show only ConformU runs
+                    (the ones that followed up a log); under ASCOM Conformance Check, Reports, Compare and Recommendations
+                    show only full conformance runs. The check groups a run makes are listed under
+                    <a href="help#checks">What gets checked</a>, and every check in them under <a href="help#tests">The tests</a>.</p>
                 <p>The <strong>Server and sites</strong> card holds the server to test. Drag one onto it from the list;
-                    <strong>✕</strong> clears it. It also shows where the server's source code was found, so findings can
-                    name a file (see <a href="help#source">Where to fix</a>).</p>
+                    <strong>✕</strong> clears it. Under the server, on both tests:</p>
+                <dl>
+                    <dt>Source code</dt>
+                    <dd>Where the server's source code is, so findings can name a file (see
+                        <a href="help#source">Where to check the code</a>).</dd>
+                    <dt>Mount</dt>
+                    <dd>What the server drives: <strong>GSServer simulator</strong> or a <strong>Real mount</strong>. GSServer takes
+                        different code paths for each, so the ConformU diagnoses' recommendations follow it; not specified, they
+                        list both. It's remembered as soon as it's changed. On the command line, <code>--mount simulator</code>
+                        or <code>--mount real</code>.</dd>
+                    <dt>Flip angle</dt>
+                    <dd>Degrees either side of the meridian (0 to 90) where the mount can point from either side of the pier.
+                        Inside it the flip checks flip the mount with the SideOfPier command, halfway in on each side, and it must
+                        keep pointing at the same place. A goto 5° past it, across the meridian, must flip the mount by itself.
+                        Needs <em>Move the mount</em> (under Options). Remembered as soon as it is changed.</dd>
+                    <dt>Slew timeout and call timeout</dt>
+                    <dd>How long a slew, and any single call, may take before it counts as never answered. Remembered as soon as they are changed.</dd>
+                </dl>
                 <p><strong>Start run</strong> sits beside the server. With more than one site ticked it reads
                     <strong>Start 2 runs</strong> or <strong>Start 3 runs</strong>: one run, and one report, per site.
                     While it runs, a bar shows the step and progress, with <strong>Stop</strong> to end it early (the mount
@@ -106,9 +136,57 @@
                 <p>When it's done, the bar links to each report and, for several sites, to <strong>Compare sites</strong>.</p>
             </section>
 
+            <section id="conformu">
+                <h2>ConformU Debug Log Test</h2>
+                <p>Drop a ConformU debug log on the <strong>ConformU debug log</strong> card, or click it to choose one.
+                    It must be a debug log: run ConformU with debug logging turned on in its settings. A normal log (one
+                    with no DEBUG lines) is turned away with a note saying so. Every ERROR, ISSUE, CONFIGURATION ALERT and WARNING line is read (the repeats in ConformU's
+                    end-of-run summary count once) and grouped by the ITelescopeV4 member it is about. The table shows, for
+                    each, what ConformU said and which harness checks look at it.</p>
+                <p><strong>Run ConformU checks</strong>, beside the server, checks only the members ConformU found problems
+                    with. It runs the groups that check them, and within each group only the parts that touch those members
+                    (for a PulseGuide problem, Motion's pulse-guide moves but not its slews, syncs or flips), plus the quick
+                    read-only groups they depend on (Connection, Common, Capabilities, Properties, Methods, Performance).
+                    Only findings about the problem members are reported, with anything that explains a check not made. Extended checks
+                    are turned on when a problem needs them; moving the mount and writing settings stay as set under
+                    <strong>Options</strong>, and the card says which problems they would leave unchecked. Sites aren't
+                    used: it's one run at the server's own site, so the tab has no site ticks.</p>
+                <p>The <strong>ConformU</strong> findings then give a verdict for each problem:</p>
+                <dl>
+                    <dt>Reproduced (Fail or Warning)</dt>
+                    <dd>A harness check of the same member found a problem: ConformU's problem is real, and the harness's fix applies.</dd>
+                    <dt>Not reproduced (Info)</dt>
+                    <dd>Every harness check of the member passed: fixed since the ConformU run, or ConformU tested something the harness doesn't.</dd>
+                    <dt>Not checked (Skipped)</dt>
+                    <dd>The checks that would look at it didn't run (motion off, for example). Turn it on and run again.</dd>
+                    <dt>Generated check (Probe)</dt>
+                    <dd>A property no harness check reached in this run is read three times, and its values, errors and read times reported.</dd>
+                    <dt>No check (Warning)</dt>
+                    <dd>Nothing here can test it safely (a ConformU-only topic): reproduce it by hand.</dd>
+                </dl>
+                <h3>Diagnoses</h3>
+                <p>For some problems the run also measures <em>why</em> ConformU saw them, and its findings
+                    (<strong>ConformU.Diagnose…</strong>) recommend what to change and where, in GSServer's code. They only
+                    recommend: nothing is changed on the server. They need <strong>Move the mount</strong>.</p>
+                <dl>
+                    <dt>RightAscensionRate or DeclinationRate outside tolerance</dt>
+                    <dd>ConformU's offset (0.05"/s) and one 800 times larger, each way, for ConformU's 10 s, measured from a reading
+                        every 100 ms and, as ConformU does, from the first and last. Right at both sizes but off as ConformU measures
+                        it: the readings' scatter, not the rate (Warning). Wrong at the large size too: scaled, wrong one way, or
+                        unsteady (Fail).</dd>
+                    <dt>PulseGuide moved too little or too much</dt>
+                    <dd>Pulses of three lengths (up to ConformU's 5 s) each way, the position read as each ends and again a moment
+                        later. The rest of the movement arriving later: a stale position reading (Warning). A shortfall that grows
+                        with the pulse: a wrong guide rate; the same for every pulse: time lost per pulse, with how many ms (Fail).</dd>
+                </dl>
+                <p>Set <strong>Mount</strong> under the server (on the Server card) so the recommendations point at the right
+                    code: GSServer's simulator (GS.Simulator) or a real mount (GS.SkyWatcher). Not specified, they list both.</p>
+            </section>
+
             <section id="sites">
                 <h2>Sites</h2>
-                <p>A run can be made at up to three sites, ticked under the server:</p>
+                <p>A conformance test can be made at up to three sites, ticked under the server (the ConformU Debug Log Test
+                    doesn't use them):</p>
                 <dl>
                     <dt>Server's current settings</dt>
                     <dd>Whatever the server is set to now. Nothing is changed.</dd>
@@ -119,10 +197,13 @@
                 </dl>
                 <p>A northern site needs a latitude above 0, a southern one below 0. A site with a mistake can't be ticked.
                     The sites and ticks are shared by every browser tab.</p>
+                <p class="warning">The Northern and Southern Hemisphere sites are turned off for now: only the server's
+                    current settings are offered.</p>
             </section>
 
             <section id="options">
-                <h2>What the run may do</h2>
+                <h2>Options</h2>
+                <p>On the Run tab's <strong>Options</strong> sub-tab. They apply to both the conformance test and the ConformU Debug Log Test.</p>
                 <dl>
                     <dt>Move the mount</dt>
                     <dd>Slews, syncs, MoveAxis, PulseGuide, park and find home. Tracking and park state are put back afterwards.</dd>
@@ -136,13 +217,6 @@
                     <dd>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads and connect cycles.</dd>
                     <dt>Disconnect at the end</dt>
                     <dd>Checks NotConnected errors. Only possible when no other client holds the device.</dd>
-                    <dt>Slew timeout and call timeout</dt>
-                    <dd>How long a slew, and any single call, may take before it counts as never answered.</dd>
-                    <dt>Flip angle</dt>
-                    <dd>Degrees either side of the meridian (0 to 90) where the mount can point from either side of the pier.
-                        Inside it the flip checks flip the mount with the SideOfPier command, halfway in on each side, and it must
-                        keep pointing at the same place. A goto 5° past it, across the meridian, must flip the mount by itself.
-                        Needs <em>Move the mount</em>.</dd>
                 </dl>
             </section>
 
@@ -232,13 +306,30 @@
                 </table>
             </section>
 
+            <section id="tests">
+                <h2>The tests</h2>
+                <p>Every check a run can make, by group: its objective, how it is tested, how the result is verified, and
+                    the reference material it is based on. In IDs, words in braces stand for each member, axis, direction
+                    or rate checked. Search, or pick a group, to narrow the list.</p>
+                <TestCatalogView />
+            </section>
+
             <section id="source">
-                <h2>Where to fix</h2>
+                <h2>Where to check the code</h2>
                 <p>A finding names the file and line to look at, such as <code>GS.Ascom.SkyTelescope/Telescope.cs:1265</code>,
-                    when the server's source code is on this computer. <code>appsettings.json</code> → <code>Codebases</code>
-                    says where each server's source is. Folder names are looked for beside this program's folder and
-                    its parents, so <code>GSServer</code> and <code>GreenSwampAlpaca</code> cloned next to it are found
-                    by themselves. The Server and sites card shows the folder found, or says none was.</p>
+                    when the server's source code is on this computer. Under the server, on either test's Server card, paste
+                    the repository's top folder into <strong>source code</strong>, or click the folder button beside it to
+                    choose it: the popup lists the folders on this computer (start from <code>source\repos</code>, Documents, your home
+                    folder or a drive) and marks the ones that hold the server's driver file. The folder is checked for that
+                    file, and the card says which folder findings will use. The path is your own: it's saved in
+                    <code>source-folders.json</code> beside the reports folder, so everyone who runs the harness sets their own,
+                    and it's shared by both tests.</p>
+                <p>Left empty, <code>appsettings.json</code> → <code>Codebases</code> gives the default: a folder name looked for
+                    beside this program's folder and its parents, so <code>GSServer</code> and <code>GreenSwampAlpaca</code>
+                    cloned next to it are found by themselves. On the command line, <code>--source &lt;folder&gt;</code> sets
+                    it for that run.</p>
+                <p>The source only adds file names to findings: the checks, and the ConformU diagnoses and their recommendations,
+                    work without it.</p>
             </section>
 
             <section id="cli">
@@ -262,6 +353,9 @@ GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                     <dt>Servers and sites</dt>
                     <dd><code>servers.json</code> and <code>sites.json</code> beside the reports folder. Alpaca passwords
                         are saved encrypted (with DPAPI on Windows) and never written into reports.</dd>
+                    <dt>Source folders and options</dt>
+                    <dd><code>source-folders.json</code> (each server's source code, see <a href="help#source">Where to check the code</a>)
+                        and <code>last-run.json</code> (the server and options last used) beside the reports folder.</dd>
                 </dl>
             </section>
 
@@ -279,7 +373,7 @@ GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                     <dt>Slews time out</dt>
                     <dd>Raise the slew timeout, or check that the mount (or simulator) is unparked and can reach the targets.</dd>
                     <dt>Findings don't name a file</dt>
-                    <dd>The server's source wasn't found: see <a href="help#source">Where to fix</a>.</dd>
+                    <dd>The server's source wasn't found: see <a href="help#source">Where to check the code</a>.</dd>
                     <dt>Start run is greyed out</dt>
                     <dd>Tick at least one site under the server.</dd>
                 </dl>

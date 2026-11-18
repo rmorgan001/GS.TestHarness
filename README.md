@@ -31,19 +31,35 @@ of the same server, by default the newest against the last different DriverVersi
 | Registration | COM only, from the registry: ASCOM Profile entry, ProgID → CLSID, server for 64- and 32-bit clients |
 | Performance | Property read times (slow reads flagged) and any call that never answered |
 | Disconnected | Disconnect, then NotConnected errors (only when no other client holds the device) |
+| ConformU | Only for a ConformU debug log: reproduced / not reproduced / not checked for each of its problems, generated checks, and diagnoses (rate offsets, pulse guiding) |
 
 **Extended checks** (off by default) add a few minutes: tracking drift and several clients at once.
 
-**Sites.** A run can be made at the server's own site, and/or at one northern and one southern site saved on the
-Run tab (name, latitude, longitude, elevation). For those, SiteElevation, SiteLatitude and SiteLongitude are set
-after connecting and the server's own values are put back afterwards. Each site gets its own report, and the Compare tab
-puts them side by side.
+**Tabs.** Across the top: **ASCOM Conformance Check** (a full check, with Run, Reports, Compare and Recommendations
+under it), **ConformU Debug Log Test** (following up a ConformU log, with Run, Reports and Recommendations showing only
+its runs) and **Options** (what a run may do). Under the server on each test: its source code folder, the **Mount**
+(GSServer simulator or real mount), the flip angle and the timeouts. Pressing Start lists those settings to check, with
+a warning on any that look wrong.
+
+**Sites.** A run is made at the server's own site. (Northern and southern sites, where SiteLatitude, SiteLongitude and
+SiteElevation are set for the run and put back afterwards, are turned off for now: `SiteStore.HemisphereSites`.)
 
 **Motion is off by default.** Turn it on only for a simulator, or for a real mount that is clear to move.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
 
-**The Tests tab** lists every check: its objective, how it's tested, how the result is verified, and the ASCOM
-documentation or ConformU code it's based on.
+**ConformU Debug Log Test.** Takes a ConformU *debug* log by drag and drop (a normal log is turned away). Its errors,
+issues and configuration alerts are grouped by ITelescopeV4 member; **Run ConformU checks** checks only those members:
+the groups that cover them, only the parts of each group that touch them, and only findings about them. It then says
+for each problem whether the harness reproduced it, didn't, or couldn't check it. A property no check reached is read by
+a generated check; anything else nothing here can test is flagged to reproduce by hand.
+
+**Diagnoses.** For RightAscensionRate / DeclinationRate and PulseGuide problems, the run measures *why* ConformU saw
+them (a rate that is wrong, or readings too coarse for ConformU's measurement; a stale position reading, a wrong guide
+rate, or time lost per pulse) and recommends where to check GSServer's code, for its simulator or a real mount as set
+by **Mount**. The harness only recommends: it never changes the server's code.
+
+**The help** (the **?** at the top right) lists every check: its objective, how it's tested, how the result is
+verified, and the ASCOM documentation or ConformU code it's based on.
 
 **If the device stops answering** part way (a COM server crash, an Alpaca server gone), the run stops with one
 `CommunicationLost` error and keeps what it found so far.
@@ -54,7 +70,7 @@ documentation or ConformU code it's based on.
 dotnet run --project GS.TestHarness
 ```
 
-Then open http://localhost:5207, drag a server onto the Run tab and start a run. The **?** at the top right opens the
+Then open http://localhost:5207, drag a server onto the Server card and start a run. The **?** at the top right opens the
 help.
 
 ### From the command line
@@ -66,15 +82,17 @@ GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [
 GS.TestHarness --run GSServer
 ```
 
-Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 15).
+Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 15), `--mount simulator|real`, `--source <folder>` (the server's source code for this run).
 
 The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.
 
-## Where the fixes go
+## Where to check the code
 
-`appsettings.json` → `Codebases` says where each server's source is. Folder names are looked for beside this
-repository, so `GSServer` and `GreenSwampAlpaca` cloned next to it are found automatically. Findings then name a
-file and line, such as `GS.Ascom.SkyTelescope/Telescope.cs:1265`.
+Under the server on each test, set the server's **source code** folder (paste it, or pick it with the folder button:
+folders holding the driver file are marked). It's each person's own setting, saved in `source-folders.json` beside the
+reports folder. Left empty, `appsettings.json` → `Codebases` gives the default: folder names looked for beside this
+repository, so `GSServer` and `GreenSwampAlpaca` cloned next to it are found automatically. Findings then name the
+code to check, such as `GS.Ascom.SkyTelescope/Telescope.cs:1265`.
 
 Reports are saved to `Documents\GS.TestHarness\Reports` (setting `ReportsFolder`), as JSON, and can be downloaded
 as Markdown (ready to paste into an issue), JSON or CSV, or printed / saved as PDF from the browser.

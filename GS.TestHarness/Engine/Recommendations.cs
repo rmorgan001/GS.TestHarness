@@ -158,7 +158,7 @@ public static class RecommendationBuilder
                 sb.AppendLine();
                 if (r.Fixes.Count == 0) sb.AppendLine("- Recommendation: none recorded; see the expected and actual values below.");
                 foreach (var fix in r.Fixes) sb.AppendLine($"- Recommendation: {Inline(fix)}");
-                foreach (var source in r.Sources) sb.AppendLine($"- Where: {Code(source)}");
+                foreach (var source in r.Sources) sb.AppendLine($"- Code to check: {Code(source)}");
                 if (r.Reference is not null) sb.AppendLine($"- Reference: {Inline(r.Reference)}");
                 foreach (var hit in r.Hits)
                 {

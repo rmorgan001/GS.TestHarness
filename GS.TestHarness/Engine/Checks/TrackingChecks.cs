@@ -52,20 +52,25 @@ public sealed class TrackingChecks : ICheckGroup
                 await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
                 await ctx.TryAsync(t => t.Tracking = true);
             }
-            if ((await ctx.TryAsync(t => t.Tracking)).Value) await HoldsStillAsync(ctx);
-            else ctx.Report("TrackingOn", "Tracking", Outcome.Skipped, "Tracking is off and can't be turned on.");
-
-            if (c.CanSetTracking && (await ctx.TryAsync(t => t.Tracking = false)).Ok)
+            // Drift on and off only when tracking itself is wanted (a ConformU run wants only its problem members).
+            if (ctx.Wants("Tracking", "RightAscension", "TrackingRate"))
             {
-                await FollowsSkyAsync(ctx);
-                await ctx.TryAsync(t => t.Tracking = true);
-            }
-            else
-            {
-                ctx.Report("TrackingOff", "Tracking", Outcome.Skipped, "Tracking can't be turned off (CanSetTracking is false).");
+                if ((await ctx.TryAsync(t => t.Tracking)).Value) await HoldsStillAsync(ctx);
+                else ctx.Report("TrackingOn", "Tracking", Outcome.Skipped, "Tracking is off and can't be turned on.");
+
+                if (c.CanSetTracking && (await ctx.TryAsync(t => t.Tracking = false)).Ok)
+                {
+                    await FollowsSkyAsync(ctx);
+                    await ctx.TryAsync(t => t.Tracking = true);
+                }
+                else
+                {
+                    ctx.Report("TrackingOff", "Tracking", Outcome.Skipped, "Tracking can't be turned off (CanSetTracking is false).");
+                }
             }
 
-            if ((c.CanSetRightAscensionRate || c.CanSetDeclinationRate) && ctx.Options.AllowMotion) await OffsetsAsync(ctx);
+            if (!ctx.Wants("RightAscensionRate", "DeclinationRate")) { }
+            else if ((c.CanSetRightAscensionRate || c.CanSetDeclinationRate) && ctx.Options.AllowMotion) await OffsetsAsync(ctx);
             else if (c.CanSetRightAscensionRate || c.CanSetDeclinationRate)
                 ctx.Report("Offsets", "RightAscensionRate", Outcome.Skipped, "Rate offsets move the mount; motion is turned off for this run.");
         }
