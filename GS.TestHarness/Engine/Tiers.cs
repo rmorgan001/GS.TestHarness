@@ -177,6 +177,26 @@ public static class Tiers
                (problems.Count > 5 ? $"\n… and {problems.Count - 5} more" : "");
     }
 
+    /// <summary>
+    /// The runs linked with <paramref name="run"/> through its tiers: the tier 1 run its chain starts from, and every
+    /// run that follows that one up (directly or through another), <paramref name="run"/> included. By tier, then time.
+    /// </summary>
+    public static List<RunReport> Chain(RunReport run, IEnumerable<RunReport> all)
+    {
+        var runs = all.ToList();
+        var byId = runs.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        var root = Root(run, byId);
+        var chain = new List<RunReport> { root };
+        for (var i = 0; i < chain.Count; i++)
+            chain.AddRange(runs.Where(r => r.Options.FollowsUp == chain[i].Id && chain.All(c => c.Id != r.Id)));
+        if (chain.All(c => c.Id != run.Id)) chain.Add(run);
+        return [.. chain.OrderBy(r => r.Options.Tier).ThenBy(r => r.Started)];
+    }
+
+    /// <summary>The numbers of the tests of a run's own tier it made (a tier 2 run's 2001…), in order.</summary>
+    public static List<int> OwnTests(RunReport run)
+        => [.. run.Results.Select(r => r.Number).Where(n => n > 0 && TestNumbers.TierOf(n) == run.Options.Tier).Distinct().Order()];
+
     /// <summary>The tier 1 run a run's chain of follow-ups starts from (itself at tier 1), among <paramref name="byId"/>.</summary>
     public static RunReport Root(RunReport run, IReadOnlyDictionary<string, RunReport> byId)
     {

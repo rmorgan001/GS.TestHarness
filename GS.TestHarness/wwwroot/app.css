@@ -557,6 +557,13 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .via { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; }
 .via img { width: 18px; height: 18px; }
 .reports td { vertical-align: middle; }
+/* Tiers: a badge per tier, and the chain of runs on a report. */
+.tier-cell { white-space: nowrap; }
+.tier-badge { display: inline-block; padding: .05rem .45rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .78rem; font-weight: 600; }
+.tier-badge.tier-2 { color: var(--info); border-color: currentColor; }
+.tier-badge.tier-3 { color: var(--accent); border-color: currentColor; }
+.tier-chain tr.current td { background: var(--panel-raised); }
+.tier-chain .tier-test + .tier-test { margin-left: .4rem; }
 .results .col-bar { width: 140px; }
 .outcome-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--well); min-width: 100px; }
 .outcome-bar span { display: block; height: 100%; }

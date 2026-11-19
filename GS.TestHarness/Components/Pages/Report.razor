@@ -53,6 +53,7 @@ else if (_report is { } r)
         <section class="card facts">
             <h2>Run</h2>
             <dl>
+                <dt>Tier</dt><dd>@Tiers.Name(r.Options.Tier)</dd>
                 <dt>Server</dt><dd>@r.Target.Codebase (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</dd>
                 <dt>Site</dt><dd>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</dd>
                 <dt>Motion</dt><dd>@(r.Options.AllowMotion ? "allowed" : "not allowed")</dd>
@@ -69,6 +70,43 @@ else if (_report is { } r)
         </section>
     </div>
 
+    @* The run's tiers: the tier 1 run and every run that follows it up, each linked; this one marked. *@
+    @if (_chain.Count > 1 || r.Options.FollowsUp is not null)
+    {
+        <section class="card" id="tiers">
+            <h2>Tiers</h2>
+            <table class="results tier-chain">
+                <thead><tr><th>Tier</th><th>Run</th><th class="num">Fail</th><th class="num">Warn</th><th>Tests</th></tr></thead>
+                <tbody>
+                    @foreach (var c in _chain)
+                    {
+                        var self = c.Id == r.Id;
+                        <tr class="@(self ? "current" : null)">
+                            <td class="tier-cell" style="padding-left:@((c.Options.Tier - 1) * 1.2 + .6)rem">
+                                <span class="tier-badge tier-@c.Options.Tier">Tier @c.Options.Tier</span>
+                            </td>
+                            <td>
+                                @if (self) { <strong>@c.Started.ToString("yyyy-MM-dd HH:mm")</strong> <span class="muted">· this report</span> }
+                                else { <a href="reports/@c.Id">@c.Started.ToString("yyyy-MM-dd HH:mm")</a> }
+                                <div class="small muted">@c.SiteLabel@(c.Options.Members is { Count: > 0 } m && c.Options.Tier > 1 ? $" · {string.Join(", ", m)}" : "")</div>
+                            </td>
+                            <td class="num"><span class="count @(c.Count(Outcome.Fail) + c.Count(Outcome.Error) > 0 ? "fail" : null)">@(c.Count(Outcome.Fail) + c.Count(Outcome.Error))</span></td>
+                            <td class="num"><span class="count @(c.Count(Outcome.Warning) > 0 ? "warning" : null)">@c.Count(Outcome.Warning)</span></td>
+                            <td class="mono small">
+                                @* Tier 1: the tests that found an issue; deeper: the tests of its tier it made. *@
+                                @foreach (var n in c.Options.Tier == 1 ? Issues(c) : Tiers.OwnTests(c)) { <a class="tier-test" href="help#test-@n">@n</a> }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (r.Options.FollowsUp is { } up && _chain.All(c => c.Id != up))
+            {
+                <p class="muted small">The run this one follows up (@up) has been deleted.</p>
+            }
+        </section>
+    }
+
     <section class="card">
         <ResultsTable Results="r.Results" />
     </section>
@@ -82,11 +120,16 @@ else
     [Parameter] public string Id { get; set; } = "";
     private RunReport? _report;
     private bool _missing;
+    private List<RunReport> _chain = [];
+
+    private static IEnumerable<int> Issues(RunReport run)
+        => run.Results.Where(x => x.IsProblem).Select(x => x.Number).Where(n => n > 0).Distinct().Order();
 
     protected override async Task OnParametersSetAsync()
     {
         try { _report = await Store.LoadAsync(Id); }
         catch (ArgumentException) { _report = null; }
         _missing = _report is null;
+        _chain = _report is null ? [] : Tiers.Chain(_report, await Store.ListAsync());
     }
 }

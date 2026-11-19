@@ -88,10 +88,6 @@
     font-size: .95rem;
 }
 
-    .help-body .help-text > * {
-        max-width: 48rem;
-    }
-
     .help-body .help-text .lead {
         margin-top: 0;
         font-size: 1.05rem;

@@ -110,6 +110,27 @@ public class ReportTests
     }
 
     [Fact]
+    public void A_report_links_to_every_run_of_its_tiers_and_lists_their_own_tests()
+    {
+        var tier1 = Run("1.3", 30);
+        var tier2 = Report(Result("Diagnose.RightAscensionRate", Outcome.Fail), Result("Connection.Connected.Read", Outcome.Pass)) with
+            { Started = DateTimeOffset.Now.AddMinutes(-20), Options = new RunOptions { Tier = 2, FollowsUp = tier1.Id } };
+        var tier3 = Run("1.3", 10) with { Options = new RunOptions { Tier = 3, FollowsUp = tier2.Id } };
+        var other = Run("1.3", 5);
+        RunReport[] all = [other, tier3, tier2, tier1];
+
+        // From any run of the chain: the same runs, by tier; another tier 1 run isn't in it.
+        Assert.Equal([tier1.Id, tier2.Id, tier3.Id], Tiers.Chain(tier3, all).Select(r => r.Id));
+        Assert.Equal([tier1.Id, tier2.Id, tier3.Id], Tiers.Chain(tier1, all).Select(r => r.Id));
+        Assert.Equal([other.Id], Tiers.Chain(other, all).Select(r => r.Id));
+        // A deeper run whose tier 1 run was deleted still shows itself.
+        Assert.Equal([tier2.Id, tier3.Id], Tiers.Chain(tier2, [tier2, tier3]).Select(r => r.Id));
+
+        // Its own tier's tests by number: the diagnosis (2003), not the connection check (tier 1).
+        Assert.Equal([2003], Tiers.OwnTests(tier2));
+    }
+
+    [Fact]
     public void CSV_quotes_what_needs_it_and_defuses_formulas()
     {
         var report = Report(Result("A.X", Outcome.Fail, "says \"no\", twice\nthen stops"), Result("A.Y", Outcome.Pass, "=HYPERLINK(\"x\")"),
@@ -118,14 +139,14 @@ public class ReportTests
         Assert.Equal(System.Text.Encoding.UTF8.GetPreamble(), bytes[..3]);
         var text = System.Text.Encoding.UTF8.GetString(bytes[3..]);
         var lines = text.Split("\r\n");
-        Assert.StartsWith("Id,Group,Member,Outcome,Message", lines[0]);
+        Assert.StartsWith("No,Id,Group,Member,Outcome,Message", lines[0]);
         Assert.Contains("\"says \"\"no\"\", twice\nthen stops\"", text);
         // A leading apostrophe makes the formula text; the quotes inside it force quoting.
         Assert.Contains(",\"'=HYPERLINK(\"\"x\"\")\",", text);
         Assert.Contains(",-91,", text);
 
         var compare = System.Text.Encoding.UTF8.GetString(ReportCsv.Comparison(report, Report(Result("A.X", Outcome.Pass)))[3..]);
-        Assert.Contains("Fixed,A.X,", compare);
+        Assert.Contains("Fixed,,A.X,", compare);
     }
 
     [Fact]

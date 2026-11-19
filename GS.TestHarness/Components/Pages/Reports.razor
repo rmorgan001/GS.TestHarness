@@ -54,7 +54,7 @@ else
         <table class="results reports">
             <thead>
                 <tr><th class="col-check-box"><input type="checkbox" checked="@all" title="Select all" aria-label="Select all reports"
-                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>When</th><th>Device</th><th>Site</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
+                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>When</th><th>Tier</th><th>Device</th><th>Site</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
             </thead>
             <tbody>
                 @foreach (var r in _reports)
@@ -68,6 +68,27 @@ else
                         <td class="col-check-box"><input type="checkbox" checked="@isChecked" aria-label="Check this report for deleting"
                                                          @onchange="e => Check(r.Id, (bool)e.Value!)" /></td>
                         <td class="when"><span>@r.Started.ToString("yyyy-MM-dd")</span> <span class="muted">@r.Started.ToString("HH:mm")</span></td>
+                        @* The tier, and for a deeper run the run it follows up; for a tier 1 run, how many deeper runs follow it. *@
+                        <td class="tier-cell">
+                            <span class="tier-badge tier-@r.Options.Tier">Tier @r.Options.Tier</span>
+                            @if (r.Options.FollowsUp is { } up)
+                            {
+                                <div class="small">
+                                    @if (_byId!.TryGetValue(up, out var parent))
+                                    {
+                                        <a href="reports/@parent.Id" title="@parent.Label">follows @parent.Started.ToString("MM-dd HH:mm")</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="muted">follows a deleted run</span>
+                                    }
+                                </div>
+                            }
+                            else if (_followers!.GetValueOrDefault(r.Id) is > 0 and var deeper)
+                            {
+                                <div class="small"><a href="reports/@r.Id#tiers">@deeper deeper run@(deeper == 1 ? "" : "s")</a></div>
+                            }
+                        </td>
                         <td>
                             <a class="device" href="reports/@r.Id">@(r.Identity.Name ?? r.Target.Display)</a>
                             <div class="device-meta">
@@ -104,11 +125,22 @@ else
     private List<RunReport>? _all, _reports;
     private readonly HashSet<string> _checked = [];
 
+    // Each run by its ID, and for each tier 1 run how many runs follow up its chain.
+    private Dictionary<string, RunReport>? _byId;
+    private Dictionary<string, int>? _followers;
+
+    private void Index()
+    {
+        _byId = _all!.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        _followers = _all!.Where(r => r.Options.Tier > 1).GroupBy(r => Tiers.Root(r, _byId).Id).ToDictionary(g => g.Key, g => g.Count());
+    }
+
     private bool ConformUOnly => State.Tab == RunPageTab.ConformU;
 
     protected override async Task OnInitializedAsync()
     {
         _all = await Store.ListAsync();
+        Index();
         _reports = State.Shown(_all);
         State.Changed += OnTabChanged;
     }
@@ -148,5 +180,6 @@ else
         _reports!.RemoveAll(r => _checked.Contains(r.Id));
         _all!.RemoveAll(r => _checked.Contains(r.Id));
         _checked.Clear();
+        Index();
     }
 }

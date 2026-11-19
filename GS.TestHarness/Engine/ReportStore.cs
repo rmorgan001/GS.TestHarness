@@ -132,6 +132,7 @@ public sealed class ReportStore(string folder)
         sb.AppendLine($"- Run: {r.Started:yyyy-MM-dd HH:mm} ({(r.Finished - r.Started)?.TotalSeconds:0} s){(r.Cancelled ? ", stopped early" : "")}{(r.CommunicationLost ? ", stopped: communication with the device was lost" : "")}, GS.TestHarness {r.HarnessVersion}");
         sb.AppendLine($"- Options: motion {(r.Options.AllowMotion ? "on" : "off")}, settings writes {(r.Options.AllowSettingsWrites ? "on" : "off")}, " +
                       $"SetPark {(r.Options.AllowSetPark ? "on" : "off")}, protocol {(r.Options.IncludeProtocol ? "on" : "off")}");
+        sb.AppendLine($"- {Tiers.Name(r.Options.Tier)}{(r.Options.FollowsUp is { } up ? $", following up run {up}" : "")}");
         sb.AppendLine();
         sb.AppendLine($"**{r.Count(Outcome.Fail)} failed, {r.Count(Outcome.Error)} errors, {r.Count(Outcome.Warning)} warnings**, " +
                       $"{r.Count(Outcome.Pass)} passed, {r.Count(Outcome.Info)} info, {r.Count(Outcome.Skipped)} skipped.");
@@ -319,9 +320,9 @@ public static class ReportCsv
     public static byte[] Report(RunReport r)
     {
         var sb = new StringBuilder();
-        Row(sb, "Id", "Group", "Member", "Outcome", "Message", "Expected", "Actual", "Fix", "Source", "Reference", "DurationMs");
+        Row(sb, "No", "Id", "Group", "Member", "Outcome", "Message", "Expected", "Actual", "Fix", "Source", "Reference", "DurationMs");
         foreach (var x in r.Results)
-            Row(sb, x.Id, x.Group, x.Member, x.Outcome.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
+            Row(sb, No(x.Id), x.Id, x.Group, x.Member, x.Outcome.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
                 x.DurationMs.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
         return Bytes(sb);
     }
@@ -329,14 +330,17 @@ public static class ReportCsv
     public static byte[] Comparison(RunReport before, RunReport after)
     {
         var sb = new StringBuilder();
-        Row(sb, "Change", "Id", "Group", "Member",
+        Row(sb, "Change", "No", "Id", "Group", "Member",
             $"Before outcome ({before.Identity.DriverVersion} {before.Started:yyyy-MM-dd HH:mm})", "Before message",
             $"After outcome ({after.Identity.DriverVersion} {after.Started:yyyy-MM-dd HH:mm})", "After message", "Fix");
         foreach (var c in ReportComparer.Compare(before, after))
-            Row(sb, c.Change.ToString(), c.Id, c.Group, c.Member, c.Before?.Outcome.ToString(), c.Before?.Message,
+            Row(sb, c.Change.ToString(), No(c.Id), c.Id, c.Group, c.Member, c.Before?.Outcome.ToString(), c.Before?.Message,
                 c.After?.Outcome.ToString(), c.After?.Message, (c.After ?? c.Before)?.Fix);
         return Bytes(sb);
     }
+
+    /// <summary>The test's number (TestNumbers), or blank for a finding with none.</summary>
+    private static string No(string id) => TestNumbers.Of(id) is > 0 and var n ? n.ToString() : "";
 
     /// <summary>A file name made safe from the run's label.</summary>
     public static string FileName(string label) => Regex.Replace(label, @"[^\w.-]+", "_").Trim('_');
