@@ -41,13 +41,21 @@
         <div class="table-scroll">
             <table class="results catalog">
                 <thead>
-                    <tr><th>Test</th><th>Objective</th><th>How it's tested</th><th>How it's verified</th><th>References</th></tr>
+                    <tr><th>Test</th><th>Tier</th><th>Objective</th><th>How it's tested</th><th>How it's verified</th><th>References</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var e in entries)
                     {
                         <tr>
                             <td class="mono catalog-id">@e.DisplayId</td>
+                            <td>
+                                @e.Tier
+                                @if (e.FollowsUp.Count > 0)
+                                {
+                                    <div class="small muted">follows up tier @(e.Tier - 1):</div>
+                                    @foreach (var key in e.FollowsUp) { <div class="mono small">@key</div> }
+                                }
+                            </td>
                             <td>@e.Objective</td>
                             <td>@e.Method</td>
                             <td>@e.Verification</td>
@@ -105,7 +113,7 @@
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var s = _search.Trim();
-        return new[] { e.Id, e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs) }
+        return new[] { e.Id, $"tier {e.Tier}", e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs), string.Join(" ", e.FollowsUp) }
             .Any(text => text.Contains(s, StringComparison.OrdinalIgnoreCase));
     }
 }

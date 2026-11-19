@@ -38,7 +38,7 @@ public class EngineTests(ITestOutputHelper output)
     internal static readonly RunOptions WithExtended = Everything with { Extended = true };
 
     internal static async Task<RunReport> RunAsync(FakeTelescope fake, RunOptions? options = null, TestTarget? target = null,
-        SiteLocation? site = null, ConformULog? conformU = null)
+        SiteLocation? site = null, ConformULog? conformU = null, RunReport? followsUp = null)
     {
         var runner = new TestRunner(SourceLocator.None);
         await using var session = new DirectSession(fake);
@@ -46,7 +46,7 @@ public class EngineTests(ITestOutputHelper output)
         var clients = 0;
         var report = await runner.RunAsync(session, target ?? new TestTarget(), options ?? Everything,
             openSession: () => Task.FromResult<ITelescopeSession>(new DirectSession(fake, Interlocked.Increment(ref clients))),
-            site: site, conformU: conformU);
+            site: site, conformU: conformU, followsUp: followsUp);
         // The Tests page must describe every finding a run can make.
         var uncatalogued = report.Results.Select(r => r.Id).Where(id => TestCatalog.For(id) is null).Distinct().ToList();
         Assert.True(uncatalogued.Count == 0, "Not in Engine/TestCatalog.cs: " + string.Join(", ", uncatalogued));

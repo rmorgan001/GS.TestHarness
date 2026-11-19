@@ -76,6 +76,23 @@ public enum Defect
     /// <summary>The first RightAscension read after RightAscensionRate is set is 0.015 s of RA out (a single stray reading).</summary>
     StrayReadingAfterRateSet,
 
+    /// <summary>
+    /// While tracking, RA drifts 0.0007 s of RA per second (0.0105"/s) whatever the offset, as GSServer's would with
+    /// SkySettings.RaTrackingOffset at about 70 (or a custom gearing offset): the offset itself is right, but a 0.05"/s
+    /// offset then measures about 1.21 × one way and 0.79 × the other.
+    /// </summary>
+    RaTrackingDrift,
+
+    /// <summary>
+    /// The RA reading wanders by up to 0.001 s of RA, slowly (a 4 s period from when RightAscensionRate was set), as
+    /// readings do when a 20 ms position step is sampled at nearly the same rhythm: the error is bounded, so it doesn't
+    /// grow with time as a wrong rate's does, but over a short measurement it looks like one.
+    /// </summary>
+    SlowPositionWander,
+
+    /// <summary>The RA offset is applied rounded to a multiple of 0.002 s per second: 0.0033 moves at 0.004 (1.20 ×) either way.</summary>
+    SmallRaOffsetRounded,
+
     /// <summary>Disconnect() returns without error but leaves the client connected (ConformU: "Connected Get returned True").</summary>
     ConnectedAfterDisconnect,
 
@@ -101,6 +118,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private readonly double[] _axisRates = new double[3];
     private DateTime _pulseUntil;
     private bool _strayNext; // StrayReadingAfterRateSet: the next RightAscension read is out
+    private long _raRateSetAt = System.Diagnostics.Stopwatch.GetTimestamp(); // SlowPositionWander: its phase starts here
     // The pulse under way on each axis: from Start (a Stopwatch timestamp), for Seconds, at these rates (hours and
     // degrees per second). A pulse moves the mount gradually, so a position read during or just after it shows that.
     private (long Start, double Seconds, double Ra, double Dec)? _pulseRa, _pulseDec;
@@ -339,6 +357,11 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
             var sinceStep = (double)(now % (long)(0.02 * f)) / f;
             ra = Values.Wrap24(ra + sinceStep * 1.0027379 / 3600);
         }
+        if (Has(Defect.SlowPositionWander))
+        {
+            var sinceSet = (double)(now - _raRateSetAt) / f;
+            ra = Values.Wrap24(ra + 0.001 * Math.Sin(2 * Math.PI * sinceSet / 4) / 3600);
+        }
         return (ra, dec);
     }
 
@@ -365,6 +388,9 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
             }
             if (!_tracking) return (Values.Wrap24(Lst - _ha + axisRa), Math.Clamp(_dec + axisDec, -90, 90));
             var raRate = Has(Defect.RaOffsetScaled) ? _raRate * 1.5 : _raRate;
+            if (Has(Defect.SmallRaOffsetRounded)) raRate = Math.Round(raRate / 0.002) * 0.002;
+            // Seconds of RA per sidereal second, as the offset: 0.0007 s per SI second.
+            if (Has(Defect.RaTrackingDrift)) raRate += 0.0007 / 1.0027379;
             return (Values.Wrap24(_ra + raRate * seconds * 1.0027379 / 3600 + axisRa),
                 Math.Clamp(_dec + _decRate * seconds / 3600 + axisDec, -90, 90));
         }
@@ -428,7 +454,11 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public double RightAscensionRate
     {
         get { NeedConnected(); return OffsetRead(_raRate); }
-        set { NeedConnected(); NeedSidereal(); CheckOffset(value); Bake(); _raRate = value; _strayNext = Has(Defect.StrayReadingAfterRateSet); }
+        set
+        {
+            NeedConnected(); NeedSidereal(); CheckOffset(value); Bake(); _raRate = value; _strayNext = Has(Defect.StrayReadingAfterRateSet);
+            _raRateSetAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
     }
 
     /// <summary>Offsets only apply at sidereal rate: at any other rate they read 0.</summary>

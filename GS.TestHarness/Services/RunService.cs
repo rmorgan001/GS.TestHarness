@@ -63,9 +63,18 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     /// <summary>
     /// Starts one run per site, in turn (null: the server's own site); false if a run is already under way.
     /// </summary>
-    public bool Start(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU = null)
+    /// <param name="followsUp">For a tier 2 or 3 run, the run it follows up (<see cref="Tiers.Options"/> made the options from it).</param>
+    public bool Start(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU = null,
+        RunReport? followsUp = null)
     {
         if (sites.Count == 0) return false;
+        // Tier 1 always first: a deeper run only follows up the tier below's findings.
+        if (Tiers.Problem(options, followsUp, conformU is not null) is { } problem)
+        {
+            Status = $"Can't run tier {options.Tier}: {problem}";
+            Changed?.Invoke();
+            return false;
+        }
         lock (_gate)
         {
             if (IsRunning) return false;
@@ -84,7 +93,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             _cts = new CancellationTokenSource();
         }
         Changed?.Invoke();
-        _ = Task.Run(() => RunAllAsync(target, options, sites, conformU, _cts.Token));
+        _ = Task.Run(() => RunAllAsync(target, options, sites, conformU, followsUp, _cts.Token));
         return true;
     }
 
@@ -100,7 +109,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     }
 
     private async Task RunAllAsync(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU,
-        CancellationToken token)
+        RunReport? followsUp, CancellationToken token)
     {
         var reports = new List<RunReport>();
         try
@@ -113,7 +122,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                     SiteIndex = i;
                     if (i > 0) _results.Clear();
                 }
-                if (await RunAsync(target, options, sites[i], conformU, token) is { } report)
+                if (await RunAsync(target, options, sites[i], conformU, followsUp, token) is { } report)
                 {
                     reports.Add(report);
                     lock (_gate) LastReports = [.. reports];
@@ -146,13 +155,13 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     }
 
     private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, SiteLocation? site, ConformULog? conformU,
-        CancellationToken token)
+        RunReport? followsUp, CancellationToken token)
     {
         RunReport? report = null;
         var where = site is null ? "" : $" at {site.Label}";
         try
         {
-            log.LogInformation("Run started: {Target}, motion {Motion}", target.Display, options.AllowMotion);
+            log.LogInformation("Run started: {Target}, tier {Tier}, motion {Motion}", target.Display, options.Tier, options.AllowMotion);
             var previous = await store.LatestForAsync(target);
             await using var session = await TestRunner.OpenAsync(target, options);
             report = await runner.RunAsync(session, target, options,
@@ -167,7 +176,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                     Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})") + SiteSuffix(site);
                     Changed?.Invoke();
                 },
-                token, previous: previous, site: site, conformU: conformU);
+                token, previous: previous, site: site, conformU: conformU, followsUp: followsUp);
             await store.SaveAsync(report);
             Status = report.Cancelled ? $"Stopped{where}; the findings so far are saved." : $"Finished{where} and saved.";
             log.LogInformation("Run finished: {Label}: {Fail} failed, {Warn} warnings", report.Label, report.Count(Outcome.Fail), report.Count(Outcome.Warning));

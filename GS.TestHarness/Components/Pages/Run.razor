@@ -366,6 +366,46 @@ else
     <section class="card">
         <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }
             @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
+        @* Where the run is in the tiers: tier 1 always first, each deeper tier offered only for what the one below found. *@
+        @{
+            var tier = Runs.Options?.Tier ?? 1;
+            var next = Runs.IsRunning ? null : NextTier();
+        }
+        <ol class="tier-track" aria-label="Diagnostic tiers">
+            @for (var i = 1; i <= Tiers.Max; i++)
+            {
+                var step = i;
+                var state = step < tier || (step == tier && !Runs.IsRunning) ? "done"
+                    : step == tier ? "running"
+                    : next?.Tier == step ? "next" : "locked";
+                <li class="tier-step @state" aria-current="@(step == tier ? "step" : null)">
+                    <span class="tier-num" aria-hidden="true">@(state == "done" ? "✓" : step.ToString())</span>
+                    <span class="tier-text">
+                        <span class="tier-name">@Tiers.Name(step)</span>
+                        <span class="tier-state">@TierState(step, state, tier)</span>
+                    </span>
+                </li>
+            }
+        </ol>
+        @if (next is not null)
+        {
+            var conformUNext = next.From.ConformULog is not null;
+            <div class="tier-next">
+                <div class="tier-next-text">
+                    <p class="tier-next-title">Diagnose further: @Tiers.Name(next.Tier)</p>
+                    <p class="muted">@Tiers.Purpose(next.Tier, conformUNext)</p>
+                    <div class="tier-members">
+                        <span class="muted small">Tier @next.From.Options.Tier found problems with</span>
+                        @foreach (var m in next.Members) { <span class="tag mono">@m</span> }
+                    </div>
+                    @if (!_motion) { <p class="tier-note">The tests move the mount: turn on <b>Move the mount</b> under Options first.</p> }
+                    else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
+                </div>
+                <button class="btn primary" disabled="@(!_motion || NeedsLog(next))" @onclick="() => StartNextTier(next)">
+                    <Icon Kind="Play" Size="18" /> Run tier @next.Tier
+                </button>
+            </div>
+        }
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }
@@ -542,6 +582,42 @@ else
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
         // One run at the server's own site: the sites are for the conformance test, not the log follow-up.
         Runs.Start(server.RunTarget, options, [null], log);
+    }
+
+    // ---------- Tiers 2 and 3 ----------
+
+    /// <summary>The deeper tier the last run (or the first of a batch that found something) can be followed up with.</summary>
+    private NextTier? NextTier() => Runs.LastReports.Select(Tiers.Next).FirstOrDefault(n => n is not null);
+
+    /// <summary>A tier step's line under its name on the tier track.</summary>
+    private string TierState(int step, string state, int tier) => state switch
+    {
+        "running" => "Running now",
+        "done" when step < tier => $"Done: followed up by tier {tier}" ,
+        "done" when step == Tiers.Max => "Done: see the Summary findings",
+        "done" => "Done",
+        "next" => "Available for the problems found",
+        _ when Runs.IsRunning => "After this run",
+        _ when step == tier + 1 => "Nothing found that it can take further",
+        _ => $"After tier {step - 1}"
+    };
+
+    /// <summary>A ConformU run's deeper tier diagnoses its log's problems, so it needs the log still loaded.</summary>
+    private bool NeedsLog(NextTier next) => next.From.ConformULog is not null && Runs.ConformU is null;
+
+    /// <summary>
+    /// Runs the next tier for the members the last run found problems with, on the same device and at the same site,
+    /// with the options as ticked now (not saved: tiers are chosen run by run).
+    /// </summary>
+    private async Task StartNextTier(NextTier next)
+    {
+        if (Runs.IsRunning || NeedsLog(next)) return;
+        var target = Runs.Target ?? next.From.Target;
+        var server = Bench.Selected;
+        var message = server is not null ? StartMessage(server) : SafetyWarning;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", message, "Start", "Cancel", danger: true))) return;
+        if (Runs.IsRunning) return;
+        Runs.Start(target, Tiers.Options(CurrentOptions(), next), [next.From.Site], next.From.ConformULog is null ? null : Runs.ConformU, next.From);
     }
 
     private static string SeverityCss(ConformUSeverity s) => s switch

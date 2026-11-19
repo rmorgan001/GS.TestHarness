@@ -39,6 +39,7 @@ public sealed class TestRunner(SourceLocator locator)
         new TrackingChecks(),
         new ClientsChecks(),
         new RegistrationChecks(),
+        new DiagnoseChecks(),
         new ConformUChecks(),
         new PerformanceChecks(),
         new DisconnectedChecks()
@@ -128,11 +129,16 @@ public sealed class TestRunner(SourceLocator locator)
     /// <param name="previous">The last saved run of the same device, if any.</param>
     /// <param name="conformU">A ConformU log to follow up: the ConformU checks run, and say for each of its problems
     /// whether the harness reproduced it. Combine it with <see cref="RunOptions.Groups"/> from its plan.</param>
+    /// <param name="followsUp">For a tier 2 or 3 run (<see cref="RunOptions.Tier"/>), the run it follows up: what it found
+    /// is what the diagnoses take apart (see <see cref="Tiers.Options"/>).</param>
     public async Task<RunReport> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options,
         Action<CheckResult>? onResult = null, Action<RunProgress>? onProgress = null, CancellationToken token = default,
         Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null, SiteLocation? site = null,
-        ConformULog? conformU = null)
+        ConformULog? conformU = null, RunReport? followsUp = null)
     {
+        // Tier 1 always first: a deeper run only follows up the tier below's findings.
+        if (Tiers.Problem(options, followsUp, conformU is not null) is { } tierProblem)
+            throw new InvalidOperationException($"Can't run tier {options.Tier}: {tierProblem}");
         var report = new RunReport { Target = target, Options = options, Site = site, ConformULog = conformU?.FileName };
         void Add(CheckResult r)
         {
@@ -140,7 +146,7 @@ public sealed class TestRunner(SourceLocator locator)
             onResult?.Invoke(r);
         }
         var ctx = new CheckContext(session, target, options, locator, Add, token, report.Results,
-            openSession ?? (() => OpenAsync(target, options)), previous) { ConformU = conformU };
+            openSession ?? (() => OpenAsync(target, options)), previous) { ConformU = conformU, FollowsUp = followsUp };
         (double Latitude, double Longitude, double Elevation)? original = null;
 
         try
@@ -151,6 +157,8 @@ public sealed class TestRunner(SourceLocator locator)
                 // Groups left out of this run (a ConformU run's plan, or the ConformU checks without a log) aren't mentioned.
                 if (options.Groups is { } only && !only.Contains(group.Name)) continue;
                 if (group is ConformUChecks && conformU is null) continue;
+                // The diagnoses are tiers 2 and 3 only, and a ConformU run's are made in the ConformU group (its verdicts follow them).
+                if (group is DiagnoseChecks && (options.Tier < 2 || conformU is not null)) continue;
                 // The site goes back before the disconnected checks: a disconnected mount can't be written to.
                 if (group is DisconnectedChecks && original is { } back)
                 {

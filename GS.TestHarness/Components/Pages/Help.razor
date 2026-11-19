@@ -38,6 +38,7 @@
                 <li><a href="help#run">The Run tab</a></li>
                 <li><a href="help#sites">Sites</a></li>
                 <li><a href="help#conformu">ConformU Debug Log Test</a></li>
+                <li><a href="help#tiers">Diagnostic tiers</a></li>
                 <li><a href="help#options">Options</a></li>
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
@@ -174,22 +175,49 @@
                     <dd>Nothing here can test it safely (a ConformU-only topic): reproduce it by hand.</dd>
                 </dl>
                 <h3>Diagnoses</h3>
-                <p>For some problems the run also measures <em>why</em> ConformU saw them, and its findings
-                    (<strong>ConformU.Diagnose…</strong>) recommend what to change and where, in GSServer's code. They only
-                    recommend: nothing is changed on the server. They need <strong>Move the mount</strong>.</p>
-                <dl>
-                    <dt>RightAscensionRate or DeclinationRate outside tolerance</dt>
-                    <dd>ConformU's offset (0.05"/s) and one 800 times larger, each way, for ConformU's 10 s, measured from a reading
-                        every 100 ms and, as ConformU does, from the first and last. Right at both sizes but off as ConformU measures
-                        it: the readings' scatter, not the rate (Warning). Wrong at the large size too: scaled, wrong one way, or
-                        unsteady (Fail).</dd>
-                    <dt>PulseGuide moved too little or too much</dt>
-                    <dd>Pulses of three lengths (up to ConformU's 5 s) each way, the position read as each ends and again a moment
-                        later. The rest of the movement arriving later: a stale position reading (Warning). A shortfall that grows
-                        with the pulse: a wrong guide rate; the same for every pulse: time lost per pulse, with how many ms (Fail).</dd>
-                </dl>
+                <p>This run is tier 1: it finds the problems. Rate offset and pulse guide problems can then be taken further
+                    at tiers 2 and 3 (see <a href="help#tiers">Diagnostic tiers</a>), whose findings
+                    (<strong>ConformU.Diagnose…</strong>) decide the verdict for those members.</p>
                 <p>Set <strong>Mount</strong> under the server (on the Server card) so the recommendations point at the right
                     code: GSServer's simulator (GS.Simulator) or a real mount (GS.SkyWatcher). Not specified, they list both.</p>
+            </section>
+
+            <section id="tiers">
+                <h2>Diagnostic tiers</h2>
+                <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>
+                    and <strong>Run ConformU checks</strong> are tier 1); tiers 2 and 3 are offered under the results, only for
+                    problems the tier below found that have a deeper test.</p>
+                <table>
+                    <thead><tr><th>Tier</th><th>ASCOM Conformance Check</th><th>ConformU Debug Log Test</th></tr></thead>
+                    <tbody>
+                        @for (var tier = 1; tier <= Tiers.Max; tier++)
+                        {
+                            <tr><td>@Tiers.Name(tier)</td><td>@Tiers.Purpose(tier, false)</td><td>@Tiers.Purpose(tier, true)</td></tr>
+                        }
+                    </tbody>
+                </table>
+                <p>Tier 3 ends with a <strong>Summary</strong> finding for each member: whether it confirms or overturns tier 2's
+                    diagnosis and recommendation, the final analysis, and the recommended fix.</p>
+                <p>A tier 2 or 3 run can't be started any other way: it follows up the run just below it (same device, same site,
+                    the options as set now), and its report says which run that was. Its findings are the
+                    <strong>Diagnose…</strong> group for a conformance run, <strong>ConformU.Diagnose…</strong> for a ConformU
+                    run. Compare uses tier 1 runs only; Recommendations add each tier 1 run's deeper findings, the deepest tier's
+                    where a check was made at more than one. The diagnoses move the mount, so they need <strong>Move the mount</strong>.</p>
+                <p>Each diagnosis and the checks it follows up:</p>
+                <table>
+                    <thead><tr><th>Tier</th><th>Member</th><th>Follows up</th><th>What it measures</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in Tiers.Diagnoses)
+                        {
+                            <tr>
+                                <td>@d.Tier</td>
+                                <td>@d.Member</td>
+                                <td class="mono small">@foreach (var key in d.FollowsUp) { <div>@key.Replace("{member}", d.Member)</div> }</td>
+                                <td>@d.What</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
             </section>
 
             <section id="sites">
