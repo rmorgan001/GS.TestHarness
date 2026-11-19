@@ -470,7 +470,7 @@ public static class AreaDiagnostics
             var thrown = ctx.Locator.Search(ctx.Target.Codebase, @"new\s+NotConnectedException", 10);
             if (thrown.Count > 0)
             {
-                actual.AppendLine($"NotConnectedException is thrown in {thrown.Count} place{(thrown.Count == 1 ? "" : "s")}, none a connection check of this client:");
+                actual.AppendLine($"NotConnectedException is thrown in {thrown.Count} place{(thrown.Count == 1 ? "" : "s")}, none of them a check at the top of the members above:");
                 actual.AppendLine(Quote(thrown));
             }
             var first = bodies.Select(b => Calls(b.Body!).FirstOrDefault()).OfType<string>().GroupBy(x => x).OrderByDescending(g => g.Count()).FirstOrDefault()?.Key;
