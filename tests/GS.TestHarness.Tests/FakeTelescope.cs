@@ -143,7 +143,10 @@ public enum Defect
     DestinationSideOfPierUnchecked,
 
     /// <summary>The guide rates accept a negative value.</summary>
-    GuideRateNegativeAccepted
+    GuideRateNegativeAccepted,
+
+    /// <summary>MoveAxis(axis, 0) makes Slewing false at once, but the axis coasts on at its rate for a second before it stops.</summary>
+    SlewingEndsBeforeAxisStops
 }
 
 /// <summary>
@@ -162,6 +165,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private bool _tracking = true, _atPark, _atHome;
     private bool _slewing; // a timed motion (slew, park, home) is under way
     private readonly double[] _axisRates = new double[3];
+    private readonly bool[] _coasting = new bool[3]; // SlewingEndsBeforeAxisStops: moving, but not reported as slewing
     private DateTime _pulseUntil;
     private bool _strayNext; // StrayReadingAfterRateSet: the next RightAscension read is out
     private long _raRateSetAt = System.Diagnostics.Stopwatch.GetTimestamp(); // SlowPositionWander: its phase starts here
@@ -509,7 +513,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         get
         {
             NeedConnected();
-            return _slewing || _axisRates.Any(r => r != 0) || (Has(Defect.SlewingDuringRateOffset) && (_raRate != 0 || _decRate != 0));
+            return _slewing || _axisRates.Where((r, i) => !_coasting[i]).Any(r => r != 0) || (Has(Defect.SlewingDuringRateOffset) && (_raRate != 0 || _decRate != 0));
         }
     }
     public bool IsPulseGuiding { get { NeedConnected(); return DateTime.UtcNow < _pulseUntil; } }
@@ -799,6 +803,23 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         if (Math.Abs(rate) > 4) throw new InvalidValueException("rate");
         CheckCanMove();
         Bake();
+        if (rate == 0 && Has(Defect.SlewingEndsBeforeAxisStops) && _axisRates[(int)axis] != 0)
+        {
+            // Reported stopped now, but the axis runs on for a second.
+            var i = (int)axis;
+            _coasting[i] = true;
+            _ = Task.Delay(1000).ContinueWith(_ =>
+            {
+                lock (_gate)
+                {
+                    Bake();
+                    _axisRates[i] = 0;
+                    _coasting[i] = false;
+                }
+            });
+            return;
+        }
+        _coasting[(int)axis] = false;
         if (!Has(Defect.NotSlewingDuringMoveAxis)) _axisRates[(int)axis] = Has(Defect.MoveAxisIgnoresSign) ? Math.Abs(rate) : rate;
         if (rate == 0 && Has(Defect.MoveAxisStopsTracking)) Tracking = false;
     }

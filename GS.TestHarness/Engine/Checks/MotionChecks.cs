@@ -791,7 +791,10 @@ public sealed class MotionChecks : ICheckGroup
                 fix: "Slewing must be true while any axis is moving under MoveAxis, so clients know the mount is moving.");
             var stop = await ctx.TryAsync(t => t.MoveAxis(axis, 0));
             var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
-            var end = await AxisAngleAsync(ctx, axis);
+            // Slewing false isn't proof the axis has stopped (some mounts drop it and then decelerate): wait for the
+            // position itself to hold still before reading it.
+            var forwardStill = await WaitForAxisStillAsync(ctx, axis);
+            var end = forwardStill.Angle;
             var forward = start is { } s0 && end is { } e0 ? AxisDiff(axis, e0, s0) : (double?)null;
             ReportAxisSpeed(ctx, axis, rate, forwardSeconds, forward);
             ctx.Report($"{id}.Stop", "MoveAxis", stop.Ok && stopped ? Outcome.Pass : Outcome.Fail,
@@ -808,19 +811,22 @@ public sealed class MotionChecks : ICheckGroup
                     fix: "\"A call with Rate = 0 is required to stop motion and return to the previous tracking state of that " +
                          "axis\": remember Tracking when MoveAxis starts and put it back when it stops.");
 
-            var backStart = await AxisAngleAsync(ctx, axis);
+            // The other way, for as long as the forward move (a real mount needs time to ramp up), from the axis at rest.
+            var backStart = end;
             var reverse = await ctx.TryAsync(t => t.MoveAxis(axis, -rate));
             var reversing = Stopwatch.StartNew();
-            await Task.Delay(500, ctx.Token);
+            await Task.Delay(1500, ctx.Token);
             var backSeconds = reversing.Elapsed.TotalSeconds;
             await ctx.TryAsync(t => t.MoveAxis(axis, 0));
             ctx.Report($"{id}.Negative", "MoveAxis", reverse.Ok ? Outcome.Pass : Outcome.Warning,
                 reverse.Ok ? "A negative rate (the other direction) was accepted." : "A negative rate was refused.",
                 actual: reverse.ErrorText, fix: "MoveAxis takes the direction from the rate's sign: -rate must be accepted wherever +rate is.");
             await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
-            var backEnd = await AxisAngleAsync(ctx, axis);
+            var backStill = await WaitForAxisStillAsync(ctx, axis);
+            var backEnd = backStill.Angle;
             if (reverse.Ok && forward is { } f && backStart is { } s1 && backEnd is { } e1)
                 ReportAxisDirection(ctx, axis, rate, forwardSeconds, f, backSeconds, AxisDiff(axis, e1, s1));
+            ReportSlewingUntilStopped(ctx, axis, forwardStill, reverse.Ok ? backStill : null);
 
             foreach (var (suffix, bad) in new[] { ("TooFast", max + 1), ("TooFastNegative", -(max + 1)) })
             {
@@ -1300,6 +1306,53 @@ public sealed class MotionChecks : ICheckGroup
                 expected: "opposite directions", actual: actual, fix: fix, sourcePatterns: ["MoveAxis"]);
         else
             ctx.Report(id, "MoveAxis", Outcome.Pass, $"MoveAxis({axis}) turned one way for a positive rate and back for a negative one.", actual: actual);
+    }
+
+    /// <summary>How far an axis may move between two readings 0.3 s apart and still count as at rest (RA drifts 4.5" in that time with tracking off).</summary>
+    private const double StillTolerance = 10.0 / 3600;
+
+    /// <summary>
+    /// After Slewing has gone false: the axis's angle once it holds still (two readings 0.3 s apart within
+    /// <see cref="StillTolerance"/>, for up to 10 s), and how far and how long it still moved after Slewing went false.
+    /// </summary>
+    private sealed record AxisRest(double? Angle, double MovedAfter, double SecondsAfter);
+
+    private static async Task<AxisRest> WaitForAxisStillAsync(CheckContext ctx, TelescopeAxis axis)
+    {
+        var first = await AxisAngleAsync(ctx, axis);
+        if (first is null) return new AxisRest(null, 0, 0);
+        var clock = Stopwatch.StartNew();
+        var last = first.Value;
+        var stillAt = 0.0;
+        while (clock.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            await Task.Delay(300, ctx.Token);
+            var now = await AxisAngleAsync(ctx, axis);
+            if (now is null) break;
+            var step = Math.Abs(AxisDiff(axis, now.Value, last));
+            last = now.Value;
+            if (step <= StillTolerance) break;
+            stillAt = clock.Elapsed.TotalSeconds;
+        }
+        return new AxisRest(last, Math.Abs(AxisDiff(axis, last, first.Value)), stillAt);
+    }
+
+    /// <summary>
+    /// "Slewing must also be true during any MoveAxis() operations": an axis still turning after Slewing went false
+    /// (it was stopped with rate 0, but decelerates or coasts on) tells clients it has stopped when it hasn't.
+    /// </summary>
+    private static void ReportSlewingUntilStopped(CheckContext ctx, TelescopeAxis axis, AxisRest forward, AxisRest? back)
+    {
+        if (forward.Angle is null) return;
+        var worst = back is { Angle: not null } b && b.MovedAfter > forward.MovedAfter ? b : forward;
+        var moved = worst.MovedAfter > 3 * StillTolerance;
+        ctx.Report($"MoveAxis.{axis}.SlewingUntilStopped", "Slewing", moved ? Outcome.Fail : Outcome.Pass,
+            moved ? $"After MoveAxis({axis}, 0), Slewing went false while the axis was still moving: it turned another {worst.MovedAfter * 3600:0}\" over {worst.SecondsAfter:0.0} s."
+                  : $"After MoveAxis({axis}, 0), the axis had stopped when Slewing went false.",
+            expected: "the axis at rest when Slewing goes false",
+            actual: $"after Slewing went false: {forward.MovedAfter * 3600:0.0}\" (forward stop){(back is { Angle: not null } bb ? $", {bb.MovedAfter * 3600:0.0}\" (reverse stop)" : "")}",
+            fix: moved ? "Keep Slewing true until the axis has actually stopped (its deceleration included), not only until the stop command is sent: clients wait for Slewing false before they take an exposure or the next move." : null,
+            sourceMember: "Slewing", sourcePatterns: ["MoveAxis"]);
     }
 
     // ---------- Helpers ----------

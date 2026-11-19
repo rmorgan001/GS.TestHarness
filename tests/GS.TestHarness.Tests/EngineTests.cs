@@ -203,6 +203,8 @@ public class MotionDefectTests(ITestOutputHelper output)
     [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.North.Moves.ThroughThePole")]
     [InlineData(Defect.PulseGuideDecReversedThroughThePole, "Motion.PulseGuide.South.Moves.ThroughThePole")]
     [InlineData(Defect.MoveAxisIgnoresSign, "Motion.MoveAxis.Primary.Direction")]
+    [InlineData(Defect.SlewingEndsBeforeAxisStops, "Motion.MoveAxis.Primary.SlewingUntilStopped")]
+    [InlineData(Defect.SlewingEndsBeforeAxisStops, "Motion.MoveAxis.Secondary.SlewingUntilStopped")]
     // The defect keeps whatever side the mount started on, so only the flip checks fail on both crossings every time.
     [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.EastToWest.Flipped")]
     [InlineData(Defect.NoMeridianFlip, "Motion.Flip.Goto.WestToEast.Flipped")]
