@@ -29,7 +29,7 @@ public sealed class RegistrationChecks : ICheckGroup
     public string Description => "COM only, from the registry: the ASCOM Profile entry, ProgID → CLSID, and a LocalServer32 (or InprocServer32) for both 64-bit and 32-bit clients whose program exists.";
 
     public string? SkipReason(CheckContext ctx)
-        => ctx.Target.Kind != TargetKind.Com ? $"{ctx.Target.Codebase} isn't a COM driver"
+        => ctx.Target.Kind != TargetKind.Com ? "it's an Alpaca server, not a COM driver"
             : ctx.Session.Transport != "COM" ? "the device isn't reached through COM here"
             : !OperatingSystem.IsWindows() ? "the registry is only on Windows" : null;
 

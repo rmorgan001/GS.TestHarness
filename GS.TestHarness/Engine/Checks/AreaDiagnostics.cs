@@ -85,7 +85,7 @@ public static partial class AreaDiagnostics
 
     /// <summary>Why the code wasn't reviewed: another server is answering (<see cref="CheckContext.OtherServer"/>), or the source isn't here.</summary>
     private static string NoSource(CheckContext ctx) => ctx.OtherServer is { } other
-        ? $"Code not reviewed: the server answering is {other}, not {ctx.Target.Codebase}, and its source isn't on this computer."
+        ? $"Code not reviewed: the server answering is {other}, not the one whose source is set, and its source isn't on this computer."
         : "Code not reviewed: the server's source isn't on this computer (set it under Options → Source code).";
 
     /// <summary>The helpers a member's code calls (CheckSerialIO, CheckRange...), in order: the guards it has.</summary>

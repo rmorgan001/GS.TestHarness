@@ -445,7 +445,7 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
             {
                 var r = Finding(report, id);
                 Assert.True(r.Outcome == Outcome.Info, $"{id}: {r.Outcome}: {r.Message}");
-                Assert.Contains("the server answering is ASCOM Alpaca Simulators, not GreenSwampAlpaca", r.Actual);
+                Assert.Contains("the server answering is ASCOM Alpaca Simulators, not the one whose source is set", r.Actual);
             }
             Assert.Contains("(not applied)", Finding(report, "Diagnose.RateOffsets.DeclinationRate").Actual);
         }

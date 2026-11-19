@@ -34,7 +34,7 @@ public sealed class ProtocolChecks : ICheckGroup
     public string Description => "Alpaca only: management API, ClientTransactionID/ServerTransactionID, JSON reply shape, error numbers, HTTP 400 for bad requests, parameter casing and UDP discovery.";
 
     public string? SkipReason(CheckContext ctx)
-        => ctx.Target.Kind != TargetKind.Alpaca ? $"{ctx.Target.Codebase} is a COM driver"
+        => ctx.Target.Kind != TargetKind.Alpaca ? "it's a COM driver, not an Alpaca server"
             : !ctx.Options.IncludeProtocol ? "protocol checks are turned off for this run" : null;
 
     private static readonly string[] ReplyFields = ["ClientTransactionID", "ServerTransactionID", "ErrorNumber", "ErrorMessage"];

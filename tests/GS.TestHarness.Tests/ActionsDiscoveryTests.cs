@@ -123,6 +123,46 @@ public class ActionsDiscoveryTests(ITestOutputHelper output)
         Assert.Equal(Outcome.Info, outcome);
     }
 
+    /// <summary>
+    /// R0016: the ASCOM simulators answer other PCs' discovery only with remote access allowed; their HTTP listener
+    /// falls back to loopback for the same setting, and that isn't the discovery listener.
+    /// </summary>
+    [Fact]
+    public void A_remote_access_setting_is_named_not_the_HTTP_listeners_loopback()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gs-harness-disc-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var (file, text) in new[]
+                     {
+                         ("Server/Program.cs", "if (ServerSettings.AllowRemoteAccess)\n{\n    options.Listen(IPAddress.Any, ServerSettings.ServerPort);\n}\nelse\n{\n    options.Listen(IPAddress.Loopback, ServerSettings.ServerPort);\n}\n"),
+                         ("Razor/Discovery/DiscoveryManager.cs", "DiscoveryResponder = new Responder(port, true, false, Log)\n{\n    AllowRemoteAccess = DeviceManager.Configuration.AllowRemoteAccess,\n    LocalRespondOnlyToLocalHost = DeviceManager.Configuration.LocalRespondOnlyToLocalHost\n};\n"),
+                         ("TelescopeSimulator/Telescope.cs", "public class Telescope : ITelescopeV4\n{\n}\n")
+                     })
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, file))!);
+                File.WriteAllText(Path.Combine(root, file), text);
+            }
+            var locator = new SourceLocator(new Dictionary<Codebase, CodebaseOptions>
+            {
+                [Codebase.GreenSwampAlpaca] = new() { Root = root, TelescopeFiles = [] }
+            }, "");
+            var (_, localhostOnly, _) = AreaDiagnostics.DiscoveryVerdict([Probe("server", true), Probe("this PC", false), Probe("broadcast", false)], local: true);
+
+            var (review, fix) = AreaDiagnostics.ReviewDiscovery(locator, Codebase.GreenSwampAlpaca, localhostOnly);
+            Assert.Contains("Razor/Discovery/DiscoveryManager.cs:3", review);
+            Assert.DoesNotContain("Program.cs", review); // the HTTP listener isn't the discovery listener
+            Assert.NotNull(fix);
+            Assert.Contains("allows remote access (Razor/Discovery/DiscoveryManager.cs:3)", fix);
+            Assert.Contains("listen on every address rather than 127.0.0.1 only (Server/Program.cs:7)", fix);
+            Assert.DoesNotContain("binds to the loopback", fix);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void Discovery_problems_are_offered_a_tier_2_diagnosis()
     {

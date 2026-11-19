@@ -129,7 +129,7 @@ public static partial class AreaDiagnostics
     {
         if (ctx.Target.Kind != TargetKind.Alpaca)
         {
-            ctx.Report("Discovery", "UDP discovery", Outcome.Skipped, $"{ctx.Target.Codebase} is a COM driver: no discovery.", expected: said);
+            ctx.Report("Discovery", "UDP discovery", Outcome.Skipped, "It's a COM driver: there's no discovery.", expected: said);
             return;
         }
         IPAddress? target;
@@ -170,17 +170,9 @@ public static partial class AreaDiagnostics
         if (ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource(ctx));
         else
         {
-            var listener = ctx.Locator.Search(ctx.Target.Codebase, @"new\s+UdpClient\s*\(|\.Bind\s*\(|IPAddress\.(Any|Loopback|IPv6Any|IPv6Loopback)\b|\b32227\b|alpacadiscovery", 40)
-                .Where(l => !l.IsComment).Take(6).ToList();
-            if (listener.Count == 0) actual.AppendLine("Code reviewed: no discovery listener found (no UdpClient on port 32227).");
-            else
-            {
-                actual.AppendLine("Code reviewed: the discovery listener:");
-                actual.AppendLine(Quote(listener));
-                var loopback = listener.FirstOrDefault(l => Regex.IsMatch(l.Text, @"IPAddress\.(Loopback|IPv6Loopback)\b"));
-                if (loopback is not null && message.Contains("localhost only", StringComparison.Ordinal))
-                    fix = $"It binds to the loopback address ({loopback.Location}): bind to IPAddress.Any (and IPv6Any) instead. " + fix;
-            }
+            var (review, better) = ReviewDiscovery(ctx.Locator, ctx.Target.Codebase, message);
+            actual.AppendLine(review);
+            if (better is not null) fix = better + (better.EndsWith("instead. ", StringComparison.Ordinal) ? fix : "");
         }
 
         ctx.Report("Discovery", "UDP discovery", outcome, message,
@@ -217,6 +209,35 @@ public static partial class AreaDiagnostics
             "Discovery: the server answers when asked directly, but not to a broadcast: its PC's firewall or the network blocks broadcasts, " +
             "or it's on another subnet than this PC.",
             "Let broadcast UDP 32227 in through the firewall of the server's PC, and check that both PCs are on the same subnet (routers don't pass broadcasts).");
+    }
+
+    /// <summary>
+    /// The discovery listener's code (lines in a discovery file, or about discovery, before any other: an HTTP
+    /// listener's address isn't the discovery listener's) and, for a server answering on localhost only, the better
+    /// fix: a remote-access setting that decides whether other PCs get answers, or a listener bound to loopback.
+    /// </summary>
+    internal static (string Review, string? Fix) ReviewDiscovery(SourceLocator locator, Codebase codebase, string message)
+    {
+        static bool AboutDiscovery(SourceLine l) => Regex.IsMatch(l.File + " " + l.Text, @"[Dd]iscover|\b32227\b|Responder");
+        var found = locator.Search(codebase,
+                @"new\s+UdpClient\s*\(|\.Bind\s*\(|IPAddress\.(Any|Loopback|IPv6Any|IPv6Loopback)\b|\b32227\b|alpacadiscovery|new\s+Responder\s*\(|AllowRemoteAccess|OnlyToLocalHost", 80)
+            .Where(l => !l.IsComment).ToList();
+        var discovery = found.Where(AboutDiscovery).Take(6).ToList();
+        if (discovery.Count == 0) return ("Code reviewed: no discovery listener found (no UdpClient or responder on port 32227).", null);
+        var review = "Code reviewed: the discovery listener:\n" + Quote(discovery);
+        if (!message.Contains("localhost only", StringComparison.Ordinal)) return (review, null);
+
+        var remote = discovery.FirstOrDefault(l => Regex.IsMatch(l.Text, @"AllowRemoteAccess|OnlyToLocalHost"));
+        var loopback = discovery.FirstOrDefault(l => Regex.IsMatch(l.Text, @"IPAddress\.(Loopback|IPv6Loopback)\b"));
+        var http = found.FirstOrDefault(l => !AboutDiscovery(l) && Regex.IsMatch(l.Text, @"Listen\s*\(\s*IPAddress\.Loopback"));
+        if (remote is not null)
+            return (review, $"Discovery answers other PCs only when the server allows remote access ({remote.Location}): turn on its remote access setting " +
+                            "(\"Allow remote access\" in its settings)" +
+                            (http is null ? "" : $", which also makes its API listen on every address rather than 127.0.0.1 only ({http.Location}), so other PCs can then reach it") +
+                            ". Without it, the server can only be used from this PC.");
+        if (loopback is not null)
+            return (review, $"The discovery listener binds to the loopback address ({loopback.Location}): bind to IPAddress.Any (and IPv6Any) instead. ");
+        return (review, null);
     }
 
     /// <summary>This PC's IPv4 networks that are up: name, address and broadcast address (at most four).</summary>

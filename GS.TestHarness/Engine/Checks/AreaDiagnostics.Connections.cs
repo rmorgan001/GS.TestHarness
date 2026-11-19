@@ -209,7 +209,7 @@ public static partial class AreaDiagnostics
         if (ctx.Target.Kind != TargetKind.Alpaca)
         {
             foreach (var id in new[] { "Alpaca.Binding", "Alpaca.Setup" })
-                ctx.Report(id, "Alpaca server", Outcome.Skipped, $"{ctx.Target.Codebase} is a COM driver.", expected: said);
+                ctx.Report(id, "Alpaca server", Outcome.Skipped, "It's a COM driver, not an Alpaca server.", expected: said);
             return;
         }
         using var http = ProtocolChecks.CreateHttp(ctx);
