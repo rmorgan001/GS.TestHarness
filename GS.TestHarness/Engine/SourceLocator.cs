@@ -19,6 +19,15 @@ using System.Text.RegularExpressions;
 
 namespace GS.TestHarness.Engine;
 
+/// <summary>One line of a codebase's source: where it is (file relative to the codebase's folder, 1-based line) and its text.</summary>
+public sealed record SourceLine(string File, int Line, string Text)
+{
+    public string Location => $"{File}:{Line}";
+
+    /// <summary>Whether the line is a comment (code commented out, or a note).</summary>
+    public bool IsComment => Text.TrimStart().StartsWith("//", StringComparison.Ordinal);
+}
+
 /// <summary>Where a codebase's source is, from the "Codebases" configuration section.</summary>
 public sealed class CodebaseOptions
 {
@@ -152,6 +161,73 @@ public sealed class SourceLocator
         }
         return null;
     }
+
+    /// <summary>
+    /// The code of an interface member in the codebase's telescope driver: from its definition to its closing brace
+    /// (a property's getter and setter both). Null if the source isn't here or the member isn't found. For a
+    /// method defined more than once (overloads), the first.
+    /// </summary>
+    public IReadOnlyList<SourceLine>? Body(Codebase codebase, string member)
+    {
+        if (!_codebases.TryGetValue(codebase, out var c) || !Regex.IsMatch(member, @"^\w+$")) return null;
+        var definition = new Regex($@"^\s*public\s+(?:override\s+|virtual\s+|static\s+)*[\w<>\[\],.?\s]+?\s+{member}\s*(?:\(|$|\{{|=>)");
+        foreach (var file in c.TelescopeFiles)
+        {
+            var lines = Lines(file);
+            var start = Array.FindIndex(lines, l => definition.IsMatch(l));
+            if (start < 0) continue;
+            var body = new List<SourceLine>();
+            var depth = 0;
+            var opened = false;
+            for (var i = start; i < lines.Length; i++)
+            {
+                body.Add(new SourceLine(Relative(c.Root, file), i + 1, lines[i]));
+                var code = StripComment(lines[i]);
+                depth += code.Count(ch => ch == '{') - code.Count(ch => ch == '}');
+                opened |= code.Contains('{');
+                // An expression-bodied member ends at its semicolon; a block at its closing brace.
+                if (opened ? depth <= 0 : code.TrimEnd().EndsWith(';')) break;
+            }
+            return body;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Every line in the codebase's source (the driver files first) that matches <paramref name="pattern"/>, up to
+    /// <paramref name="max"/>. Empty if the source isn't here.
+    /// </summary>
+    public IReadOnlyList<SourceLine> Search(Codebase codebase, string pattern, int max = 20)
+    {
+        if (!_codebases.TryGetValue(codebase, out var c)) return [];
+        var regex = new Regex(pattern);
+        var found = new List<SourceLine>();
+        // The same file can be named with either slash (the configured driver file, and the folder listing).
+        foreach (var file in c.TelescopeFiles.Concat(AllFiles(codebase, c.Root)).DistinctBy(Path.GetFullPath, StringComparer.OrdinalIgnoreCase))
+        {
+            var lines = Lines(file);
+            for (var i = 0; i < lines.Length && found.Count < max; i++)
+                if (regex.IsMatch(lines[i])) found.Add(new SourceLine(Relative(c.Root, file), i + 1, lines[i]));
+            if (found.Count >= max) break;
+        }
+        return found;
+    }
+
+    /// <summary>A line without its // comment (a rough cut: enough to count braces and find calls).</summary>
+    public static string StripComment(string line)
+    {
+        var i = line.IndexOf("//", StringComparison.Ordinal);
+        return i < 0 ? line : line[..i];
+    }
+
+    private string[] Lines(string file) => _lines.GetOrAdd(file, f =>
+    {
+        try { return File.ReadAllLines(f); }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
+    });
+
+    private static string Relative(string root, string file) => Path.GetRelativePath(root, file).Replace('\\', '/');
 
     private string[] AllFiles(Codebase codebase, string root)
         => _allFiles.GetOrAdd(codebase, _ =>

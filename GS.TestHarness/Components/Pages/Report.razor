@@ -17,7 +17,7 @@
 @page "/reports/{Id}"
 @inject ReportStore Store
 
-<PageTitle>@(_report?.Label ?? "Report") · GS Test Harness</PageTitle>
+<PageTitle>@(_report is { } t ? $"{t.Reference} {t.Label}" : "Report") · GS Test Harness</PageTitle>
 
 @if (_missing)
 {
@@ -26,7 +26,7 @@
 else if (_report is { } r)
 {
     <header class="page-head">
-        <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> @r.Label</h1>
+        <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> <span class="report-ref">@r.Reference</span> @r.Label</h1>
         <p class="muted"><a href="reports">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.SiteLabel · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")@(r.CommunicationLost ? " · stopped: communication lost" : "")</p>
     </header>
 
@@ -53,7 +53,19 @@ else if (_report is { } r)
         <section class="card facts">
             <h2>Run</h2>
             <dl>
-                <dt>Tier</dt><dd>@Tiers.Name(r.Options.Tier)</dd>
+                <dt>Report</dt><dd class="mono">@r.Reference <span class="muted small">(@r.Id)</span></dd>
+                <dt>Tier</dt><dd>@Tiers.Name(r.Options.Tier)@if (r.FollowsUpReference is { } upRef) { <span class="muted">, following up @upRef</span> }</dd>
+                @{ var outlook = Tiers.OutlookFor(r); }
+                <dt>Next tier</dt>
+                <dd>
+                    @if (_chain.Any(c => c.Options.FollowsUp == r.Id)) { <span>Followed up: see Tiers below.</span> }
+                    else
+                    {
+                        <span class="outlook @outlook.Kind.ToString().ToLowerInvariant()">@outlook.Label</span>
+                        <span class="muted small">@outlook.Why@(outlook.Kind == OutlookKind.Offered ? " Start it from the Run tab, under this run's results." : "")</span>
+                        <UncoveredTests Outlook="outlook" Max="8" />
+                    }
+                </dd>
                 <dt>Server</dt><dd>@r.Target.Codebase (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</dd>
                 <dt>Site</dt><dd>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</dd>
                 <dt>Motion</dt><dd>@(r.Options.AllowMotion ? "allowed" : "not allowed")</dd>
@@ -86,8 +98,8 @@ else if (_report is { } r)
                                 <span class="tier-badge tier-@c.Options.Tier">Tier @c.Options.Tier</span>
                             </td>
                             <td>
-                                @if (self) { <strong>@c.Started.ToString("yyyy-MM-dd HH:mm")</strong> <span class="muted">· this report</span> }
-                                else { <a href="reports/@c.Id">@c.Started.ToString("yyyy-MM-dd HH:mm")</a> }
+                                @if (self) { <strong>@c.Reference</strong> <span class="muted">· @c.Started.ToString("yyyy-MM-dd HH:mm") · this report</span> }
+                                else { <a href="reports/@c.Id">@c.Reference</a> <span class="muted">· @c.Started.ToString("yyyy-MM-dd HH:mm")</span> }
                                 <div class="small muted">@c.SiteLabel@(c.Options.Members is { Count: > 0 } m && c.Options.Tier > 1 ? $" · {string.Join(", ", m)}" : "")</div>
                             </td>
                             <td class="num"><span class="count @(c.Count(Outcome.Fail) + c.Count(Outcome.Error) > 0 ? "fail" : null)">@(c.Count(Outcome.Fail) + c.Count(Outcome.Error))</span></td>
@@ -102,7 +114,7 @@ else if (_report is { } r)
             </table>
             @if (r.Options.FollowsUp is { } up && _chain.All(c => c.Id != up))
             {
-                <p class="muted small">The run this one follows up (@up) has been deleted.</p>
+                <p class="muted small">The run this one follows up (@(r.FollowsUpReference ?? up)) has been deleted.</p>
             }
         </section>
     }

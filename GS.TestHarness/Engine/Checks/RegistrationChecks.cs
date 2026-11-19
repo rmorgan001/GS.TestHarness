@@ -108,7 +108,7 @@ public sealed class RegistrationChecks : ICheckGroup
     }
 
     /// <summary>The program in a LocalServer32 value: quoted, or up to ".exe" (arguments may follow).</summary>
-    private static string? ExecutableOf(string command)
+    internal static string? ExecutableOf(string command)
     {
         command = command.Trim();
         if (command.StartsWith('"')) return command.Split('"', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

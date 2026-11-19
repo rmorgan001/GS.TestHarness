@@ -67,20 +67,22 @@ public sealed class ClientsChecks : ICheckGroup
             await ConnectAsync(b);
             await ConnectAsync(c);
             await DisconnectAsync(b);
-            // B has disconnected while C still holds the device: B's own Connected must read false (ConformU reports
-            // "The device disconnected without error but Connected Get returned True" when it doesn't).
+            // B has disconnected while C still holds the device. Connected reports the hardware state: in a hub it stays
+            // true until every client has disconnected, and the ASCOM notes say a client that set it false and still reads
+            // true is "not an error". So true is allowed here, and false (B's own state) is fine too. ConformU still reports
+            // "The device disconnected without error but Connected Get returned True" when another client is connected.
             var own = await Try(() => b.RunAsync(t => t.Connected, Timeout));
-            ctx.Report("DisconnectedClient.Connected", "Connected", own is (false, null) ? Outcome.Pass : Outcome.Fail,
-                own is (false, null) ? "A client that disconnected reads Connected false, while another client is still connected."
-                    : own.Error is null ? "A client that disconnected still reads Connected true, because another client is still connected."
-                    : "Reading Connected on a client that disconnected raised an error.",
-                expected: "false for the client that disconnected",
+            ctx.Report("DisconnectedClient.Connected", "Connected", own.Error is not null ? Outcome.Fail : own.Value ? Outcome.Info : Outcome.Pass,
+                own.Error is not null ? "Reading Connected on a client that disconnected raised an error."
+                    : own.Value ? "A client that disconnected reads Connected true while another client keeps the hardware connected: " +
+                                  "allowed, since Connected reports the hardware state (in a hub it stays true until every client has " +
+                                  "disconnected). ConformU reports this as an issue whenever another client is connected during its run: " +
+                                  "close the other clients before running ConformU."
+                    : "A client that disconnected reads Connected false while another client is still connected.",
+                expected: "false (this client's state) or true (the hardware's, still connected by the other client): both are allowed",
                 actual: own.Error is null ? own.Value.ToString() : AscomError.Describe(own.Error),
-                fix: "Connected is each client's own state: after a client's Disconnect() has finished, its Connected must read false, " +
-                     "even while other clients keep the device connected. Keep a per-client connected flag and report that (the " +
-                     "hardware stays connected until the last client goes). ConformU reports this as \"The device disconnected " +
-                     "without error but Connected Get returned True\" whenever another client is connected during its run.",
-                sourceMember: "Connected", sourcePatterns: ["SetConnected", "clientKey"]);
+                fix: "Connected must stay readable after Disconnect(): it reports whether the hardware is connected.",
+                sourceMember: "Connected");
             var connected = await Try(() => c.RunAsync(t => t.Connected, Timeout));
             var ra = await Try(() => c.RunAsync(t => t.RightAscension, Timeout));
             var ok = connected is (true, null) && ra.Error is null;
@@ -91,8 +93,7 @@ public sealed class ClientsChecks : ICheckGroup
                 actual: $"Connected: {(connected.Error is null ? connected.Value.ToString() : AscomError.Describe(connected.Error))}; " +
                         $"RightAscension: {(ra.Error is null ? CheckContext.Show(ra.Value) : AscomError.Describe(ra.Error))}",
                 fix: "A device used by several clients must count its connections: Disconnect from one client may only " +
-                     "disconnect the hardware when no other client is still connected. Keep a per-client connected flag " +
-                     "and a reference count.",
+                     "disconnect the hardware when no other client is still connected.",
                 sourceMember: "Disconnect", sourcePatterns: ["SetConnected", "clientKey"]);
         }
         catch (Exception ex)

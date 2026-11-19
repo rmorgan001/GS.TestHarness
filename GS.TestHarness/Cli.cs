@@ -25,7 +25,7 @@ namespace GS.TestHarness;
 /// GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
 ///                [--sites server,north,south] [--mount simulator|real]
-///                [--source C:\src\GSServer] [--conformu ConformU-debug-log.txt] [--follow report-id] [--md report.md]
+///                [--source C:\src\GSServer] [--conformu ConformU-debug-log.txt] [--follow R0012] [--md report.md]
 /// GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
 /// The report is saved like a run from the web page. Exit code: 0 no failures, 1 failures or errors, 2 bad arguments.
@@ -118,7 +118,7 @@ public static class Cli
             followsUp = await store.LoadAsync(followId);
             if (followsUp is null)
             {
-                Console.Error.WriteLine($"--follow {followId}: no saved report with that id in {store.Folder}.");
+                Console.Error.WriteLine($"--follow {followId}: no saved report with that reference or id in {store.Folder}.");
                 return 2;
             }
             if (Tiers.Next(followsUp) is not { } next)
@@ -134,7 +134,7 @@ public static class Cli
                 Console.Error.WriteLine($"--follow {followId}: {tierProblem}");
                 return 2;
             }
-            Console.WriteLine($"{Tiers.Name(next.Tier)}, following up {followsUp.Id}: {string.Join(", ", next.Members)}.");
+            Console.WriteLine($"{Tiers.Name(next.Tier)}, following up {followsUp.Reference}: {string.Join(", ", next.Members)}.");
         }
 
         // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the
@@ -205,9 +205,9 @@ public static class Cli
         Console.WriteLine();
         Console.WriteLine($"{report.Label}: {report.Count(Outcome.Fail)} failed, {report.Count(Outcome.Error)} errors, " +
                           $"{report.Count(Outcome.Warning)} warnings, {report.Count(Outcome.Pass)} passed.");
-        Console.WriteLine($"Report: {Path.Combine(store.Folder, report.Id + ".json")}");
+        Console.WriteLine($"Report {report.Reference}: {Path.Combine(store.Folder, report.Id + ".json")}");
         if (Tiers.Next(report) is { } next)
-            Console.WriteLine($"{Tiers.Name(next.Tier)} can diagnose {string.Join(", ", next.Members)}: run again with --follow {report.Id}" +
+            Console.WriteLine($"{Tiers.Name(next.Tier)} can diagnose {string.Join(", ", next.Members)}: run again with --follow {report.Reference}" +
                               (report.ConformULog is null ? "." : " and the same --conformu log."));
         return report.Count(Outcome.Fail) + report.Count(Outcome.Error) > 0 ? 1 : 0;
     }

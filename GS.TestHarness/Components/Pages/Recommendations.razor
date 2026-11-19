@@ -56,7 +56,7 @@ else
             {
                 <li>
                     <b>@run.Target.Codebase · @run.SiteLabel</b>
-                    <a href="reports/@run.Id">@run.Started.ToString("yyyy-MM-dd HH:mm")</a>
+                    <a href="reports/@run.Id">@run.Reference</a> <span class="muted">@run.Started.ToString("yyyy-MM-dd HH:mm")</span>
                     <span class="muted">@run.Label · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail · @run.Count(Outcome.Warning) warning</span>
                     @if (run.Cancelled) { <span class="tag" title="No finished run of this device at this site">stopped</span> }
                 </li>
@@ -135,7 +135,7 @@ else
                             {
                                 <li>
                                     <span class="badge @ResultsTable.Css(hit.Result.Outcome)">@ResultsTable.Label(hit.Result.Outcome)</span>
-                                    <a href="reports/@hit.Run.Id">@hit.Run.SiteLabel</a> <span class="muted small">@hit.Run.Label</span>
+                                    <a href="reports/@hit.Run.Id">@hit.Run.Reference</a> <span class="muted small">@hit.Run.SiteLabel · @hit.Run.Label</span>
                                     <span>@hit.Result.Message</span>
                                     @if (hit.Result.Expected is not null) { <div class="small muted">Expected: @hit.Result.Expected</div> }
                                     @if (hit.Result.Actual is not null) { <div class="small muted pre">Actual: @hit.Result.Actual</div> }

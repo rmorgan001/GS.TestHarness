@@ -53,9 +53,11 @@ public sealed class DisconnectedChecks : ICheckGroup
                 "Connected is still true after Disconnect(), though no other client held the device: Connected was false before " +
                 "the run connected, and the run's other clients have disconnected.",
                 expected: "Connected false once Disconnect() has finished (Connecting false)", actual: "Connected true", ms: disconnect.Ms,
-                fix: "After Disconnect() returns and Connecting is false, Connected must read false for this client (ConformU reports " +
-                     "\"The device disconnected without error but Connected Get returned True\"). If the server shares one connection " +
-                     "among its clients, count them: report Connected per client, and disconnect the hardware only when the last one goes.",
+                fix: "Connected reports the hardware state, so with no other client holding the device, the hardware must be " +
+                     "disconnected once Disconnect() returns and Connecting is false, and Connected read false (ConformU reports " +
+                     "\"The device disconnected without error but Connected Get returned True\"). A server shared by several clients " +
+                     "counts their connections and disconnects the hardware when the last one goes: check that the count reaches " +
+                     "zero, and that nothing of the server's own keeps the connection open.",
                 sourceMember: "Connected");
             return;
         }

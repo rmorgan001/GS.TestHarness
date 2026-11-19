@@ -27,18 +27,22 @@ public sealed class DiagnoseChecks : ICheckGroup
 
     public string Name => GroupName;
 
-    public string Description => "Tiers 2 and 3 of the ASCOM Conformance Check: measures the problems a lower tier found (rate offsets, pulse guiding) to tell their causes apart and say what to change.";
+    public string Description => "Tiers 2 and 3 of the ASCOM Conformance Check: measures the problems a lower tier found (rate offsets, pulse guiding), and tests around the others (arguments, preconditions, the connection, settle time, axis rates, version, registration) with the code reviewed, to find the core issue and say what to change.";
 
     public string? SkipReason(CheckContext ctx)
         => ctx.Options.Tier < 2 ? "it runs at tiers 2 and 3 only"
             : ctx.Options.Members is not { Count: > 0 } ? "no members to diagnose (follow up a run that found a problem)"
             : null;
 
-    public Task RunAsync(CheckContext ctx)
+    public async Task RunAsync(CheckContext ctx)
     {
-        var problems = ctx.Options.Members!
+        var members = ctx.Options.Members!;
+        // The measurements (rate offsets, pulse guiding) first; then the areas, the one that disconnects last.
+        var problems = members.Where(m => !AreaDiagnostics.Areas.Contains(m))
             .Select(m => new DiagnosisProblem(m, Tiers.Said(ctx.FollowsUp, m)))
             .ToList();
-        return Diagnostics.RunAsync(ctx, problems);
+        await Diagnostics.RunAsync(ctx, problems);
+        foreach (var area in members.Where(AreaDiagnostics.Areas.Contains).OrderBy(m => m == AreaDiagnostics.NotConnected))
+            await AreaDiagnostics.RunAsync(ctx, area);
     }
 }

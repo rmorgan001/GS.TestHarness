@@ -54,7 +54,7 @@ else
         <table class="results reports">
             <thead>
                 <tr><th class="col-check-box"><input type="checkbox" checked="@all" title="Select all" aria-label="Select all reports"
-                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>When</th><th>Tier</th><th>Device</th><th>Site</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
+                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>Ref</th><th>When</th><th>Tier</th><th>Device</th><th>Site</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
             </thead>
             <tbody>
                 @foreach (var r in _reports)
@@ -67,6 +67,7 @@ else
                     <tr class="@(isChecked ? "checked" : null)">
                         <td class="col-check-box"><input type="checkbox" checked="@isChecked" aria-label="Check this report for deleting"
                                                          @onchange="e => Check(r.Id, (bool)e.Value!)" /></td>
+                        <td class="mono"><a href="reports/@r.Id">@r.Reference</a></td>
                         <td class="when"><span>@r.Started.ToString("yyyy-MM-dd")</span> <span class="muted">@r.Started.ToString("HH:mm")</span></td>
                         @* The tier, and for a deeper run the run it follows up; for a tier 1 run, how many deeper runs follow it. *@
                         <td class="tier-cell">
@@ -76,7 +77,7 @@ else
                                 <div class="small">
                                     @if (_byId!.TryGetValue(up, out var parent))
                                     {
-                                        <a href="reports/@parent.Id" title="@parent.Label">follows @parent.Started.ToString("MM-dd HH:mm")</a>
+                                        <a href="reports/@parent.Id" title="@parent.Label, @parent.Started.ToString("yyyy-MM-dd HH:mm")">follows @parent.Reference</a>
                                     }
                                     else
                                     {
@@ -87,6 +88,10 @@ else
                             else if (_followers!.GetValueOrDefault(r.Id) is > 0 and var deeper)
                             {
                                 <div class="small"><a href="reports/@r.Id#tiers">@deeper deeper run@(deeper == 1 ? "" : "s")</a></div>
+                            }
+                            @if (!_all!.Any(x => x.Options.FollowsUp == r.Id) && Tiers.OutlookFor(r) is { Kind: not OutlookKind.Deepest } outlook)
+                            {
+                                <div class="small outlook @outlook.Kind.ToString().ToLowerInvariant()" title="@outlook.Why">tier @outlook.Tier: @outlook.Label.ToLowerInvariant()</div>
                             }
                         </td>
                         <td>

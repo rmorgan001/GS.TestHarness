@@ -242,10 +242,20 @@ public static class TestNumbers
         (2004, "ConformU.Diagnose.Readings"),
         (2005, "ConformU.Diagnose.PulseGuide.{axis}"),
         (2006, "ConformU.Diagnose.{member}"),
+        (2007, "Diagnose.Arguments.{member}"),
+        (2008, "Diagnose.Preconditions.{member}"),
+        (2009, "Diagnose.NotConnected"),
+        (2010, "retired:Diagnose.Connected.PerClient"), // Connected reports the hardware state: nothing per client to diagnose
+        (2011, "Diagnose.SlewSettleTime"),
+        (2012, "Diagnose.AxisRates.Axes"),
+        (2013, "Diagnose.DriverVersion"),
+        (2014, "Diagnose.Registration"),
         (3001, "Diagnose.{member}.Cause"),
         (3002, "Diagnose.{member}.Summary"),
         (3003, "ConformU.Diagnose.{member}.Cause"),
         (3004, "ConformU.Diagnose.{member}.Summary"),
+        (3005, "Diagnose.SlewSettleTime.Cause"),
+        (3006, "Diagnose.SlewSettleTime.Summary"),
     ];
 
     private static readonly Dictionary<string, int> ByKey = All.Where(t => !t.Key.StartsWith(Retired))

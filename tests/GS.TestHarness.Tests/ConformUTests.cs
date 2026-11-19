@@ -119,6 +119,28 @@ public class ConformUTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task Connected_true_after_Disconnect_while_another_client_holds_the_hardware_is_explained()
+    {
+        var log = await ConformULog.ParseAsync("conformu.txt", """
+            09:04:39.389 ASCOM Universal Device Conformance Checker Version 4.6.0.56430, Build time: Mon 26 October 2026 15:12:58
+            09:28:51.920 Disconnect                          DEBUG    Interface version: 4
+            09:28:51.931 Connected                           ISSUE    Exception when setting Connected to False: The device disconnected without error but Connected Get returned True.
+            """);
+        var plan = log.Plan();
+        var options = EngineTests.Everything with { AllowMotion = false, Groups = plan.Groups, Members = plan.Members, Extended = true };
+
+        // Connected reports the hardware state (true while any client holds it): allowed, so ConformU's issue is explained.
+        var report = await EngineTests.RunAsync(new FakeTelescope(Defect.ConnectedSharedByClients), options, conformU: log);
+        Assert.Equal(Outcome.Info, Assert.Single(report.Results, r => r.Id == "Clients.DisconnectedClient.Connected").Outcome);
+        var verdict = Assert.Single(report.Results, r => r.Id == "ConformU.Connected.Explained");
+        Assert.Equal(Outcome.Warning, verdict.Outcome);
+        Assert.Contains("another client kept the hardware connected", verdict.Message);
+        Assert.Contains("Clients.DisconnectedClient.Connected", verdict.Actual);
+        Assert.StartsWith("Nothing to change in the driver", verdict.Fix);
+        Assert.DoesNotContain(report.Results, r => r.Id is "ConformU.Connected.Reproduced" or "ConformU.Connected.NotReproduced");
+    }
+
+    [Fact]
     public async Task Connected_true_after_Disconnect_is_reproduced()
     {
         var log = await ConformULog.ParseAsync("conformu.txt", """
@@ -145,13 +167,16 @@ public class ConformUTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task A_disconnected_client_must_read_Connected_false_while_another_is_connected()
+    public async Task A_disconnected_client_may_read_the_hardware_state_while_another_is_connected()
     {
         var options = EngineTests.Everything with { AllowMotion = false, Extended = true, Groups = ["Connection", "Clients"] };
+        // Connected reports the hardware state: true while another client keeps it connected is allowed (ASCOM's hub
+        // note), so it's noted for ConformU's sake, not failed.
         var shared = await EngineTests.RunAsync(new FakeTelescope(Defect.ConnectedSharedByClients), options);
-        var bad = Assert.Single(shared.Results, r => r.Id == "Clients.DisconnectedClient.Connected");
-        Assert.Equal(Outcome.Fail, bad.Outcome);
-        Assert.Contains("another client is still connected", bad.Message);
+        var hardware = Assert.Single(shared.Results, r => r.Id == "Clients.DisconnectedClient.Connected");
+        Assert.Equal(Outcome.Info, hardware.Outcome);
+        Assert.Contains("allowed", hardware.Message);
+        Assert.Contains("ConformU", hardware.Message);
 
         var own = await EngineTests.RunAsync(new FakeTelescope(), options);
         Assert.Equal(Outcome.Pass, Assert.Single(own.Results, r => r.Id == "Clients.DisconnectedClient.Connected").Outcome);

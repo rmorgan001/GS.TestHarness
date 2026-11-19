@@ -21,7 +21,7 @@
 @* The report laid out for paper: every problem with all its details (not folded away as on the Report page), then
    everything else as a table. The browser's Print / Save as PDF makes the PDF; no PDF library is needed. *@
 
-<PageTitle>@(_report?.Label ?? "Report") · GS Test Harness</PageTitle>
+<PageTitle>@(_report is { } t ? $"{t.Reference} {t.Label}" : "Report") · GS Test Harness</PageTitle>
 
 <div class="print-page">
     @if (_missing)
@@ -36,10 +36,11 @@
             <a class="btn" href="reports/@r.Id">Back to the report</a>
         </div>
 
-        <h1>ASCOM compliance: @r.Label</h1>
+        <h1>ASCOM compliance: @r.Reference @r.Label</h1>
         <table class="print-facts">
             <tr><th>Target</th><td>@r.Target.Display (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</td></tr>
             <tr><th>Site</th><td>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</td></tr>
+            <tr><th>Report</th><td>@r.Reference (@r.Id)@(r.FollowsUpReference is { } upRef ? $", tier {r.Options.Tier} following up {upRef}" : "")</td></tr>
             <tr><th>Device</th><td>@r.Identity.Name — @r.Identity.Description</td></tr>
             <tr><th>DriverInfo</th><td>@r.Identity.DriverInfo</td></tr>
             <tr><th>DriverVersion</th><td>@r.Identity.DriverVersion (InterfaceVersion @r.Identity.InterfaceVersion)</td></tr>

@@ -23,13 +23,13 @@ public sealed record Reference(string Key, string Title, string? Url);
 
 /// <summary>
 /// One check, as the Tests page lists it. <see cref="Id"/> is the finding ID without the group, and may hold
-/// placeholders such as <c>{axis}</c> that stand for one word (Primary, Secondary...), or, ending in <c>*</c>
+/// placeholders such as <c>{axis}</c> that stand for one word (Primary, Secondary, 64-bit...), or, ending in <c>*</c>
 /// (<c>{slew*}</c>), for a dotted name such as SlewToCoordinatesAsync.West.
 /// </summary>
 public sealed record CatalogEntry(string Group, string Id, string Objective, string Method, string Verification, IReadOnlyList<string> Refs)
 {
     private readonly Regex _pattern = new("^" + Regex.Replace(Regex.Escape($"{Group}.{Id}"), @"\\\{([^}]+)}",
-        m => m.Groups[1].Value.EndsWith('*') ? "[A-Za-z0-9.]+" : "[A-Za-z0-9]+") + "$");
+        m => m.Groups[1].Value.EndsWith('*') ? "[A-Za-z0-9.-]+" : "[A-Za-z0-9-]+") + "$");
 
     /// <summary>
     /// The diagnostic tier the check belongs to (<see cref="Tiers"/>): 1 finds problems (every check of the ASCOM
@@ -348,7 +348,7 @@ public static class TestCatalog
             E("Tracking", "DeclinationRate.Moves", "DeclinationRate moves Dec at the rate set.", "Sets an arc-seconds per second offset towards the equator and measures Dec.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
 
             // ---------- Clients (extended) ----------
-            E("Clients", "DisconnectedClient.Connected", "A client that disconnected must read Connected false, even while another client keeps the device connected (ConformU: \"Connected Get returned True\").", "Clients B and C connect; B disconnects; B reads Connected.", "Pass when B reads false; Fail when it reads true or raises an error.", "V4", "ConformU"),
+            E("Clients", "DisconnectedClient.Connected", "What a client that disconnected reads while another client keeps the hardware connected. Connected reports the hardware state: in a hub it stays true until every client has disconnected, which the ASCOM notes say is not an error (ConformU still reports it: \"Connected Get returned True\").", "Clients B and C connect; B disconnects; B reads Connected.", "Pass when B reads false (its own state); Info when it reads true (the hardware state: allowed, but ConformU reports it while another client is connected); Fail on an error.", "V4", "ConformU"),
             E("Clients", "OneDisconnects", "One client disconnecting mustn't cut off another.", "Clients B and C connect; B disconnects.", "Fail unless C (and the run's own client) is still connected and answering.", "V4", "Harness"),
             E("Clients", "ParallelReads", "Several clients can read at once.", "Four clients read the same properties at the same time.", "Fail on an error, a slow answer, or clients that disagree.", "Harness"),
             E("Clients", "ConnectCycles", "Quick connect/disconnect cycles leave no trouble.", "Ten connect/disconnect cycles from another client.", "Fail on an error or Connected not true after each connect.", "Harness"),
@@ -362,7 +362,7 @@ public static class TestCatalog
             E("ConformU", "Log", "Say what the ConformU log found, so the run's purpose is on record.", "Counts the log's ERROR, ISSUE, CONFIGURATION ALERT and WARNING lines (repeats in its summary counted once) and groups them by member.", "Info, listing the problem areas.", "ConformU"),
             E("ConformU", "{member}.Probe", "Make a check for a property ConformU flagged that no harness check reached in this run (its groups were skipped or don't cover it).", "Reads the property three times while connected.", "Info with the values; Info if not implemented; Warning if a read took over a second; Fail if it raised another error.", "V4", "ConformU"),
             E("ConformU", "{member}.Reproduced", "Confirm a ConformU problem with the harness's own checks.", "After every group has run: for a member the harness diagnosed (rate offsets, pulse guiding), the diagnosis's verdict; otherwise the harness findings about the same member (its Member, or a part of its ID) that are problems.", "Fail when the diagnosis found the cause in the driver, or a harness check failed or errored; Warning when only warnings. ConformU's problem is real; the fix is the diagnosis's or the harness finding's. Other problems with a diagnosed member are listed as also found.", "ConformU", "Harness"),
-            E("ConformU", "{member}.Explained", "Say when a ConformU problem comes from something other than the member itself.", "The member's diagnosis found it working, and ConformU's result explained by something else (a stale or coarse position reading).", "Warning, with the diagnosis's explanation and recommendation. Other problems the harness found with the member are listed as also found, not as ConformU's.", "ConformU", "Harness"),
+            E("ConformU", "{member}.Explained", "Say when a ConformU problem comes from something other than the member itself.", "The member's diagnosis found it working, and ConformU's result explained by something else (a stale or coarse position reading); or, for Connected \"Connected Get returned True\" after Disconnect, the harness saw Connected report the hardware state while another client held it (allowed).", "Warning, with the explanation and recommendation (for Connected: nothing to change in the driver; run ConformU as the only client). Other problems the harness found with the member are listed as also found, not as ConformU's.", "ConformU", "Harness"),
             E("ConformU", "{member}.NotReproduced", "Say when the harness can't see a problem ConformU found.", "As Reproduced, but every harness check of the member passed, or its diagnosis found it within tolerance.", "Info: fixed since the ConformU run, or ConformU tested something the harness doesn't (or in conditions this run didn't meet).", "ConformU", "Harness"),
             E("ConformU", "{member}.NotChecked", "Say when a ConformU problem couldn't be looked at in this run.", "The groups that check the member were skipped (motion or settings writes off, extended checks off, communication lost).", "Skipped, with the reason; turn on what it needs and run again.", "Harness"),
             E("ConformU", "{member}.NoCheck", "Flag a ConformU problem nothing here can check.", "The member isn't checked by any group and isn't a property that can be read safely (a method that needs ConformU's arguments, or a ConformU-only topic).", "Warning: reproduce it by hand.", "ConformU", "Harness"),
@@ -389,6 +389,48 @@ public static class TestCatalog
             list.Add(E(group, $"{prefix}{{member}}.Summary", "Verify tier 2's recommendation and give the final analysis, summary and recommended fix for a RightAscensionRate or DeclinationRate problem.", "After tier 3's measurements: compares tier 3's finding with the tier 2 diagnosis it follows up (shown under Expected, with its recommendation).", "Says whether tier 3 confirms tier 2 (the same kind of finding, with the cause pinned down) or overturns it (a fault tier 2 put down to the readings, or the other way round), or didn't reproduce it; its outcome is tier 3's, and its fix the final recommendation.", "ConformU", "Harness")
                 with { Tier = 3, FollowsUp = [$"{group}.{prefix}{{member}}"] });
         }
+        // The ASCOM Conformance Check's other tier 2 diagnoses (AreaDiagnostics): each follows up one kind of tier 1
+        // problem, tests around it and reviews the code involved (when the server's source is on this computer).
+        const string Review = " When the server's source is here, the finding quotes the code reviewed (the member's guards, lines commented out, where a setting is used).";
+        list.AddRange(
+        [
+            E("Diagnose", "Arguments.{member}", "Find why a member took (or wrongly refused) an invalid axis or direction: no check at all, the wrong error, or a value that reaches the mount code.",
+                "Calls the member with every invalid value around the one tier 1 used (-1, the next past the last valid one, 9, 99) and with each valid one, and the members that take the same kind of argument; notes what each answer was, and whether a null came back.",
+                "Fail with the pattern found (accepted, returned null, refused with the wrong error, refused by the mount code) and what to add at the top of the member; Info when every invalid value is refused with InvalidValueException." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Capabilities.CanMoveAxis.InvalidAxis", "Methods.AxisRates.InvalidAxis", "Motion.PulseGuide.InvalidDirection"] },
+            E("Diagnose", "Preconditions.{member}", "Find why a member works when it must refuse (tracking off, or during a slew): this member alone, or the whole family, and what it does instead.",
+                "Turns tracking off and calls the member and its siblings (the other equatorial slews and syncs, PulseGuide) at the current position; pulses during a slew; notes whether each refused, and whether the call turned tracking on or moved the mount.",
+                "Fail naming the members that don't refuse, what they did instead, and the guard the refusing siblings have (InvalidOperationException) to add; Info when all refuse." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Motion.{slew}.NotTracking", "Motion.PulseGuide.NotTracking", "Motion.PulseGuide.WhileSlewing"] },
+            E("Diagnose", "NotConnected", "Find why members answer while the client is disconnected: one connection check missing for all of them, or a few members.",
+                "Disconnects this client (when no other client holds the device) and calls about twenty operational members, then connects again.",
+                "Fail listing the members that answer and the guard to add (NotConnectedException while Connected is false); Skipped when another client holds the device; Info when every one refuses." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Disconnected.NotConnected.{member}"] },
+            E("Diagnose", "SlewSettleTime", "Find why Slewing doesn't stay true for SlewSettleTime after a slew: the value not kept, kept but not used, or used in the wrong units.",
+                "Sets 0, 2 and 5 s and reads each back; for each, a short slew timed to when the position stops changing and to when Slewing goes false.",
+                "Fail with the settle measured at each setting and the cause it shows; Info when Slewing ends the setting's seconds after the mount stops." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Motion.SlewSettleTime.Effect"] },
+            E("Diagnose", "SlewSettleTime.Cause", "Find why Slewing stays true a while after every slew whatever SlewSettleTime is: a wait with the mount still, or the slew's own final correction; and confirm the setting is ignored.",
+                "Slews 0.5°, 2° and 8° in Dec and 2° in RA with no settle time, 2° with 3 s, and aborts a 15° slew; reads the position about every 0.1 s, finely enough to see it creep by fractions of an arc-second after the main slew, and when Slewing ends.",
+                "Fail when the setting adds nothing (with how long the slew's own end takes, and whether that is a final correction or a wait), with where the settle wait sits in the code and where it belongs; Info when the setting adds its seconds." + Review, "V4", "Harness")
+                with { Tier = 3, FollowsUp = ["Diagnose.SlewSettleTime"] },
+            E("Diagnose", "SlewSettleTime.Summary", "Verify tier 2's SlewSettleTime finding and give the final analysis and recommended fix.",
+                "After tier 3's slews: compares them with the tier 2 diagnosis it follows up (shown under Expected, with its recommendation).",
+                "Says whether tier 3 confirms or corrects tier 2; its outcome is tier 3's, and its fix the final recommendation.", "Harness")
+                with { Tier = 3, FollowsUp = ["Diagnose.SlewSettleTime"] },
+            E("Diagnose", "AxisRates.Axes", "Find why AxisRates doesn't match CanMoveAxis: rates for an axis that can't move, or the same rates whatever the axis.",
+                "Reads CanMoveAxis and AxisRates for each axis and compares them.",
+                "Fail naming the axes with rates they can't use, and whether the rates ignore the axis; Info when they match." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Methods.AxisRates.{axis}"] },
+            E("Diagnose", "DriverVersion", "Find where DriverVersion's extra parts come from.",
+                "Compares DriverVersion with DriverInfo and (COM) the driver program's file and product versions.",
+                "Warning with the source of the version and the major.minor to return; Info when it is n.n." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Connection.DriverVersion.Format"] },
+            E("Diagnose", "Registration", "Find whether a COM server missing from one registry view really stops clients of that bitness.",
+                "Reads the CLSID's server in both registry views and its AppID, the program's bitness, and creates the driver (without connecting) from a 64-bit and a 32-bit process.",
+                "Fail when a bitness can't create the driver; Warning when both can but one view is still missing (tools that read the registry see none); Info when both views are registered. COM on Windows only." + Review, "Registration", "Harness")
+                with { Tier = 2, FollowsUp = ["Registration.Server.{bitness}"] },
+        ]);
         list.AddRange(
         [
             // ---------- Performance ----------

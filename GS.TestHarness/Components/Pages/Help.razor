@@ -202,7 +202,14 @@
                     the options as set now), and its report says which run that was. Its findings are the
                     <strong>Diagnose…</strong> group for a conformance run, <strong>ConformU.Diagnose…</strong> for a ConformU
                     run. Compare uses tier 1 runs only; Recommendations add each tier 1 run's deeper findings, the deepest tier's
-                    where a check was made at more than one. The diagnoses move the mount, so they need <strong>Move the mount</strong>.</p>
+                    where a check was made at more than one.</p>
+                <p>A conformance run's tier 2 also takes apart its other kinds of problem: invalid arguments, members that work
+                    when they must refuse (tracking off, during a slew), members that answer while disconnected, SlewSettleTime, AxisRates against CanMoveAxis, DriverVersion and the COM registration. Each
+                    tests around the problem (the other values, the sibling members, the states around it) and, when the
+                    server's source is set under <strong>Options</strong>, reviews its code: the guards a member calls, lines
+                    commented out, where a setting is used. The finding names the core issue and the change to make. The
+                    measurements (rate offsets, pulse guiding), the preconditions and the settle time move the mount, so they
+                    need <strong>Move the mount</strong>; the others run without it.</p>
                 <p>Each diagnosis and the checks it follows up:</p>
                 <table>
                     <thead><tr><th>Tier</th><th>Member</th><th>Tests</th><th>Follows up</th><th>What it measures</th></tr></thead>
@@ -417,8 +424,8 @@
                     beside this program's folder and its parents, so <code>GSServer</code> and <code>GreenSwampAlpaca</code>
                     cloned next to it are found by themselves. On the command line, <code>--source &lt;folder&gt;</code> sets
                     it for that run.</p>
-                <p>The source only adds file names to findings: the checks, and the ConformU diagnoses and their recommendations,
-                    work without it.</p>
+                <p>The source adds file names to findings, and lets tier 2 review the code (quoting the lines it found). The
+                    checks and the diagnoses work without it; a tier 2 finding then says the code wasn't reviewed.</p>
             </section>
 
             <section id="cli">

@@ -349,13 +349,13 @@ else
     {
         @foreach (var r in Runs.LastReports)
         {
-            <a class="btn" href="reports/@r.Id">@r.SiteLabel</a>
+            <a class="btn" href="reports/@r.Id">@r.Reference · @r.SiteLabel</a>
         }
         <a class="btn" href="compare"><Icon Kind="Compare" Size="16" /> Compare sites</a>
     }
     else if (Runs.LastReport is { } done)
     {
-        <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report</a>
+        <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report @done.Reference</a>
         <a class="btn" href="download/@(done.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
     }
 </div>
@@ -369,7 +369,8 @@ else
         @* Where the run is in the tiers: tier 1 always first, each deeper tier offered only for what the one below found. *@
         @{
             var tier = Runs.Options?.Tier ?? 1;
-            var next = Runs.IsRunning ? null : NextTier();
+            var outlook = Runs.IsRunning ? null : RunOutlook();
+            var next = outlook?.Next;
         }
         <ol class="tier-track" aria-label="Diagnostic tiers">
             @for (var i = 1; i <= Tiers.Max; i++)
@@ -377,9 +378,11 @@ else
                 var step = i;
                 var state = step < tier || (step == tier && !Runs.IsRunning) ? "done"
                     : step == tier ? "running"
-                    : next?.Tier == step ? "next" : "locked";
+                    : next?.Tier == step ? "next"
+                    : outlook?.Tier == step && outlook.Kind == OutlookKind.NotNeeded ? "notneeded"
+                    : outlook?.Tier == step && outlook.Kind == OutlookKind.NotAvailable ? "unavailable" : "locked";
                 <li class="tier-step @state" aria-current="@(step == tier ? "step" : null)">
-                    <span class="tier-num" aria-hidden="true">@(state == "done" ? "✓" : step.ToString())</span>
+                    <span class="tier-num" aria-hidden="true">@(state == "done" ? "✓" : state is "notneeded" or "unavailable" ? "–" : step.ToString())</span>
                     <span class="tier-text">
                         <span class="tier-name">@Tiers.Name(step)</span>
                         <span class="tier-state">@TierState(step, state, tier)</span>
@@ -387,6 +390,15 @@ else
                 </li>
             }
         </ol>
+        @if (outlook is { Kind: OutlookKind.NotNeeded or OutlookKind.NotAvailable })
+        {
+            @* No next tier: say why, and which problems no deeper test follows up. *@
+            <div class="tier-none @(outlook.Kind == OutlookKind.NotNeeded ? "notneeded" : "unavailable")">
+                <p class="tier-next-title">@Tiers.Name(outlook.Tier): @outlook.Label.ToLowerInvariant()</p>
+                <p class="muted">@outlook.Why</p>
+                <UncoveredTests Outlook="outlook" />
+            </div>
+        }
         @if (next is not null)
         {
             var conformUNext = next.From.ConformULog is not null;
@@ -402,10 +414,15 @@ else
                         <span class="muted small">Tier @next.Tier tests</span>
                         @foreach (var n in NextNumbers(next, conformUNext)) { <a class="tag mono" href="help#test-@n">@n</a> }
                     </div>
-                    @if (!_motion) { <p class="tier-note">The tests move the mount: turn on <b>Move the mount</b> under Options first.</p> }
+                    <UncoveredTests Outlook="outlook!" />
+                    @if (!_motion && NeedsMotion(next))
+                    {
+                        @if (next.Members.All(MovesMount)) { <p class="tier-note">The tests move the mount: turn on <b>Move the mount</b> under Options first.</p> }
+                        else { <p class="tier-note">Some of the tests move the mount: without <b>Move the mount</b> (under Options) they are skipped.</p> }
+                    }
                     else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
                 </div>
-                <button class="btn primary" disabled="@(!_motion || NeedsLog(next))" @onclick="() => StartNextTier(next)">
+                <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next))" @onclick="() => StartNextTier(next)">
                     <Icon Kind="Play" Size="18" /> Run tier @next.Tier
                 </button>
             </div>
@@ -591,7 +608,14 @@ else
     // ---------- Tiers 2 and 3 ----------
 
     /// <summary>The deeper tier the last run (or the first of a batch that found something) can be followed up with.</summary>
-    private NextTier? NextTier() => Runs.LastReports.Select(Tiers.Next).FirstOrDefault(n => n is not null);
+    private NextTier? NextTier() => RunOutlook()?.Next;
+
+    /// <summary>What the tier after the last run would do: one that's offered at any of its sites, else the first site's.</summary>
+    private Outlook? RunOutlook()
+    {
+        var outlooks = Runs.LastReports.Select(Tiers.OutlookFor).ToList();
+        return outlooks.FirstOrDefault(o => o.Kind == OutlookKind.Offered) ?? outlooks.FirstOrDefault();
+    }
 
     /// <summary>A tier step's line under its name on the tier track.</summary>
     private string TierState(int step, string state, int tier) => state switch
@@ -601,8 +625,11 @@ else
         "done" when step == Tiers.Max => "Done: see the Summary findings",
         "done" => "Done",
         "next" => "Available for the problems found",
+        "notneeded" => "Not needed",
+        "unavailable" => "Not available: no test for what was found",
         _ when Runs.IsRunning => "After this run",
         _ when step == tier + 1 => "Nothing found that it can take further",
+        _ when step > tier + 1 => "Not reached",
         _ => $"After tier {step - 1}"
     };
 
@@ -618,6 +645,10 @@ else
         => next.Members.Select(m => Tiers.Diagnosis(m, next.Tier)).OfType<Diagnosis>()
             .SelectMany(d => d.Produces).Where(k => k.StartsWith("ConformU.") == conformU)
             .Select(TestNumbers.For).Where(n => n > 0).Distinct().Order();
+
+    private static bool MovesMount(string member) => GS.TestHarness.Engine.Checks.AreaDiagnostics.MovesMount(member);
+
+    private static bool NeedsMotion(NextTier next) => next.Members.Any(MovesMount);
 
     private async Task StartNextTier(NextTier next)
     {

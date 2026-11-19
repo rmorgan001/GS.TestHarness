@@ -225,7 +225,7 @@ else
     }
 
     private static string RunText(RunReport r)
-        => $"{r.Started:yyyy-MM-dd HH:mm} · {r.Identity.DriverVersion ?? "?"} · {r.SiteLabel}" +
+        => $"{r.Reference} · {r.Started:yyyy-MM-dd HH:mm} · {r.Identity.DriverVersion ?? "?"} · {r.SiteLabel}" +
            (r.Cancelled || r.CommunicationLost ? " · stopped" : "") + $" · {r.Count(Outcome.Fail) + r.Count(Outcome.Error)} fail";
 
     private static string Css(Change c) => c switch

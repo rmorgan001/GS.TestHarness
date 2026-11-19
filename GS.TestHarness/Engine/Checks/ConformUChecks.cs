@@ -125,6 +125,20 @@ public sealed partial class ConformUChecks : ICheckGroup
             {
                 Diagnosed(ctx, area, id, conformU, diagnoses, problems);
             }
+            else if (problems.Count == 0 && HardwareStateRead(area, related) is { Count: > 0 } evidence)
+            {
+                // ConformU's "Connected Get returned True" after its own Disconnect, while another client kept the
+                // hardware connected: Connected reports the hardware state, which ASCOM allows.
+                ctx.Report($"{id}.Explained", area.Member, Outcome.Warning,
+                    "Explained: ConformU read Connected true after its Disconnect() because another client kept the hardware " +
+                    "connected. Connected reports the hardware state, which the standard allows (in a hub it stays true until " +
+                    "every client has disconnected, and the ASCOM notes say that isn't an error): not a fault in the driver.",
+                    expected: conformU,
+                    actual: string.Join('\n', evidence.Select(r => $"{r.Id}: {r.Message}")),
+                    fix: "Nothing to change in the driver. To run ConformU without this report, make it the only client: close GS " +
+                         "Server's own connection and any planetarium, imaging or guiding program connected to the mount first.",
+                    reference: CheckContext.DocsBase + "Connected", sourceMember: "-");
+            }
             else if (problems.Count > 0)
             {
                 var worst = problems.Any(r => r.Outcome is Outcome.Fail or Outcome.Error) ? Outcome.Fail : Outcome.Warning;
@@ -213,6 +227,19 @@ public sealed partial class ConformUChecks : ICheckGroup
     }
 
     /// <summary>What ConformU reported for the area, for a finding's Expected.</summary>
+    /// <summary>
+    /// For a ConformU "Connected Get returned True" after its Disconnect(): the harness findings that show Connected reads
+    /// the hardware state while another client holds it (a client that disconnected reading true beside another one, or
+    /// this client's Disconnect leaving Connected true because another client holds the device). Empty if none, or if
+    /// ConformU's problem is something else.
+    /// </summary>
+    internal static List<CheckResult> HardwareStateRead(ConformUArea area, IEnumerable<CheckResult> related)
+    {
+        if (area.Member != "Connected" || !area.Problems.Any(p => p.Message.Contains("Connected Get returned True", StringComparison.OrdinalIgnoreCase)))
+            return [];
+        return [.. related.Where(r => r.Outcome == Outcome.Info && r.Id is "Clients.DisconnectedClient.Connected" or "Disconnected.Disconnect")];
+    }
+
     internal static string Said(ConformUArea area)
         => string.Join('\n', area.Problems.Take(5).Select(p => $"ConformU {p.Severity.ToString().ToUpperInvariant()} (line {p.Line}, {p.Test}): {p.Message}"))
            + (area.Problems.Count > 5 ? $"\n… and {area.Problems.Count - 5} more" : "");

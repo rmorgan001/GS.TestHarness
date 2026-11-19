@@ -96,8 +96,37 @@ public enum Defect
     /// <summary>Disconnect() returns without error but leaves the client connected (ConformU: "Connected Get returned True").</summary>
     ConnectedAfterDisconnect,
 
-    /// <summary>Connected reads true for every client while any client is connected (not each client's own state).</summary>
-    ConnectedSharedByClients
+    /// <summary>Connected reports the hardware state: true for every client while any client is connected (allowed, as a hub does).</summary>
+    ConnectedSharedByClients,
+
+    // As GSServer 1.2.3.3 (the tier 2 area diagnoses, AreaDiagnosticsTests).
+
+    /// <summary>No member checks the connection: everything answers while the client is disconnected.</summary>
+    NoConnectedCheck,
+
+    /// <summary>CanMoveAxis answers false for an invalid axis, and AxisRates returns null, instead of refusing.</summary>
+    InvalidAxisUnchecked,
+
+    /// <summary>AxisRates gives the tertiary axis rates too, though CanMoveAxis(Tertiary) is false.</summary>
+    TertiaryAxisRates,
+
+    /// <summary>PulseGuide passes an invalid direction to the mount code, whose ArgumentOutOfRangeException comes back as a DriverException.</summary>
+    PulseGuideDirectionUnchecked,
+
+    /// <summary>PulseGuide is accepted during a slew.</summary>
+    PulseGuideWhileSlewing,
+
+    /// <summary>SlewToCoordinatesAsync with tracking off turns tracking on and slews, instead of refusing (the other slews refuse).</summary>
+    AsyncSlewTurnsTrackingOn,
+
+    /// <summary>DriverVersion is the whole assembly version, "1.2.3.3".</summary>
+    DriverVersionFull,
+
+    /// <summary>
+    /// As GSServer's simulator: after the main slew a final precision correction runs for 1.5 s, the position creeping
+    /// the last 0.6" (Slewing true throughout), and the settle time (if used) comes before it.
+    /// </summary>
+    SlewEndsWithPrecisionCorrection
 }
 
 /// <summary>
@@ -146,7 +175,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private void NeedConnected()
     {
         NeedAlive();
-        if (!IsConnected) throw new NotConnectedException("not connected");
+        if (!IsConnected && !Has(Defect.NoConnectedCheck)) throw new NotConnectedException("not connected");
     }
 
     private bool _dead;
@@ -159,7 +188,11 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     private double Lst => Values.LocalSiderealTime(DateTime.UtcNow, _lon);
 
-    private void StartMotion(int ms, Action atEnd)
+    /// <summary>
+    /// A timed motion: <paramref name="atEnd"/> puts the mount where it goes after <paramref name="arriveMs"/> (by
+    /// default when the motion ends), and Slewing stays true until <paramref name="ms"/> (a slew's settle time after it arrives).
+    /// </summary>
+    private void StartMotion(int ms, Action atEnd, int? arriveMs = null)
     {
         int generation;
         lock (_gate)
@@ -167,15 +200,22 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
             _slewing = true;
             generation = ++_motionGeneration;
         }
-        _ = Task.Delay(ms).ContinueWith(_ =>
+        var arrive = Math.Min(arriveMs ?? ms, ms);
+        _ = Task.Delay(arrive).ContinueWith(_ =>
         {
             lock (_gate)
             {
                 if (generation != _motionGeneration) return;
                 atEnd();
-                _slewing = false;
+                if (arrive >= ms) _slewing = false;
             }
         });
+        if (arrive < ms)
+            _ = Task.Delay(ms).ContinueWith(_ =>
+            {
+                lock (_gate)
+                    if (generation == _motionGeneration) _slewing = false;
+            });
     }
 
     private void StopMotion()
@@ -228,7 +268,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     }
     public string Description => "Fake GEM for the GS.TestHarness tests";
     public string DriverInfo => "GS.TestHarness.Tests fake telescope";
-    public string DriverVersion => "1.0";
+    public string DriverVersion => Has(Defect.DriverVersionFull) ? "1.2.3.3" : "1.0";
     public short InterfaceVersion => (short)(Has(Defect.InterfaceVersion3) ? 3 : 4);
     public string Name => "Fake GEM";
     public IList<string> SupportedActions => [];
@@ -279,15 +319,19 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     {
         NeedConnected();
         if (axis is < TelescopeAxis.Primary or > TelescopeAxis.Tertiary)
+        {
+            if (Has(Defect.InvalidAxisUnchecked)) return false;
             throw Has(Defect.WrongErrorForInvalidAxis) ? new DriverException("bad axis") : new InvalidValueException("axis");
+        }
         return axis != TelescopeAxis.Tertiary;
     }
 
     public IAxisRates AxisRates(TelescopeAxis axis)
     {
         NeedConnected();
-        if (axis is < TelescopeAxis.Primary or > TelescopeAxis.Tertiary) throw new InvalidValueException("axis");
-        return new FakeAxisRates(axis == TelescopeAxis.Tertiary ? [] : [new FakeRate(0, 4)]);
+        if (axis is < TelescopeAxis.Primary or > TelescopeAxis.Tertiary)
+            return Has(Defect.InvalidAxisUnchecked) ? null! : throw new InvalidValueException("axis");
+        return new FakeAxisRates(axis == TelescopeAxis.Tertiary && !Has(Defect.TertiaryAxisRates) ? [] : [new FakeRate(0, 4)]);
     }
 
     // ---------- Properties ----------
@@ -340,7 +384,19 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     }
 
     /// <summary>The position as the properties report it: now, or with a defect, cached or jittering.</summary>
+    /// <summary>SlewEndsWithPrecisionCorrection: when the final correction ends; until then Dec is off by what's left of 0.6".</summary>
+    private DateTime _correctUntil;
+
+    private const double CorrectionSeconds = 1.5;
+
     private (double Ra, double Dec) Reported()
+    {
+        var (ra, dec) = ReportedRaw();
+        var left = (_correctUntil - DateTime.UtcNow).TotalSeconds;
+        return left > 0 ? (ra, dec + 0.6 / 3600 * left / CorrectionSeconds) : (ra, dec);
+    }
+
+    private (double Ra, double Dec) ReportedRaw()
     {
         var now = System.Diagnostics.Stopwatch.GetTimestamp();
         var f = System.Diagnostics.Stopwatch.Frequency;
@@ -615,14 +671,28 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         NeedConnected();
         if (!(Has(Defect.SlewAcceptsRa25) && ra == 25)) CheckRaDec(ra, dec);
         if (_atPark && !Has(Defect.ParkedMountSlews)) throw new ParkedException("parked");
-        if (!_tracking) throw new ASCOM.InvalidOperationException("not tracking");
+        if (!_tracking)
+        {
+            if (!(async && Has(Defect.AsyncSlewTurnsTrackingOn))) throw new ASCOM.InvalidOperationException("not tracking");
+            Bake();
+            lock (_gate) _tracking = true;
+        }
         _targetRa = ra;
         _targetDec = dec;
         _atHome = false;
         _atPark = false;
         // With the defect, the mount never changes side (though DestinationSideOfPier says it will).
         PointingState? keep = Has(Defect.NoMeridianFlip) ? SideOfPier : null;
-        StartMotion(300 + (Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000), () => { SetPos(ra, dec); _forcedSide = keep; });
+        // The mount arrives after 300 ms, then settles (Slewing still true) for SlewSettleTime; with the defect a final
+        // correction follows, creeping the last 0.6" for 1.5 s.
+        var settle = Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000;
+        var correct = Has(Defect.SlewEndsWithPrecisionCorrection) ? (int)(CorrectionSeconds * 1000) : 0;
+        StartMotion(300 + settle + correct, () =>
+        {
+            SetPos(ra, dec);
+            _forcedSide = keep;
+            if (correct > 0) _correctUntil = DateTime.UtcNow.AddMilliseconds(settle + correct);
+        }, arriveMs: 300);
         if (!async || Has(Defect.AsyncSlewBlocks)) WaitForMotion(Has(Defect.AsyncSlewBlocks) ? 5500 : 0);
     }
 
@@ -714,11 +784,14 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public void PulseGuide(GuideDirection direction, int duration)
     {
         NeedConnected();
-        if (!Enum.IsDefined(direction)) throw new InvalidValueException("direction");
+        if (!Enum.IsDefined(direction))
+            throw Has(Defect.PulseGuideDirectionUnchecked)
+                ? new DriverException($"Exception of type 'System.ArgumentOutOfRangeException' was thrown. Parameter name: direction. Actual value was {(int)direction}.")
+                : new InvalidValueException("direction");
         if (duration < 0) throw new InvalidValueException("duration");
         CheckCanMove();
         if (!Has(Defect.PulseGuideWhileNotTracking) && !_tracking) throw new ASCOM.InvalidOperationException("not tracking");
-        if (_slewing) throw new ASCOM.InvalidOperationException("slewing");
+        if (_slewing && !Has(Defect.PulseGuideWhileSlewing)) throw new ASCOM.InvalidOperationException("slewing");
         var until = DateTime.UtcNow.AddMilliseconds(duration);
         if (until > _pulseUntil) _pulseUntil = until;
         // The pulse moves the mount over its duration: North raises Dec and East raises RA, on either side of the pier.

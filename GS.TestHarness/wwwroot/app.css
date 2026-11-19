@@ -271,6 +271,20 @@ button.link.danger, .danger { color: var(--fail); }
 .tier-step.next .tier-num { border-color: var(--yellow); color: var(--yellow); }
 .tier-step.next .tier-state { color: var(--yellow); }
 .tier-step.locked { opacity: .55; }
+/* A next tier that isn't needed (nothing to dig into, or already pinned down) or isn't available (no deeper test). */
+.tier-step.notneeded, .tier-step.unavailable { border-style: dashed; }
+.tier-step.notneeded .tier-num, .tier-step.unavailable .tier-num { color: var(--muted); }
+.tier-step.notneeded .tier-state { color: var(--green); }
+.tier-step.unavailable .tier-state { color: var(--muted); }
+.tier-none { margin: 0 0 1rem; padding: .7rem 1rem; border: 1px dashed var(--line-strong); border-left: 4px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--well); }
+.tier-none.notneeded { border-left-color: var(--green); }
+.tier-none p { margin: 0 0 .35rem; }
+.tier-none .tier-next-title { color: var(--text); }
+.tier-uncovered { margin-top: .35rem; }
+.outlook { font-weight: 600; }
+.outlook.offered { color: var(--yellow); }
+.outlook.notneeded { color: var(--green); }
+.outlook.notavailable, .outlook.deepest { color: var(--muted); }
 .tier-next {
     display: flex; align-items: center; gap: 1rem; margin: 0 0 1rem; padding: .8rem 1rem;
     border: 1px solid var(--yellow); border-left-width: 4px; border-radius: var(--radius-sm); background: var(--yellow-soft);
@@ -559,6 +573,7 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .reports td { vertical-align: middle; }
 /* Tiers: a badge per tier, and the chain of runs on a report. */
 .tier-cell { white-space: nowrap; }
+.report-ref { font-family: var(--mono); font-size: .7em; padding: .1rem .45rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--muted); vertical-align: middle; }
 .tier-badge { display: inline-block; padding: .05rem .45rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .78rem; font-weight: 600; }
 .tier-badge.tier-2 { color: var(--info); border-color: currentColor; }
 .tier-badge.tier-3 { color: var(--accent); border-color: currentColor; }

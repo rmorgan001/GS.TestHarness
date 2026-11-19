@@ -139,7 +139,11 @@ public sealed class TestRunner(SourceLocator locator)
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
         if (Tiers.Problem(options, followsUp, conformU is not null) is { } tierProblem)
             throw new InvalidOperationException($"Can't run tier {options.Tier}: {tierProblem}");
-        var report = new RunReport { Target = target, Options = options, Site = site, ConformULog = conformU?.FileName };
+        var report = new RunReport
+        {
+            Target = target, Options = options, Site = site, ConformULog = conformU?.FileName,
+            FollowsUpNumber = followsUp is { Number: > 0 } up ? up.Number : null
+        };
         void Add(CheckResult r)
         {
             lock (report.Results) report.Results.Add(r);

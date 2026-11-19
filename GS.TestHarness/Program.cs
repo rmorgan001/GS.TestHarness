@@ -96,7 +96,7 @@ app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
         : Results.NotFound());
 app.MapGet("/download/{id}.csv", async (string id, ReportStore store) =>
     await TryLoadAsync(store, id) is { } report
-        ? Results.File(ReportCsv.Report(report), "text/csv; charset=utf-8", $"{ReportCsv.FileName(report.Label)}_{id}.csv")
+        ? Results.File(ReportCsv.Report(report), "text/csv; charset=utf-8", $"{report.Reference}_{ReportCsv.FileName(report.Label)}.csv")
         : Results.NotFound());
 app.MapGet("/download/compare/{before}/{after}.csv", async (string before, string after, ReportStore store) =>
     await TryLoadAsync(store, before) is { } a && await TryLoadAsync(store, after) is { } b

@@ -161,7 +161,7 @@ public static class RecommendationBuilder
         sb.AppendLine($"From the latest run of each device at each site ({set.Runs.Count} run{(set.Runs.Count == 1 ? "" : "s")}):");
         sb.AppendLine();
         foreach (var run in set.Runs)
-            sb.AppendLine($"- {run.Label} · {run.SiteLabel} · {run.Started:yyyy-MM-dd HH:mm} · {run.Target.Display}{(run.Cancelled ? " · stopped early" : "")}");
+            sb.AppendLine($"- {run.Reference} · {run.Label} · {run.SiteLabel} · {run.Started:yyyy-MM-dd HH:mm} · {run.Target.Display}{(run.Cancelled ? " · stopped early" : "")}");
 
         if (set.Recommendations.Count == 0)
         {
@@ -184,7 +184,7 @@ public static class RecommendationBuilder
                 if (r.Reference is not null) sb.AppendLine($"- Reference: {Inline(r.Reference)}");
                 foreach (var hit in r.Hits)
                 {
-                    sb.AppendLine($"- {hit.Result.Outcome} at {hit.Run.SiteLabel} ({hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {Inline(hit.Result.Message)}");
+                    sb.AppendLine($"- {hit.Result.Outcome} at {hit.Run.SiteLabel} ({hit.Run.Reference}, {hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {Inline(hit.Result.Message)}");
                     if (hit.Result.Expected is not null) sb.AppendLine($"  - Expected: {Inline(hit.Result.Expected)}");
                     if (hit.Result.Actual is not null) AppendActual(sb, hit.Result.Actual);
                 }

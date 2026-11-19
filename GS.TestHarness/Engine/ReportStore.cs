@@ -38,19 +38,81 @@ public sealed class ReportStore(string folder)
         return Path.Combine(Folder, id + ".json");
     }
 
+    /// <summary>
+    /// Saves a run. A run saved for the first time gets the next report number (<see cref="RunReport.Number"/>): the
+    /// reports already here are numbered first, oldest first, so the numbers follow the order of the runs.
+    /// </summary>
     public async Task SaveAsync(RunReport report)
     {
         Directory.CreateDirectory(Folder);
+        if (report.Number == 0)
+        {
+            var known = await ListAsync();
+            report.Number = (await IssueAsync(1, known.Select(r => r.Number).DefaultIfEmpty(0).Max()))[0];
+        }
+        await WriteAsync(report);
+    }
+
+    private async Task WriteAsync(RunReport report)
+    {
         var path = PathOf(report.Id);
         await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(report, Json));
         File.Move(path + ".tmp", path, overwrite: true);
     }
 
+    /// <summary>The file that holds the last report number given, so a deleted report's number isn't given again.</summary>
+    private string CounterPath => Path.Combine(Folder, "report-numbers.txt");
+
+    private static readonly SemaphoreSlim Numbering = new(1, 1);
+
+    /// <summary>
+    /// The next <paramref name="count"/> report numbers, after the last one given (from the counter file) and after
+    /// <paramref name="highest"/> (the highest a report here has, should the counter file be gone). The counter file
+    /// is held exclusively while it's updated, so the app and the command line never give out the same number.
+    /// </summary>
+    private async Task<int[]> IssueAsync(int count, int highest)
+    {
+        await Numbering.WaitAsync();
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    await using var file = new FileStream(CounterPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    using var reader = new StreamReader(file, leaveOpen: true);
+                    var last = int.TryParse((await reader.ReadToEndAsync()).Trim(), out var n) ? n : 0;
+                    last = Math.Max(last, highest);
+                    var numbers = Enumerable.Range(last + 1, count).ToArray();
+                    file.SetLength(0);
+                    await using var writer = new StreamWriter(file);
+                    await writer.WriteAsync(numbers[^1].ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    return numbers;
+                }
+                catch (IOException) when (attempt < 50)
+                {
+                    await Task.Delay(100);
+                }
+            }
+        }
+        finally
+        {
+            Numbering.Release();
+        }
+    }
+
+    /// <summary>A saved run by its ID, or by its reference ("R0012", or just "12").</summary>
     public async Task<RunReport?> LoadAsync(string id)
     {
+        if (Regex.Match(id.Trim(), @"^[Rr]?0*(\d{1,9})$") is { Success: true } reference)
+            return (await ListAsync()).FirstOrDefault(r => r.Number == int.Parse(reference.Groups[1].Value));
         var path = PathOf(id);
         if (!File.Exists(path)) return null;
-        return JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(path), Json);
+        var report = JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(path), Json);
+        // A report saved before reports had numbers gets its number when the reports are listed.
+        if (report is { Number: 0 }) return (await ListAsync()).FirstOrDefault(r => r.Id == report.Id) ?? report;
+        return report;
     }
 
     /// <summary>Each report file read so far, with the time and size it had then: it's read again only when either changes.</summary>
@@ -88,6 +150,32 @@ public sealed class ReportStore(string folder)
             catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { _cache.TryRemove(file, out _); }
         }
         foreach (var gone in _cache.Keys.Where(k => !files.Contains(k)).ToList()) _cache.TryRemove(gone, out _);
+
+        // Reports saved before reports had numbers: numbered once, oldest first, and saved with it; a deeper run also
+        // gets the number of the run it follows up, for its reference.
+        var changed = new HashSet<RunReport>(ReferenceEqualityComparer.Instance);
+        var unnumbered = reports.Where(r => r.Number == 0).OrderBy(r => r.Started).ToList();
+        if (unnumbered.Count > 0)
+        {
+            var numbers = await IssueAsync(unnumbered.Count, reports.Select(r => r.Number).DefaultIfEmpty(0).Max());
+            for (var i = 0; i < unnumbered.Count; i++)
+            {
+                unnumbered[i].Number = numbers[i];
+                changed.Add(unnumbered[i]);
+            }
+        }
+        var byId = reports.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        foreach (var r in reports.Where(r => r.FollowsUpNumber is null && r.Options.FollowsUp is not null))
+            if (byId.TryGetValue(r.Options.FollowsUp!, out var parent) && parent.Number > 0)
+            {
+                r.FollowsUpNumber = parent.Number;
+                changed.Add(r);
+            }
+        foreach (var r in changed)
+        {
+            try { await WriteAsync(r); }
+            catch (IOException) { /* numbered in memory; saved next time */ }
+        }
         return [.. reports.OrderByDescending(r => r.Started)];
     }
 
@@ -123,6 +211,7 @@ public sealed class ReportStore(string folder)
         var sb = new StringBuilder();
         sb.AppendLine($"# ASCOM compliance: {r.Label}");
         sb.AppendLine();
+        sb.AppendLine($"- Report: {r.Reference} ({r.Id})");
         sb.AppendLine($"- Target: {r.Target.Display}");
         sb.AppendLine($"- Site: {r.SiteLabel}{(r.Site is { } site ? $" ({site.Coordinates})" : "")}");
         sb.AppendLine($"- Device: {r.Identity.Name} — {r.Identity.Description}");
@@ -132,7 +221,7 @@ public sealed class ReportStore(string folder)
         sb.AppendLine($"- Run: {r.Started:yyyy-MM-dd HH:mm} ({(r.Finished - r.Started)?.TotalSeconds:0} s){(r.Cancelled ? ", stopped early" : "")}{(r.CommunicationLost ? ", stopped: communication with the device was lost" : "")}, GS.TestHarness {r.HarnessVersion}");
         sb.AppendLine($"- Options: motion {(r.Options.AllowMotion ? "on" : "off")}, settings writes {(r.Options.AllowSettingsWrites ? "on" : "off")}, " +
                       $"SetPark {(r.Options.AllowSetPark ? "on" : "off")}, protocol {(r.Options.IncludeProtocol ? "on" : "off")}");
-        sb.AppendLine($"- {Tiers.Name(r.Options.Tier)}{(r.Options.FollowsUp is { } up ? $", following up run {up}" : "")}");
+        sb.AppendLine($"- {Tiers.Name(r.Options.Tier)}{(r.Options.FollowsUp is { } up ? $", following up report {r.FollowsUpReference}" : "")}");
         sb.AppendLine();
         sb.AppendLine($"**{r.Count(Outcome.Fail)} failed, {r.Count(Outcome.Error)} errors, {r.Count(Outcome.Warning)} warnings**, " +
                       $"{r.Count(Outcome.Pass)} passed, {r.Count(Outcome.Info)} info, {r.Count(Outcome.Skipped)} skipped.");

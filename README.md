@@ -56,7 +56,11 @@ a generated check; anything else nothing here can test is flagged to reproduce b
 **Diagnoses** (tiers 2 and 3). For RightAscensionRate / DeclinationRate and PulseGuide problems, the deeper tiers measure *why* ConformU saw
 them (a rate that is wrong, or readings too coarse for ConformU's measurement; a stale position reading, a wrong guide
 rate, or time lost per pulse) and recommends where to check GSServer's code, for its simulator or a real mount as set
-by **Mount**. The harness only recommends: it never changes the server's code.
+by **Mount**. A conformance run's other problems have tier 2 diagnoses too (`Engine/Checks/AreaDiagnostics.cs`): invalid
+arguments, preconditions (tracking off, during a slew), members answering while disconnected,
+SlewSettleTime, AxisRates, DriverVersion and the COM registration. Each tests around the problem and, with the server's
+source set, reviews its code (guards called, lines commented out, where a setting is used) to name the core issue and
+the change. The harness only recommends: it never changes the server's code.
 
 **Diagnostic tiers.** Both tests go in three tiers, and tier 1 always runs first:
 

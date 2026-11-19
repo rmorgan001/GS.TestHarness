@@ -318,6 +318,25 @@ public sealed record DeviceIdentity
 public sealed record RunReport
 {
     public string Id { get; init; } = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6];
+
+    /// <summary>
+    /// The report's number, given by <see cref="ReportStore"/> when it is saved: 1, 2, 3... in the order runs were saved,
+    /// never reused (0 until saved). Shown as <see cref="Reference"/>.
+    /// </summary>
+    public int Number { get; set; }
+
+    /// <summary>The report's reference, "R0012": what to quote for it (the <see cref="Id"/> until it has a number).</summary>
+    [JsonIgnore]
+    public string Reference => Number > 0 ? ReferenceOf(Number) : Id;
+
+    public static string ReferenceOf(int number) => $"R{number:0000}";
+
+    /// <summary>For a tier 2 or 3 run, the number of the run it follows up (<see cref="RunOptions.FollowsUp"/>), for its reference.</summary>
+    public int? FollowsUpNumber { get; set; }
+
+    /// <summary>The reference of the run this one follows up ("R0011"), or null for a tier 1 run.</summary>
+    [JsonIgnore]
+    public string? FollowsUpReference => Options.FollowsUp is { } up ? FollowsUpNumber is > 0 and var n ? ReferenceOf(n) : up : null;
     public required TestTarget Target { get; init; }
     public required RunOptions Options { get; init; }
     public DeviceIdentity Identity { get; set; } = new();

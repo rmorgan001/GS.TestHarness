@@ -1,0 +1,38 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* The problems a run found that no test of the next tier follows up (Tiers.OutlookFor), by test number: at tier 1 there
+   is no deeper test for them; at tier 2 they were already pinned down. Nothing when there are none. *@
+
+@if (Outlook.Uncovered.Count > 0)
+{
+    var from = Outlook.Tier - 1;
+    <div class="tier-members tier-uncovered">
+        <span class="muted small">@(from == 1 ? $"No tier {Outlook.Tier} test for" : $"Pinned down at tier {from}, no tier {Outlook.Tier} needed")</span>
+        @foreach (var r in Outlook.Uncovered.Take(Max))
+        {
+            <a class="tag mono" href="help#test-@r.Number" title="@r.Message">@(r.Number > 0 ? $"{r.Number} " : "")@r.Member</a>
+        }
+        @if (Outlook.Uncovered.Count > Max) { <span class="muted small">and @(Outlook.Uncovered.Count - Max) more</span> }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Outlook Outlook { get; set; } = null!;
+
+    /// <summary>How many to show before "and n more".</summary>
+    [Parameter] public int Max { get; set; } = 12;
+}
