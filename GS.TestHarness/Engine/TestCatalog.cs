@@ -46,11 +46,21 @@ public sealed record CatalogEntry(string Group, string Id, string Objective, str
     /// <summary>The entry's key: Group.Id, placeholders and all.</summary>
     public string Key => $"{Group}.{Id}";
 
+    /// <summary>The test's number (<see cref="TestNumbers"/>): its first digit is its tier, and it never changes.</summary>
+    public int Number => TestNumbers.For(Key);
+
     /// <summary>The ID as shown: placeholders without their <c>*</c>.</summary>
     public string DisplayId => Id.Replace("*}", "}");
 
     /// <summary>Whether a finding's full ID (Group.Id) is this check.</summary>
     public bool Matches(string findingId) => _pattern.IsMatch(findingId);
+}
+
+/// <summary>A tier 1 test and the deeper tests that follow it up (<see cref="TestCatalog.Chains"/>).</summary>
+public sealed record TierChain(CatalogEntry Test, IReadOnlyList<CatalogEntry> Tier2, IReadOnlyList<CatalogEntry> Tier3)
+{
+    /// <summary>Which test it belongs to: the ConformU Debug Log Test, or the ASCOM Conformance Check.</summary>
+    public bool ConformU => Test.Group == "ConformU";
 }
 
 /// <summary>A check group on the Tests page: what it covers and when it runs.</summary>
@@ -401,6 +411,24 @@ public static class TestCatalog
     /// <summary>The catalog entry for a finding (the most specific one that matches), or null if it has none.</summary>
     public static CatalogEntry? For(string findingId)
         => Entries.Where(e => e.Matches(findingId)).OrderBy(e => $"{e.Group}.{e.Id}".Count(ch => ch == '{')).FirstOrDefault();
+
+    /// <summary>
+    /// For each test with a deeper tier, the tests that follow it up: <see cref="TierChain.Tier2"/> the tier 2 tests
+    /// that follow it up, <see cref="TierChain.Tier3"/> the tier 3 tests that follow those up. In number order.
+    /// </summary>
+    public static IReadOnlyList<TierChain> Chains()
+    {
+        var chains = new List<TierChain>();
+        foreach (var test in Entries.Where(e => e.Tier == 1).OrderBy(e => e.Number))
+        {
+            var tier2 = Entries.Where(e => e.Tier == 2 && e.FollowsUp.Contains(test.Key)).OrderBy(e => e.Number).ToList();
+            if (tier2.Count == 0) continue;
+            var keys = tier2.Select(e => e.Key).ToHashSet();
+            var tier3 = Entries.Where(e => e.Tier == 3 && e.FollowsUp.Any(keys.Contains)).OrderBy(e => e.Number).ToList();
+            chains.Add(new TierChain(test, tier2, tier3));
+        }
+        return chains;
+    }
 
     /// <summary>The group an entry is shown under: run-level entries (any group) under "Run".</summary>
     public static string DisplayGroup(CatalogEntry e) => e.Group.Contains('{') ? "Run" : e.Group;

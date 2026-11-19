@@ -104,7 +104,7 @@ else
                 <div class="rec-head">
                     <span class="badge @ResultsTable.Css(r.Worst)">@ResultsTable.Label(r.Worst)</span>
                     <span class="rec-member mono">@r.Member</span>
-                    <span class="mono muted small">@r.Id</span>
+                    <span class="mono muted small">@TestNumbers.Label(r.Id)</span>
                     <span class="spacer"></span>
                     @{ var of = runsOf.GetValueOrDefault(r.Codebase); }
                     <span class="muted small">@r.Hits.Count of @of run@(of == 1 ? "" : "s")</span>
@@ -153,11 +153,11 @@ else
         <h2 class="rec-server">No problem <span class="muted">(@clean.Count)</span></h2>
         <section class="card table-scroll">
             <table class="results">
-                <thead><tr><th>Server</th><th>Check</th><th>Member</th><th class="num" title="Latest runs where it passed">Passed in</th></tr></thead>
+                <thead><tr><th>Server</th><th>No.</th><th>Check</th><th>Member</th><th class="num" title="Latest runs where it passed">Passed in</th></tr></thead>
                 <tbody>
                     @foreach (var c in clean)
                     {
-                        <tr><td>@c.Codebase</td><td class="mono">@c.Id</td><td class="mono">@c.Member</td><td class="num">@c.Runs</td></tr>
+                        <tr><td>@c.Codebase</td><td class="mono num">@TestNumbers.Of(c.Id)</td><td class="mono">@c.Id</td><td class="mono">@c.Member</td><td class="num">@c.Runs</td></tr>
                     }
                 </tbody>
             </table>
@@ -204,7 +204,8 @@ else
             || r.Sources.Any(s => s.Contains(_search, StringComparison.OrdinalIgnoreCase))))];
 
     private bool Matches(string id, string member)
-        => _search.Length == 0 || id.Contains(_search, StringComparison.OrdinalIgnoreCase) || member.Contains(_search, StringComparison.OrdinalIgnoreCase);
+        => _search.Length == 0 || id.Contains(_search, StringComparison.OrdinalIgnoreCase) || member.Contains(_search, StringComparison.OrdinalIgnoreCase)
+           || TestNumbers.Of(id).ToString() == _search.Trim();
 
     private void Toggle(Outcome o)
     {

@@ -41,19 +41,23 @@
         <div class="table-scroll">
             <table class="results catalog">
                 <thead>
-                    <tr><th>Test</th><th>Tier</th><th>Objective</th><th>How it's tested</th><th>How it's verified</th><th>References</th></tr>
+                    <tr><th>No.</th><th>Test</th><th>Tier</th><th>Objective</th><th>How it's tested</th><th>How it's verified</th><th>References</th></tr>
                 </thead>
                 <tbody>
                     @foreach (var e in entries)
                     {
-                        <tr>
+                        <tr id="test-@e.Number">
+                            <td class="mono catalog-no">@e.Number</td>
                             <td class="mono catalog-id">@e.DisplayId</td>
                             <td>
                                 @e.Tier
                                 @if (e.FollowsUp.Count > 0)
                                 {
                                     <div class="small muted">follows up tier @(e.Tier - 1):</div>
-                                    @foreach (var key in e.FollowsUp) { <div class="mono small">@key</div> }
+                                    @foreach (var key in e.FollowsUp)
+                                    {
+                                        <div class="mono small"><a href="help#test-@TestNumbers.For(key)">@TestNumbers.For(key)</a> @key</div>
+                                    }
                                 }
                             </td>
                             <td>@e.Objective</td>
@@ -113,7 +117,7 @@
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var s = _search.Trim();
-        return new[] { e.Id, $"tier {e.Tier}", e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs), string.Join(" ", e.FollowsUp) }
+        return new[] { e.Number.ToString(), e.Id, $"tier {e.Tier}", e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs), string.Join(" ", e.FollowsUp), string.Join(" ", e.FollowsUp.Select(TestNumbers.For)) }
             .Any(text => text.Contains(s, StringComparison.OrdinalIgnoreCase));
     }
 }

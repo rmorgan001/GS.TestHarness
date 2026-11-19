@@ -146,7 +146,7 @@ public sealed class ReportStore(string folder)
             {
                 sb.AppendLine();
                 sb.AppendLine($"### {x.Member}: {x.Message}");
-                sb.AppendLine($"`{x.Id}`");
+                sb.AppendLine($"Test {x.Number}: `{x.Id}`");
                 sb.AppendLine();
                 if (x.Expected is not null) sb.AppendLine($"- Expected: {x.Expected}");
                 if (x.Actual is not null) sb.AppendLine($"- Actual: {x.Actual.Split('\n')[0]}");
@@ -162,9 +162,9 @@ public sealed class ReportStore(string folder)
             sb.AppendLine();
             sb.AppendLine(includePasses ? "## Everything else" : "## Notes");
             sb.AppendLine();
-            sb.AppendLine("| Outcome | Check | Result |");
-            sb.AppendLine("|---|---|---|");
-            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | `{x.Id}` | {x.Message.Replace("|", "\\|")} |");
+            sb.AppendLine("| Outcome | No. | Check | Result |");
+            sb.AppendLine("|---|---|---|---|");
+            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | {x.Number} | `{x.Id}` | {x.Message.Replace("|", "\\|")} |");
         }
         return sb.ToString();
     }

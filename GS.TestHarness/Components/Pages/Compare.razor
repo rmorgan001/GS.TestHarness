@@ -104,7 +104,7 @@ else if (_mode == Mode.Versions)
                         {
                             <tr class="row">
                                 <td><span class="badge @Css(d.Change)">@Label(d.Change)</span></td>
-                                <td><span class="mono">@d.Id</span>
+                                <td><span class="mono">@TestNumbers.Label(d.Id)</span>
                                     @if ((d.After ?? d.Before) is { Outcome: not Outcome.Pass, Fix: { } fix }) { <div class="fix small">@fix</div> }</td>
                                 @foreach (var r in new[] { d.Before, d.After })
                                 {
@@ -184,7 +184,7 @@ else
                         <tr class="row">
                             <td><span class="badge @Css(d.Change)">@Label(d.Change)</span></td>
                             @* The fix once, under the check: the same advice at every site. *@
-                            <td><span class="mono">@d.Id</span>
+                            <td><span class="mono">@TestNumbers.Label(d.Id)</span>
                                 @if (d.Results.FirstOrDefault(r => r is { Outcome: not Outcome.Pass, Fix: not null }) is { } bad) { <div class="fix small">@bad.Fix</div> }</td>
                             @foreach (var r in d.Results)
                             {

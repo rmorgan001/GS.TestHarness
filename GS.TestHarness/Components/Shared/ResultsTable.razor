@@ -45,7 +45,7 @@ else
 {
     <table class="results findings">
         <thead>
-            <tr><th class="col-outcome">Result</th><th class="col-member">Member</th><th>Finding</th><th class="col-ms">ms</th></tr>
+            <tr><th class="col-outcome">Result</th><th class="col-no">No.</th><th class="col-member">Member</th><th>Finding</th><th class="col-ms">ms</th></tr>
         </thead>
         <tbody>
             @foreach (var r in Shown)
@@ -53,6 +53,7 @@ else
                 var open = _open.Contains(r);
                 <tr class="row @Css(r.Outcome) @(open ? "open" : "")" @onclick="() => ToggleOpen(r)">
                     <td><span class="badge @Css(r.Outcome)">@Label(r.Outcome)</span></td>
+                    <td class="mono num" title="Test @r.Number (tier @TestNumbers.TierOf(r.Number))">@r.Number</td>
                     <td class="mono">@r.Member</td>
                     <td>@r.Message @if (r.Fix is not null && !open) { <span class="hint">· how to fix</span> }</td>
                     <td class="num">@(r.DurationMs > 0 ? r.DurationMs.ToString("0") : "")</td>
@@ -60,9 +61,9 @@ else
                 @if (open)
                 {
                     <tr class="detail">
-                        <td colspan="4">
+                        <td colspan="5">
                             <dl>
-                                <dt>Check</dt><dd class="mono">@r.Id</dd>
+                                <dt>Check</dt><dd class="mono"><a href="help#test-@r.Number" @onclick:stopPropagation="true">@r.Number</a> @r.Id</dd>
                                 @if (r.Expected is not null) { <dt>Expected</dt><dd>@r.Expected</dd> }
                                 @if (r.Actual is not null) { <dt>Actual</dt><dd class="pre">@r.Actual</dd> }
                                 @if (r.Fix is not null) { <dt>How to fix</dt><dd class="fix">@r.Fix</dd> }
@@ -92,6 +93,7 @@ else
         (_outcomes.Count == 0 || _outcomes.Contains(r.Outcome))
         && (_group.Length == 0 || r.Group == _group)
         && (_search.Length == 0 || r.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || r.Number.ToString() == _search.Trim()
             || r.Message.Contains(_search, StringComparison.OrdinalIgnoreCase)
             || r.Member.Contains(_search, StringComparison.OrdinalIgnoreCase)))];
 

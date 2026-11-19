@@ -176,7 +176,7 @@ public static class RecommendationBuilder
             {
                 sb.AppendLine();
                 sb.AppendLine($"### {r.Worst}: {Inline(r.Member)}");
-                sb.AppendLine(Code(r.Id));
+                sb.AppendLine($"Test {TestNumbers.Of(r.Id)}: {Code(r.Id)}");
                 sb.AppendLine();
                 if (r.Fixes.Count == 0) sb.AppendLine("- Recommendation: none recorded; see the expected and actual values below.");
                 foreach (var fix in r.Fixes) sb.AppendLine($"- Recommendation: {Inline(fix)}");

@@ -398,6 +398,10 @@ else
                         <span class="muted small">Tier @next.From.Options.Tier found problems with</span>
                         @foreach (var m in next.Members) { <span class="tag mono">@m</span> }
                     </div>
+                    <div class="tier-members">
+                        <span class="muted small">Tier @next.Tier tests</span>
+                        @foreach (var n in NextNumbers(next, conformUNext)) { <a class="tag mono" href="help#test-@n">@n</a> }
+                    </div>
                     @if (!_motion) { <p class="tier-note">The tests move the mount: turn on <b>Move the mount</b> under Options first.</p> }
                     else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
                 </div>
@@ -609,6 +613,12 @@ else
     /// Runs the next tier for the members the last run found problems with, on the same device and at the same site,
     /// with the options as ticked now (not saved: tiers are chosen run by run).
     /// </summary>
+    /// <summary>The numbers of the tests the next tier makes for its members (ConformU.Diagnose… or Diagnose…).</summary>
+    private static IEnumerable<int> NextNumbers(NextTier next, bool conformU)
+        => next.Members.Select(m => Tiers.Diagnosis(m, next.Tier)).OfType<Diagnosis>()
+            .SelectMany(d => d.Produces).Where(k => k.StartsWith("ConformU.") == conformU)
+            .Select(TestNumbers.For).Where(n => n > 0).Distinct().Order();
+
     private async Task StartNextTier(NextTier next)
     {
         if (Runs.IsRunning || NeedsLog(next)) return;

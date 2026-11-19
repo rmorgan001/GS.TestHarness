@@ -205,19 +205,58 @@
                     where a check was made at more than one. The diagnoses move the mount, so they need <strong>Move the mount</strong>.</p>
                 <p>Each diagnosis and the checks it follows up:</p>
                 <table>
-                    <thead><tr><th>Tier</th><th>Member</th><th>Follows up</th><th>What it measures</th></tr></thead>
+                    <thead><tr><th>Tier</th><th>Member</th><th>Tests</th><th>Follows up</th><th>What it measures</th></tr></thead>
                     <tbody>
                         @foreach (var d in Tiers.Diagnoses)
                         {
                             <tr>
                                 <td>@d.Tier</td>
                                 <td>@d.Member</td>
-                                <td class="mono small">@foreach (var key in d.FollowsUp) { <div>@key.Replace("{member}", d.Member)</div> }</td>
+                                <td class="mono small">@foreach (var key in d.Produces) { <div><a href="help#test-@TestNumbers.For(key)">@TestNumbers.For(key)</a></div> }</td>
+                                <td class="mono small">@foreach (var key in d.FollowsUp) { <div><a href="help#test-@TestNumbers.For(key)">@TestNumbers.For(key)</a> @key.Replace("{member}", d.Member)</div> }</td>
                                 <td>@d.What</td>
                             </tr>
                         }
                     </tbody>
                 </table>
+
+                <h3 id="tier-numbers">Test numbers by tier</h3>
+                <p>Every test has its own number (the <strong>No.</strong> column under <a href="help#tests">The tests</a>).
+                    Its first digit is its tier: tier 1 tests are numbered from 1001, tier 2 from 2001, tier 3 from 3001.
+                    A number stays with its test, and a new test takes the next number of its tier.</p>
+                <table>
+                    <thead><tr><th>Tier</th><th>Tests</th><th>Numbers</th></tr></thead>
+                    <tbody>
+                        @for (var tier = 1; tier <= Tiers.Max; tier++)
+                        {
+                            var numbers = TestCatalog.Entries.Where(e => e.Tier == tier).Select(e => e.Number).Order().ToList();
+                            <tr><td>@Tiers.Name(tier)</td><td>@numbers.Count</td><td class="tier-numbers">@Ranges(numbers)</td></tr>
+                        }
+                    </tbody>
+                </table>
+                @foreach (var conformU in new[] { false, true })
+                {
+                    var chains = TestCatalog.Chains().Where(c => c.ConformU == conformU).ToList();
+                    <p>@(conformU ? "ConformU Debug Log Test" : "ASCOM Conformance Check"): each tier 1 test with deeper tests,
+                        and the numbers that follow it up at each tier.</p>
+                    <table>
+                        <thead><tr><th>Tier 1</th><th>Tier 2</th><th>Tier 3</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in chains)
+                            {
+                                <tr>
+                                    <td>@TierTest(c.Test)</td>
+                                    <td>@foreach (var e in c.Tier2) { @TierTest(e) }</td>
+                                    <td>
+                                        @foreach (var e in c.Tier3) { @TierTest(e) }
+                                        @if (c.Tier3.Count == 0) { <span class="muted small">none yet</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <p class="muted">Every other tier 1 test has no deeper tier yet.</p>
             </section>
 
             <section id="sites">
@@ -422,3 +461,22 @@ GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
         </article>
     </div>
 </div>
+
+@code {
+    /// <summary>A test in the tier tables: its number (linking to it under The tests) and its ID.</summary>
+    private static RenderFragment TierTest(CatalogEntry e) => @<div class="mono small"><a href="help#test-@e.Number">@e.Number</a> @e.Group.@e.DisplayId</div>;
+
+    /// <summary>"1001–1201" for a run of numbers; runs separated by commas.</summary>
+    private static string Ranges(IReadOnlyList<int> numbers)
+    {
+        var parts = new List<string>();
+        for (var i = 0; i < numbers.Count;)
+        {
+            var j = i;
+            while (j + 1 < numbers.Count && numbers[j + 1] == numbers[j] + 1) j++;
+            parts.Add(j == i ? $"{numbers[i]}" : $"{numbers[i]}–{numbers[j]}");
+            i = j + 1;
+        }
+        return string.Join(", ", parts);
+    }
+}

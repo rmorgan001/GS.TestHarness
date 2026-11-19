@@ -69,7 +69,9 @@ by **Mount**. The harness only recommends: it never changes the server's code.
 After a run, the next tier is offered under the results for the problems it found that have a deeper test, and only
 those members are tested; the run is linked to the one it follows up. Every check in the catalog (`Engine/TestCatalog.cs`)
 says its tier and, for tiers 2 and 3, which checks of the tier below it follows up; the tests fail if a new check
-doesn't. Tier 3 ends with a Summary finding: whether it confirms or overturns tier 2, and the final recommendation.
+doesn't. Each check also has its own number (`Engine/TestNumbers.cs`) whose first digit is its tier: 1001 on for
+tier 1, 2001 on for tier 2, 3001 on for tier 3. A new check takes the next number of its tier, and numbers are never
+reused; the help's Diagnostic tiers section lists which numbers follow up which. Tier 3 ends with a Summary finding: whether it confirms or overturns tier 2, and the final recommendation.
 Compare uses tier 1 runs; Recommendations add each tier 1 run's deeper findings (the deepest tier's).
 
 **The help** (the **?** at the top right) lists every check: its objective, how it's tested, how the result is

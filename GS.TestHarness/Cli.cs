@@ -184,7 +184,7 @@ public static class Cli
                 r =>
                 {
                     // Problems, and every ConformU verdict and diagnosis.
-                    if (r.IsProblem || r.Group is "ConformU" or "Diagnose") Console.WriteLine($"  {r.Outcome,-7} {r.Id}: {r.Message}");
+                    if (r.IsProblem || r.Group is "ConformU" or "Diagnose") Console.WriteLine($"  {r.Outcome,-7} {TestNumbers.Label(r.Id)}: {r.Message}");
                 },
                 p =>
                 {

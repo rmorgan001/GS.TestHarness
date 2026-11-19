@@ -80,6 +80,36 @@ public class CatalogTests
     }
 
     [Fact]
+    public void Every_test_has_its_own_number_and_the_number_starts_with_its_tier()
+    {
+        foreach (var e in TestCatalog.Entries)
+        {
+            Assert.True(e.Number > 0, $"{e.Key} has no number: add it to TestNumbers.All with the next number of tier {e.Tier} ({e.Tier}001 on)");
+            Assert.True(TestNumbers.TierOf(e.Number) == e.Tier, $"{e.Key} is tier {e.Tier}, but its number {e.Number} starts with {TestNumbers.TierOf(e.Number)}");
+        }
+        // Numbers and keys are given once; a retired test keeps its number, and every other key is a test.
+        Assert.DoesNotContain(TestNumbers.All.GroupBy(t => t.Number), g => g.Count() > 1);
+        Assert.DoesNotContain(TestNumbers.All.GroupBy(t => t.Key), g => g.Count() > 1);
+        Assert.All(TestNumbers.All, t => Assert.InRange(t.Number % 1000, 1, 999));
+        Assert.All(TestNumbers.All.Where(t => !t.Key.StartsWith(TestNumbers.Retired)),
+            t => Assert.True(TestCatalog.Entry(t.Key) is not null, $"{t.Number} is {t.Key}, which isn't in the catalog: mark it {TestNumbers.Retired} if it was removed"));
+    }
+
+    [Fact]
+    public void The_rate_and_pulse_guide_tests_lead_to_their_deeper_tests_by_number()
+    {
+        var chains = TestCatalog.Chains();
+        var ra = Assert.Single(chains, c => c.Test.Key == "Tracking.RightAscensionRate.Moves");
+        Assert.Equal([2001, 2003], ra.Tier2.Select(e => e.Number));
+        Assert.Equal([3001, 3002], ra.Tier3.Select(e => e.Number));
+        var pulse = Assert.Single(chains, c => c.Test.Key == "Motion.PulseGuide.{direction}.Moves");
+        Assert.Equal([2001, 2002], pulse.Tier2.Select(e => e.Number));
+        Assert.Empty(pulse.Tier3);
+        Assert.All(chains.Where(c => c.ConformU), c => Assert.All(c.Tier2.Concat(c.Tier3), e => Assert.Equal("ConformU", e.Group)));
+        Assert.All(chains.Where(c => !c.ConformU), c => Assert.All(c.Tier2.Concat(c.Tier3), e => Assert.Equal("Diagnose", e.Group)));
+    }
+
+    [Fact]
     public void Every_diagnosis_makes_findings_of_its_own_tier_in_the_catalog()
     {
         foreach (var d in Tiers.Diagnoses)

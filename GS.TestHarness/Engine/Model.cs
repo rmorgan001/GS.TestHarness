@@ -292,6 +292,10 @@ public sealed record CheckResult
 
     [JsonIgnore]
     public bool IsProblem => Outcome is Outcome.Fail or Outcome.Error or Outcome.Warning;
+
+    /// <summary>The number of the test that made this finding (<see cref="TestNumbers"/>): its first digit is the tier.</summary>
+    [JsonIgnore]
+    public int Number => TestNumbers.Of(Id);
 }
 
 /// <summary>What the device says it is, read at the start of a run.</summary>

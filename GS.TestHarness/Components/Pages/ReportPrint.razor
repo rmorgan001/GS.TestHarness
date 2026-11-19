@@ -60,7 +60,7 @@
             {
                 <section class="print-finding">
                     <h3>@x.Member: @x.Message</h3>
-                    <div class="mono">@x.Id</div>
+                    <div class="mono">Test @x.Number: @x.Id</div>
                     <dl>
                         @if (x.Expected is not null) { <dt>Expected</dt><dd>@x.Expected</dd> }
                         @if (x.Actual is not null) { <dt>Actual</dt><dd>@x.Actual.Split('\n')[0]</dd> }
@@ -77,11 +77,11 @@
         {
             <h2>Everything else (@other.Count)</h2>
             <table class="print-table">
-                <thead><tr><th>Outcome</th><th>Check</th><th>Result</th></tr></thead>
+                <thead><tr><th>Outcome</th><th>No.</th><th>Check</th><th>Result</th></tr></thead>
                 <tbody>
                     @foreach (var x in other)
                     {
-                        <tr><td>@x.Outcome</td><td class="mono">@x.Id</td><td>@x.Message</td></tr>
+                        <tr><td>@x.Outcome</td><td class="mono">@x.Number</td><td class="mono">@x.Id</td><td>@x.Message</td></tr>
                     }
                 </tbody>
             </table>
