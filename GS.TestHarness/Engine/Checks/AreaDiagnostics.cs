@@ -592,7 +592,7 @@ public static class AreaDiagnostics
     /// false. <see cref="Fine"/> is the creeping after the main slew, <see cref="Idle"/> the time Slewing stayed true
     /// with the mount still, <see cref="Wait"/> both: Slewing's end after the main slew.
     /// </summary>
-    private sealed record SlewEnd(double Total, double MainEnd, double LastMove, double SlewingEnd, double LargestFineStep)
+    private sealed record SlewEnd(double Total, double MainEnd, double LastMove, double SlewingEnd, double LargestFineStep, double AfterOffset)
     {
         public double Fine => Math.Max(0, Math.Min(LastMove, SlewingEnd) - MainEnd);
         public double Idle => Math.Max(0, SlewingEnd - Math.Max(LastMove, MainEnd));
@@ -600,7 +600,19 @@ public static class AreaDiagnostics
 
         /// <summary>How long the position still moved after Slewing went false (it should be 0).</summary>
         public double MovedAfter => Math.Max(0, LastMove - SlewingEnd);
+
+        /// <summary>
+        /// Whether the mount clearly moved after Slewing went false: for more than 0.3 s, and by more than an encoder step
+        /// or two could account for (<see cref="AfterOffset"/>, the largest distance from where it stopped, at least 0.1").
+        /// </summary>
+        public bool MovedAfterClearly => MovedAfter > 0.3 && AfterOffset >= MinMoveAfter;
     }
+
+    /// <summary>The least movement after Slewing ends that counts: smaller is within an encoder step or two of noise.</summary>
+    private const double MinMoveAfter = 0.1;
+
+    /// <summary>How many slews must show it before "Slewing goes false while the mount is still moving" is reported.</summary>
+    private const int MinSlewsMovingAfter = 2;
 
     /// <summary>
     /// How much the readings jump with the mount still (tracking): the largest step between readings, in arc-seconds,
@@ -671,12 +683,16 @@ public static class AreaDiagnostics
         var decLimit = Math.Max(0.05, 2 * noise.Dec);
         var lastMove = mainEnd;
         var largest = 0.0;
+        var after = 0.0;
         foreach (var s in samples.Where(s => s.T > mainEnd))
         {
             var (ra, dec) = Steps(s, final);
-            if (ra > raLimit || dec > decLimit) { lastMove = s.T; largest = Math.Max(largest, Math.Max(ra, dec)); }
+            if (ra <= raLimit && dec <= decLimit) continue;
+            lastMove = s.T;
+            largest = Math.Max(largest, Math.Max(ra, dec));
+            if (s.T > ended) after = Math.Max(after, Math.Max(ra, dec));
         }
-        return new SlewEnd(ended.Value, mainEnd, lastMove, ended.Value, largest);
+        return new SlewEnd(ended.Value, mainEnd, lastMove, ended.Value, largest, after);
     }
 
     /// <summary>
@@ -741,7 +757,7 @@ public static class AreaDiagnostics
         foreach (var (name, settle, end) in rows)
             actual.AppendLine(end is null ? $"  {name}: couldn't be timed"
                 : FormattableString.Invariant($"  {name}: slew {end.MainEnd:0.0} s; then creeping {end.Fine:0.0} s (up to {end.LargestFineStep:0.00}\" from where it stopped); then still {end.Idle:0.0} s; Slewing ended {end.Wait:0.0} s after the main slew")
-                  + (end.MovedAfter > 0.2 ? FormattableString.Invariant($"; the position still moved {end.MovedAfter:0.0} s after Slewing ended") : ""));
+                  + (end.MovedAfter > 0.2 ? FormattableString.Invariant($"; the position still moved {end.MovedAfter:0.0} s after Slewing ended (up to {end.AfterOffset:0.00}\"{(end.MovedAfterClearly ? "" : ", within a step or two of noise")})") : ""));
         if (abortEnd is { } a) actual.AppendLine(FormattableString.Invariant($"  AbortSlew part way through a 15° slew: Slewing ended {a:0.0} s after the abort"));
 
         var plain = rows.Where(r => r.Settle == 0 && r.End is not null).Select(r => r.End!).ToList();
@@ -757,7 +773,12 @@ public static class AreaDiagnostics
         var fine = plain.Average(e => e.Fine);
         var idle = plain.Average(e => e.Idle);
         var spread = plain.Max(e => e.Wait) - plain.Min(e => e.Wait);
-        var movedAfter = plain.Max(e => e.MovedAfter);
+        // Movement after Slewing ends counts only when it's clear (over 0.3 s and 0.1") in at least two slews.
+        var timedEnds = rows.Select(r => r.End).OfType<SlewEnd>().ToList();
+        var clearlyAfter = timedEnds.Where(e => e.MovedAfterClearly).ToList();
+        var movedAfter = clearlyAfter.Count >= MinSlewsMovingAfter ? clearlyAfter.Max(e => e.MovedAfter) : 0;
+        if (clearlyAfter.Count is > 0 and < MinSlewsMovingAfter)
+            actual.AppendLine("Only one slew moved clearly after Slewing ended: not counted as a fault (it takes two).");
         var extra = withSettle.Wait - two.Wait;
         if (Math.Abs(extra) < 0.05) extra = 0; // no "-0.0 s"
         var used = Math.Abs(extra - 3) <= 1;
@@ -786,16 +807,19 @@ public static class AreaDiagnostics
         var stages = ctx.Locator.Search(ctx.Target.Codebase, @"(?i)precision\s*(slew|goto)|PrecisionGoto\(", 20);
         if (delays.Count == 0 && ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource);
         var before = new List<(SourceLine Delay, SourceLine Stage)>();
+        StageReview? stage = null;
         if (delays.Count > 0)
         {
             actual.AppendLine("Code reviewed: the settle waits:");
             actual.AppendLine(Quote(delays));
             foreach (var d in delays)
-                if (stages.FirstOrDefault(s => s.File == d.File && s.Line > d.Line && s.Line - d.Line <= 150) is { } stage) before.Add((d, stage));
+                if (stages.FirstOrDefault(s => s.File == d.File && s.Line > d.Line && s.Line - d.Line <= 150) is { } later) before.Add((d, later));
             if (before.Count > 0)
             {
                 actual.AppendLine("A later stage of the slew comes after the settle wait:");
                 actual.AppendLine(Quote(before.Select(b => b.Stage)));
+                stage = ReviewStage(ctx, before[0].Stage);
+                if (stage is not null) actual.AppendLine(stage.Text);
             }
         }
         if (!used)
@@ -812,14 +836,75 @@ public static class AreaDiagnostics
         if (movedAfter > 0.3)
             fix.Append(FormattableString.Invariant($"Slewing went false up to {movedAfter:0.0} s before the position stopped changing: clear it only after the slew's last stage (and the settle time). "));
         if (correcting)
-            fix.Append(FormattableString.Invariant($"The {wait:0.0} s itself is the slew's final correction: Slewing true during it is right (the mount is still moving), and clients see the settle time on top of it."));
+            fix.Append(FormattableString.Invariant($"The {wait:0.0} s itself is the slew's final correction: Slewing true during it is right (the mount is still moving), and clients see the settle time on top of it. "));
+        else if (wait >= 0.6 && stage is not null)
+            fix.Append(FormattableString.Invariant($"The {idle:0.0} s Slewing stays true with the mount still is {stage.Method} ({stage.Location}): ") +
+                       $"{stage.Summary}, corrections too small to show in RA and Dec. It is the slew's own last stage, so Slewing true during it is right; " +
+                       "if it's too long, end it sooner (fewer tries, or stop once a try finds the axes already within the goto precision). ");
         else if (wait >= 0.6)
-            fix.Append(FormattableString.Invariant($"Find what keeps Slewing true {idle:0.0} s after the mount is still: a fixed wait at the end of every slew would be better as part of SlewSettleTime."));
+            fix.Append(FormattableString.Invariant($"Find what keeps Slewing true {idle:0.0} s after the mount is still: a fixed wait at the end of every slew would be better as part of SlewSettleTime. "));
+        if (stage is { Pitfalls.Count: > 0 })
+            fix.Append($"{stage.Method} also times itself with .Milliseconds ({List(stage.Pitfalls.Select(l => l.Location))}), the 0-999 ms part of the time span, " +
+                       "wrong for anything over a second: use .TotalMilliseconds.");
 
         var outcome = used && !(wait >= 0.6 && !correcting) && movedAfter <= 0.3 ? Outcome.Info : Outcome.Fail;
         ctx.Report(id, "SlewSettleTime", outcome, $"Tier 3: {string.Join("; ", findings)}.",
             expected: said, actual: actual.ToString().TrimEnd(), fix: fix.Length > 0 ? fix.ToString().Trim() : null);
         SettleFinalAnalysis(ctx, outcome, string.Join("; ", findings), fix.ToString().Trim(), used);
+    }
+
+    /// <summary>
+    /// What the code review found in the stage of the slew after the settle wait: the method it calls, how many tries it
+    /// makes and how it waits (<see cref="Summary"/>, <see cref="Text"/>), and timings taken with the 0-999 ms part of a
+    /// time span (<see cref="Pitfalls"/>).
+    /// </summary>
+    private sealed record StageReview(string Method, string Location, string Summary, string Text, IReadOnlyList<SourceLine> Pitfalls);
+
+    /// <summary>
+    /// Follows the stage line (e.g. "#region Final precision slew") to the method it runs and reviews it: a cap on its
+    /// tries, how long each waits and how often it polls, and .Milliseconds timings. Null when no such method is found.
+    /// </summary>
+    private static StageReview? ReviewStage(CheckContext ctx, SourceLine stageLine)
+    {
+        // The method the stage runs: a call within the next few lines, named for a goto, precision or correction.
+        var nearby = ctx.Locator.Search(ctx.Target.Codebase, @"\b[A-Z]\w*(Precision|Goto|GoTo|Correct)\w*\s*\(", 200)
+            .Where(l => l.File == stageLine.File && l.Line >= stageLine.Line && l.Line <= stageLine.Line + 6 && !l.IsComment);
+        foreach (var line in nearby)
+        {
+            foreach (Match m in Regex.Matches(SourceLocator.StripComment(line.Text), @"\b([A-Z]\w*(?:Precision|Goto|GoTo|Correct)\w*)\s*\("))
+            {
+                var name = m.Groups[1].Value;
+                if (ctx.Locator.MethodBody(ctx.Target.Codebase, name, stageLine.File) is not { Count: > 1 } body) continue;
+                var code = body.Skip(1).Where(l => !l.IsComment).ToList();
+                var parts = new List<string>();
+                var shown = new List<SourceLine>();
+                if (code.Select(l => (Line: l, M: Regex.Match(l.Text, @"\b\w*(?:[Tt]ries|[Aa]ttempts|[Rr]etries)\w*\s*(>=?)\s*(\d+)"))).FirstOrDefault(x => x.M.Success) is { Line: { } tl } tries)
+                {
+                    var n = int.Parse(tries.M.Groups[2].Value, CultureInfo.InvariantCulture) + (tries.M.Groups[1].Value == ">" ? 1 : 0);
+                    parts.Add($"up to {n} tries");
+                    shown.Add(tl);
+                }
+                if (code.Select(l => (Line: l, M: Regex.Match(l.Text, @"TotalMilliseconds\s*<\s*(\d+)"))).FirstOrDefault(x => x.M.Success) is { Line: { } cl } cap)
+                {
+                    parts.Add($"each waiting up to {cap.M.Groups[1].Value} ms for the axes to stop");
+                    shown.Add(cl);
+                }
+                var polls = code.Select(l => (Line: l, M: Regex.Match(l.Text, @"(?:Thread\.Sleep|Task\.Delay|WaitOne)\(\s*(\d+)\s*\)"))).Where(x => x.M.Success).ToList();
+                if (polls.Count > 0)
+                {
+                    parts.Add($"polling every {string.Join(" + ", polls.Select(p => p.M.Groups[1].Value).Distinct())} ms");
+                    shown.Add(polls[0].Line);
+                }
+                var pitfalls = code.Where(l => Regex.IsMatch(l.Text, @"\.Elapsed\.(Milliseconds|Seconds)\b|\)\.Milliseconds\b")).ToList();
+                var summary = parts.Count > 0 ? string.Join(", ", parts) : "a further stage of the slew";
+                var text = new StringBuilder($"The stage after it runs {name} ({body[0].Location}): {summary}.");
+                if (shown.Count > 0) text.Append('\n').Append(Quote(shown.Distinct().OrderBy(l => l.Line)));
+                if (pitfalls.Count > 0)
+                    text.Append("\nIt times itself with .Milliseconds, the 0-999 ms part of the time span:\n").Append(Quote(pitfalls));
+                return new StageReview(name, body[0].Location, summary, text.ToString(), pitfalls);
+            }
+        }
+        return null;
     }
 
     /// <summary>Tier 3's last word on SlewSettleTime: tier 2's finding and recommendation against what tier 3 measured.</summary>

@@ -273,12 +273,44 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
             Assert.Contains(".TotalMilliseconds", cause.Fix);
             Assert.Contains("Move the settle wait after the final stage", cause.Fix);
             Assert.Contains("#region Final precision slew", cause.Actual);
+            // The stage after the settle wait, followed into its method: its tries, waits and a .Milliseconds timing.
+            Assert.Contains("The stage after it runs SimPrecisionGoto", cause.Actual);
+            Assert.Contains("up to 6 tries, each waiting up to 3000 ms for the axes to stop, polling every 20 ms", cause.Actual);
+            Assert.Contains("deltaTime = stopwatch1.Elapsed.Milliseconds", cause.Actual);
+            Assert.Contains("SimPrecisionGoto also times itself with .Milliseconds", cause.Fix);
 
             var summary = Finding(tier3, "Diagnose.SlewSettleTime.Summary");
             Assert.Equal(Outcome.Fail, summary.Outcome);
             Assert.StartsWith("Final analysis of SlewSettleTime: tier 3 confirms tier 2.", summary.Message);
             Assert.Contains("Tier 2's recommendation:", summary.Expected);
             Assert.Equal([3005, 3006], tier3.Results.Where(Tiers.IsDiagnosis).Select(r => r.Number).Order());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task Tier_3_puts_a_wait_with_the_mount_still_down_to_the_stage_after_the_settle_wait()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gs-area-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // GSServer as R0008 measured it: the setting ignored, then 1.5 s of Slewing with the mount still.
+            var (_, tier3) = await SettleTiersAsync(
+                new FakeTelescope(Defect.SettleTimeIgnored, Defect.SlewEndsWithStillWait, Defect.PositionJitter), GsServerLikeSource(root));
+            var cause = Finding(tier3, "Diagnose.SlewSettleTime.Cause");
+            Assert.Equal(Outcome.Fail, cause.Outcome);
+            Assert.Contains("SlewSettleTime is ignored", cause.Message);
+            Assert.Contains("a wait with the mount still", cause.Message);
+            Assert.DoesNotContain("still moving", cause.Message);
+            // The code review names the stage that is the wait, and what it does.
+            Assert.Contains("is SimPrecisionGoto (Driver/SkySystem.cs:", cause.Fix);
+            Assert.Contains("up to 6 tries", cause.Fix);
+            Assert.Contains("Slewing true during it is right", cause.Fix);
+            Assert.Contains("SimPrecisionGoto also times itself with .Milliseconds", cause.Fix);
+            Assert.StartsWith("Final analysis of SlewSettleTime: tier 3 confirms tier 2.", Finding(tier3, "Diagnose.SlewSettleTime.Summary").Message);
         }
         finally
         {
@@ -435,6 +467,23 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
                     #endregion
                 }
                 private static void Fault() => throw new NotConnectedException("Mount Not Connected");
+                private static int SimPrecisionGoto()
+                {
+                    var maxTries = 0;
+                    var deltaTime = 0.075;
+                    while (true)
+                    {
+                        if (maxTries > 5) { break; }
+                        maxTries++;
+                        var stopwatch1 = Stopwatch.StartNew();
+                        while (stopwatch1.Elapsed.TotalMilliseconds < 3000)
+                        {
+                            Thread.Sleep(20);
+                        }
+                        deltaTime = stopwatch1.Elapsed.Milliseconds * 0.001;
+                    }
+                    return 0;
+                }
             }
             """);
         return new SourceLocator(new Dictionary<Codebase, CodebaseOptions>

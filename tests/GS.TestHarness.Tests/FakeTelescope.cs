@@ -126,7 +126,13 @@ public enum Defect
     /// As GSServer's simulator: after the main slew a final precision correction runs for 1.5 s, the position creeping
     /// the last 0.9" (Slewing true throughout), and the settle time (if used) comes before it.
     /// </summary>
-    SlewEndsWithPrecisionCorrection
+    SlewEndsWithPrecisionCorrection,
+
+    /// <summary>
+    /// As GSServer's simulator measured (R0008): after the main slew, Slewing stays true 1.5 s with the mount still
+    /// (its precision stage's tries make corrections too small to see), and the settle time (if used) comes before it.
+    /// </summary>
+    SlewEndsWithStillWait
 }
 
 /// <summary>
@@ -687,7 +693,8 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         // correction follows, creeping the last 0.9" for 1.5 s.
         var settle = Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000;
         var correct = Has(Defect.SlewEndsWithPrecisionCorrection) ? (int)(CorrectionSeconds * 1000) : 0;
-        StartMotion(300 + settle + correct, () =>
+        var still = Has(Defect.SlewEndsWithStillWait) ? 1500 : 0;
+        StartMotion(300 + settle + correct + still, () =>
         {
             SetPos(ra, dec);
             _forcedSide = keep;

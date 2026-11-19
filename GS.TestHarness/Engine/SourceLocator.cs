@@ -172,25 +172,45 @@ public sealed class SourceLocator
         if (!_codebases.TryGetValue(codebase, out var c) || !Regex.IsMatch(member, @"^\w+$")) return null;
         var definition = new Regex($@"^\s*public\s+(?:override\s+|virtual\s+|static\s+)*[\w<>\[\],.?\s]+?\s+{member}\s*(?:\(|$|\{{|=>)");
         foreach (var file in c.TelescopeFiles)
-        {
-            var lines = Lines(file);
-            var start = Array.FindIndex(lines, l => definition.IsMatch(l));
-            if (start < 0) continue;
-            var body = new List<SourceLine>();
-            var depth = 0;
-            var opened = false;
-            for (var i = start; i < lines.Length; i++)
-            {
-                body.Add(new SourceLine(Relative(c.Root, file), i + 1, lines[i]));
-                var code = StripComment(lines[i]);
-                depth += code.Count(ch => ch == '{') - code.Count(ch => ch == '}');
-                opened |= code.Contains('{');
-                // An expression-bodied member ends at its semicolon; a block at its closing brace.
-                if (opened ? depth <= 0 : code.TrimEnd().EndsWith(';')) break;
-            }
-            return body;
-        }
+            if (BodyIn(c.Root, file, definition) is { } body) return body;
         return null;
+    }
+
+    /// <summary>
+    /// The code of a method of any accessibility, anywhere in the codebase's source (the files of
+    /// <paramref name="near"/> first, then the driver files, then the rest): from its definition to its closing brace.
+    /// Null if the source isn't here or the method isn't found.
+    /// </summary>
+    public IReadOnlyList<SourceLine>? MethodBody(Codebase codebase, string method, string? near = null)
+    {
+        if (!_codebases.TryGetValue(codebase, out var c) || !Regex.IsMatch(method, @"^\w+$")) return null;
+        var definition = new Regex($@"^\s*(?:public|private|internal|protected)\s+(?:static\s+|async\s+|override\s+|virtual\s+|sealed\s+)*[\w<>\[\],.?\s]+?\s+{method}\s*\(");
+        var files = AllFiles(codebase, c.Root);
+        var first = near is null ? [] : files.Where(f => Relative(c.Root, f).Equals(near, StringComparison.OrdinalIgnoreCase));
+        foreach (var file in first.Concat(c.TelescopeFiles).Concat(files).DistinctBy(Path.GetFullPath, StringComparer.OrdinalIgnoreCase))
+            if (BodyIn(c.Root, file, definition) is { } body) return body;
+        return null;
+    }
+
+    /// <summary>From the first line matching <paramref name="definition"/> to the end of its block (or its semicolon).</summary>
+    private List<SourceLine>? BodyIn(string root, string file, Regex definition)
+    {
+        var lines = Lines(file);
+        var start = Array.FindIndex(lines, l => definition.IsMatch(l));
+        if (start < 0) return null;
+        var body = new List<SourceLine>();
+        var depth = 0;
+        var opened = false;
+        for (var i = start; i < lines.Length; i++)
+        {
+            body.Add(new SourceLine(Relative(root, file), i + 1, lines[i]));
+            var code = StripComment(lines[i]);
+            depth += code.Count(ch => ch == '{') - code.Count(ch => ch == '}');
+            opened |= code.Contains('{');
+            // An expression-bodied member ends at its semicolon; a block at its closing brace.
+            if (opened ? depth <= 0 : code.TrimEnd().EndsWith(';')) break;
+        }
+        return body;
     }
 
     /// <summary>
