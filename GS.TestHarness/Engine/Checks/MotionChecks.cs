@@ -951,8 +951,9 @@ public sealed class MotionChecks : ICheckGroup
         if (ctx.Caps.CanSlewAsync && (await PositionAsync(ctx)) is { } here && (await ctx.TryAsync(t => t.SiderealTime)) is { Ok: true } lst)
         {
             var far = Values.Wrap24(lst.Value + (Values.HoursDiff(here.Ra, lst.Value) > 0 ? -2 : 2));
+            // A server may take a moment to report the slew: wait for it (up to 3 s), not just one read.
             if ((await ctx.TryAsync(t => t.SlewToCoordinatesAsync(far, MethodChecks.SafeDeclination(ctx)))).Ok
-                && (await ctx.TryAsync(t => t.Slewing)) is { Ok: true, Value: true })
+                && await ctx.WaitUntilAsync(t => t.Slewing, TimeSpan.FromSeconds(3), 50))
             {
                 await ctx.ExpectErrorAsync("PulseGuide.WhileSlewing", "PulseGuide", "PulseGuide while slewing",
                     t => t.PulseGuide(GuideDirection.North, 300), AscomErrorKind.InvalidOperation, "the mount is slewing");

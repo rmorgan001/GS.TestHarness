@@ -657,7 +657,8 @@ public static partial class AreaDiagnostics
         {
             var far = Values.Wrap24(lst.Value + (Values.HoursDiff(start.Ra, lst.Value) > 0 ? -2 : 2));
             var dec = MethodChecks.SafeDeclination(ctx);
-            if ((await ctx.TryAsync(t => t.SlewToCoordinatesAsync(far, dec))).Ok && (await ctx.TryAsync(t => t.Slewing)).Value)
+            // A server may take a moment to report the slew: wait for it (up to 3 s), not just one read.
+            if ((await ctx.TryAsync(t => t.SlewToCoordinatesAsync(far, dec))).Ok && await ctx.WaitUntilAsync(t => t.Slewing, TimeSpan.FromSeconds(3), 50))
             {
                 var pulse = await ctx.TryAsync(t => t.PulseGuide(GuideDirection.North, 300));
                 slewingRefused = pulse.Kind == AscomErrorKind.InvalidOperation;
