@@ -14,7 +14,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *@
 
-@* Add or edit a server: which one it is (GSServer over COM, GreenSwampAlpaca over Alpaca) and where. *@
+@* Add or edit a server: which kind it is (a COM driver, or an Alpaca Server) and where. *@
 <h2 class="dialog-title">@Model.Title</h2>
 
 <form class="edit-form" @onsubmit="Accept" novalidate>
@@ -29,11 +29,11 @@
         <div class="seg" role="radiogroup" aria-label="Server">
             <button type="button" class="@(Model.Server == Codebase.GSServer ? "on" : "")" disabled="@(!OperatingSystem.IsWindows())"
                     @onclick="() => Model.Server = Codebase.GSServer">
-                <img src="com.svg" alt="" /> GSServer <small class="muted">COM</small>
+                <img src="com.svg" alt="" /> COM driver
             </button>
             <button type="button" class="@(Model.Server == Codebase.GreenSwampAlpaca ? "on" : "")"
                     @onclick="() => Model.Server = Codebase.GreenSwampAlpaca">
-                <img src="alpaca.png" alt="" /> GreenSwampAlpaca <small class="muted">Alpaca</small>
+                <img src="alpaca.png" alt="" /> Alpaca Server
             </button>
         </div>
     </div>

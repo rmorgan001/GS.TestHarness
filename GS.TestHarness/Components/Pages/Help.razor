@@ -55,8 +55,8 @@
 
         <article class="help-text">
             <p class="lead">
-                GS Test Harness checks a telescope server for ASCOM compliance: <strong>GSServer</strong> through its COM
-                driver, or <strong>GreenSwampAlpaca</strong> over Alpaca. It calls every ITelescopeV4 member (and, for
+                GS Test Harness checks a telescope server for ASCOM compliance: <strong>COM driver</strong>, or
+                <strong>Alpaca server</strong>. It calls every ITelescopeV4 member (and, for
                 Alpaca, the HTTP protocol), and for each problem says what's wrong, what ASCOM expects, how to fix it and
                 where the code to change probably is.
             </p>
@@ -312,7 +312,7 @@
                     <dt>Call SetPark</dt>
                     <dd>Moves the saved park position to wherever the mount is pointing. Needs <em>Move the mount</em>.</dd>
                     <dt>Alpaca protocol checks</dt>
-                    <dd>GreenSwampAlpaca only: management API, transaction IDs, error replies, HTTP 400 and discovery.</dd>
+                    <dd>Alpaca Server only: management API, transaction IDs, error replies, HTTP 400 and discovery.</dd>
                     <dt>Extended checks</dt>
                     <dd>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads and connect cycles.</dd>
                     <dt>Disconnect at the end</dt>
@@ -436,7 +436,7 @@
                     <code>GITHUB_TOKEN</code> environment variable. <code>--source</code> takes a URL as well.</p>
                 <p>The code is only reviewed when it's the server answering's: for an Alpaca server, its name (from the
                     management API) must appear in the source. Another server answering (the ASCOM Alpaca Simulators, say,
-                    with GreenSwampAlpaca's source set) gets no file names and no code review, and the findings say why.</p>
+                    with another Alpaca Server's source set) gets no file names and no code review, and the findings say why.</p>
                 <p>The source adds file names to findings, and lets tier 2 review the code (quoting the lines it found). The
                     checks and the diagnoses work without it; a tier 2 finding then says the code wasn't reviewed.</p>
             </section>
@@ -445,8 +445,8 @@
                 <h2>From the command line</h2>
                 <p>For scripts and build pipelines, <code>--run</code> checks one device, saves the report like a run from
                     this page, and exits:</p>
-                <pre><code>GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--md report.md]
-GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
+                <pre><code>GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] [--md report.md]
+GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                 <p>Other options: <code>--setpark</code>, <code>--no-writes</code>, <code>--no-protocol</code>,
                     <code>--no-disconnect</code>, <code>--extended</code>, <code>--drift-seconds &lt;s&gt;</code>,
                     <code>--sites server,north,south</code> (the North and South saved here), <code>--slew-timeout &lt;s&gt;</code>,
@@ -454,7 +454,7 @@ GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                     and <code>--source &lt;folder&gt;</code>.</p>
                 <p><code>--conformu &lt;debug log&gt;</code> runs the ConformU Debug Log Test instead: only the log's problem members,
                     with the verdicts and diagnoses, at the server's own site. For example:</p>
-                <pre><code>GS.TestHarness --run GSServer --motion --mount simulator --conformu ConformU.debug.txt</code></pre>
+                <pre><code>GS.TestHarness --run COM --motion --mount simulator --conformu ConformU.debug.txt</code></pre>
                 <p>The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.</p>
             </section>
 

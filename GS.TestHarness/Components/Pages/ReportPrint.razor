@@ -38,7 +38,7 @@
 
         <h1>ASCOM compliance: @r.Reference @r.Label</h1>
         <table class="print-facts">
-            <tr><th>Target</th><td>@r.Target.Display (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</td></tr>
+            <tr><th>Target</th><td>@r.Target.Display</td></tr>
             <tr><th>Site</th><td>@r.SiteLabel@(r.Site is { } site ? $" ({site.Coordinates})" : "")</td></tr>
             <tr><th>Report</th><td>@r.Reference (@r.Id)@(r.FollowsUpReference is { } upRef ? $", tier {r.Options.Tier} following up {upRef}" : "")</td></tr>
             <tr><th>Device</th><td>@r.Identity.Name — @r.Identity.Description</td></tr>

@@ -22,11 +22,11 @@ namespace GS.TestHarness;
 /// <summary>
 /// Runs the checks from the command line instead of starting the web app, for scripts and build pipelines:
 /// <code>
-/// GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
+/// GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
 ///                [--sites server,north,south] [--mount simulator|real]
 ///                [--source C:\src\GSServer | https://github.com/owner/repo] [--conformu ConformU-debug-log.txt] [--follow R0012] [--md report.md]
-/// GS.TestHarness --run GSServer [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
+/// GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
 /// The report is saved like a run from the web page. Exit code: 0 no failures, 1 failures or errors, 2 bad arguments.
 /// </summary>
@@ -43,10 +43,17 @@ public static class Cli
         }
         bool Flag(string name) => args.Contains(name, StringComparer.OrdinalIgnoreCase);
 
-        // The server decides the transport: GSServer is its COM driver, GreenSwampAlpaca its Alpaca server.
-        if (!Enum.TryParse<Codebase>(Value("--run"), true, out var server))
+        // The kind of server decides the transport: COM (also GSServer) or Alpaca (also GreenSwampAlpaca).
+        Codebase? kind = Value("--run")?.ToLowerInvariant() switch
         {
-            Console.Error.WriteLine("--run must be followed by GSServer (COM) or GreenSwampAlpaca (Alpaca).");
+            "com" => Codebase.GSServer,
+            "alpaca" => Codebase.GreenSwampAlpaca,
+            var v when Enum.TryParse<Codebase>(v, true, out var named) => named,
+            _ => null
+        };
+        if (kind is not { } server)
+        {
+            Console.Error.WriteLine("--run must be followed by COM (a COM driver) or Alpaca (an Alpaca Server).");
             return 2;
         }
 

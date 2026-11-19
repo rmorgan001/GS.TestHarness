@@ -88,11 +88,11 @@ public sealed record TestTarget
     [JsonIgnore]
     public string BaseUrl => $"http://{(Host.Contains(':') && !Host.StartsWith('[') ? $"[{Host}]" : Host)}:{Port}";
 
-    /// <summary>How the target is shown: its address or ProgID.</summary>
+    /// <summary>How the target is shown: what kind of server and its ProgID or address (it needn't be GSServer or GreenSwampAlpaca).</summary>
     [JsonIgnore]
     public string Display => Kind == TargetKind.Com
-        ? $"{Codebase} (COM {ProgId})"
-        : $"{Codebase} (Alpaca {BaseUrl} telescope {DeviceNumber})";
+        ? $"COM driver {ProgId}"
+        : $"Alpaca server {BaseUrl} telescope {DeviceNumber}";
 }
 
 /// <summary>

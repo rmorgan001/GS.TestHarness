@@ -5,8 +5,8 @@ how to fix it and where the code to change probably is.
 
 A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server is reached one way:
 
-- **GSServer**, through its COM driver `ASCOM.GS.Sky.Telescope` (Windows only).
-- **GreenSwampAlpaca**, over Alpaca. This also checks the Alpaca HTTP protocol itself: the management API,
+- A **COM driver**, such as GSServer's `ASCOM.GS.Sky.Telescope` (Windows only).
+- An **Alpaca Server**, over Alpaca. This also checks the Alpaca HTTP protocol itself: the management API,
   transaction IDs, the JSON reply shape, error numbers versus HTTP 400, parameter casing and UDP discovery.
 
 Every run is saved. The Compare tab shows a server's latest run at each site side by side, check by check: what
@@ -101,8 +101,8 @@ help.
 For scripts and build pipelines, `--run` checks one device and exits:
 
 ```
-GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [--motion] [--md report.md]
-GS.TestHarness --run GSServer
+GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] [--md report.md]
+GS.TestHarness --run COM
 ```
 
 Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 0: not known, so the SideOfPier flip isn't checked), `--mount simulator|real`, `--source <folder or GitHub URL>` (the server's source code for this run; a GitHub repository is downloaded first). `--conformu <debug log>` runs the ConformU Debug Log Test instead (only the log's problem members, with the verdicts). `--follow <report id>` runs the next tier for what that saved run found (with the same `--conformu` log for a ConformU run); there is no other way to run tier 2 or 3, and a finished run prints the `--follow` command when a deeper tier is available.

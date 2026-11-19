@@ -81,7 +81,7 @@
         </label>
         <label class="check">
             <input type="checkbox" @bind="_protocol" disabled="@(Runs.IsRunning || server?.Target.Kind == TargetKind.Com)" />
-            <span>Alpaca protocol checks <small>GreenSwampAlpaca only. Management API, transaction IDs, error replies, HTTP 400, discovery.</small></span>
+            <span>Alpaca protocol checks <small>Alpaca Server only. Management API, transaction IDs, error replies, HTTP 400, discovery.</small></span>
         </label>
         <label class="check">
             <input type="checkbox" @bind="_extended" disabled="@Runs.IsRunning" />
