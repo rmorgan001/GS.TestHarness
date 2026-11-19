@@ -594,10 +594,42 @@ public static class AreaDiagnostics
     /// </summary>
     private sealed record SlewEnd(double Total, double MainEnd, double LastMove, double SlewingEnd, double LargestFineStep)
     {
-        public double Fine => Math.Max(0, LastMove - MainEnd);
-        public double Idle => Math.Max(0, SlewingEnd - LastMove);
+        public double Fine => Math.Max(0, Math.Min(LastMove, SlewingEnd) - MainEnd);
+        public double Idle => Math.Max(0, SlewingEnd - Math.Max(LastMove, MainEnd));
         public double Wait => Math.Max(0, SlewingEnd - MainEnd);
+
+        /// <summary>How long the position still moved after Slewing went false (it should be 0).</summary>
+        public double MovedAfter => Math.Max(0, LastMove - SlewingEnd);
     }
+
+    /// <summary>
+    /// How much the readings jump with the mount still (tracking): the largest step between readings, in arc-seconds,
+    /// for RA (scaled by cos Dec) and Dec. GSServer's RA reading jitters by a fraction of an arc-second, which mustn't
+    /// be taken for movement.
+    /// </summary>
+    private static async Task<(double Ra, double Dec)> ReadingNoiseAsync(CheckContext ctx)
+    {
+        var samples = new List<Sample>();
+        for (var i = 0; i < 20; i++)
+        {
+            var ra = await ctx.TryAsync(t => t.RightAscension);
+            var dec = await ctx.TryAsync(t => t.Declination);
+            if (ra.Ok && dec.Ok) samples.Add(new Sample(0, ra.Value, dec.Value, false));
+            await Task.Delay(50);
+        }
+        double raMax = 0, decMax = 0;
+        for (var i = 1; i < samples.Count; i++)
+        {
+            var (r, d) = Steps(samples[i], samples[i - 1]);
+            raMax = Math.Max(raMax, r);
+            decMax = Math.Max(decMax, d);
+        }
+        return (raMax, decMax);
+    }
+
+    /// <summary>The step between two readings, in arc-seconds: RA (scaled by cos Dec) and Dec apart.</summary>
+    private static (double Ra, double Dec) Steps(Sample a, Sample b)
+        => (Math.Abs(Values.HoursDiff(a.Ra, b.Ra) * 15 * Math.Cos(b.Dec * Math.PI / 180) * 3600), Math.Abs(a.Dec - b.Dec) * 3600);
 
     /// <summary>Angular distance in arc-seconds between two readings (RA hours scaled by cos Dec).</summary>
     private static double Arcsec(Sample a, Sample b)
@@ -611,7 +643,7 @@ public static class AreaDiagnostics
     /// Slewing has been false for 1.5 s; null when the slew couldn't be started or didn't end. (Tracking is on, so RA
     /// holds still once the mount does.) <paramref name="during"/>, if given, is called a second into the slew.
     /// </summary>
-    private static async Task<SlewEnd?> TrackSlewAsync(CheckContext ctx, Action<ITelescopeV4> start, Func<Task>? during = null)
+    private static async Task<SlewEnd?> TrackSlewAsync(CheckContext ctx, Action<ITelescopeV4> start, (double Ra, double Dec) noise, Func<Task>? during = null)
     {
         var watch = Stopwatch.StartNew();
         if (!(await ctx.TryAsync(start)).Ok) return null;
@@ -632,13 +664,17 @@ public static class AreaDiagnostics
         if (ended is null || samples.Count < 3) return null;
         var final = samples[^1];
         var mainEnd = samples.LastOrDefault(s => Arcsec(s, final) > 1).T;
-        // The last reading that differs from the one before it (a 0.02" step is below any real movement's noise).
+        // After the main slew, the last reading still away from where the mount stopped by more than the readings'
+        // own jumps with the mount still (twice them, at least 0.05"), axis by axis. Measured from where it stopped
+        // rather than step by step, so it doesn't depend on how fast the mount answers.
+        var raLimit = Math.Max(0.05, 2 * noise.Ra);
+        var decLimit = Math.Max(0.05, 2 * noise.Dec);
         var lastMove = mainEnd;
         var largest = 0.0;
-        for (var i = 1; i < samples.Count; i++)
+        foreach (var s in samples.Where(s => s.T > mainEnd))
         {
-            var step = Arcsec(samples[i], samples[i - 1]);
-            if (step > 0.02 && samples[i].T > mainEnd) { lastMove = samples[i].T; largest = Math.Max(largest, step); }
+            var (ra, dec) = Steps(s, final);
+            if (ra > raLimit || dec > decLimit) { lastMove = s.T; largest = Math.Max(largest, Math.Max(ra, dec)); }
         }
         return new SlewEnd(ended.Value, mainEnd, lastMove, ended.Value, largest);
     }
@@ -662,6 +698,8 @@ public static class AreaDiagnostics
         var original = await ctx.TryAsync(t => t.SlewSettleTime);
         var rows = new List<(string Name, short Settle, SlewEnd? End)>();
         double? abortEnd = null;
+        // The readings' own jumps with the mount still, so they aren't taken for a slew still creeping.
+        var noise = await ReadingNoiseAsync(ctx);
         try
         {
             async Task Slew(string name, short settle, double raHours, double decDegrees)
@@ -671,7 +709,7 @@ public static class AreaDiagnostics
                 // Towards the equator, so a long slew stays clear of the pole.
                 var dec = Math.Clamp(here.Dec + (here.Dec > 0 ? -decDegrees : decDegrees), -85, 85);
                 var ra = Values.Wrap24(here.Ra + raHours);
-                rows.Add((name, settle, await TrackSlewAsync(ctx, t => t.SlewToCoordinatesAsync(ra, dec))));
+                rows.Add((name, settle, await TrackSlewAsync(ctx, t => t.SlewToCoordinatesAsync(ra, dec), noise)));
             }
             await Slew("Dec 0.5°", 0, 0, 0.5);
             await Slew("Dec 2°", 0, 0, 2);
@@ -686,7 +724,7 @@ public static class AreaDiagnostics
                 var dec = Math.Clamp(from.Dec + (from.Dec > 0 ? -15 : 15), -85, 85);
                 var abortedAt = 0.0;
                 var watch = Stopwatch.StartNew();
-                var end = await TrackSlewAsync(ctx, t => t.SlewToCoordinatesAsync(from.Ra, dec),
+                var end = await TrackSlewAsync(ctx, t => t.SlewToCoordinatesAsync(from.Ra, dec), noise,
                     async () => { abortedAt = watch.Elapsed.TotalSeconds; await ctx.TryAsync(t => t.AbortSlew()); });
                 if (end is not null && abortedAt > 0) abortEnd = Math.Max(0, end.SlewingEnd - abortedAt);
             }
@@ -698,10 +736,12 @@ public static class AreaDiagnostics
         }
 
         var actual = new StringBuilder();
+        actual.AppendLine(FormattableString.Invariant($"With the mount still, the readings jump up to {noise.Ra:0.00}\" in RA and {noise.Dec:0.00}\" in Dec: smaller steps aren't counted as movement."));
         actual.AppendLine("Each slew, read every ~0.1 s: the main slew over (within 1\" of where it stopped), the last movement, and Slewing's end:");
         foreach (var (name, settle, end) in rows)
             actual.AppendLine(end is null ? $"  {name}: couldn't be timed"
-                : FormattableString.Invariant($"  {name}: slew {end.MainEnd:0.0} s; then creeping {end.Fine:0.0} s (largest step {end.LargestFineStep:0.00}\"); then still {end.Idle:0.0} s; Slewing ended {end.Wait:0.0} s after the main slew"));
+                : FormattableString.Invariant($"  {name}: slew {end.MainEnd:0.0} s; then creeping {end.Fine:0.0} s (up to {end.LargestFineStep:0.00}\" from where it stopped); then still {end.Idle:0.0} s; Slewing ended {end.Wait:0.0} s after the main slew")
+                  + (end.MovedAfter > 0.2 ? FormattableString.Invariant($"; the position still moved {end.MovedAfter:0.0} s after Slewing ended") : ""));
         if (abortEnd is { } a) actual.AppendLine(FormattableString.Invariant($"  AbortSlew part way through a 15° slew: Slewing ended {a:0.0} s after the abort"));
 
         var plain = rows.Where(r => r.Settle == 0 && r.End is not null).Select(r => r.End!).ToList();
@@ -717,7 +757,9 @@ public static class AreaDiagnostics
         var fine = plain.Average(e => e.Fine);
         var idle = plain.Average(e => e.Idle);
         var spread = plain.Max(e => e.Wait) - plain.Min(e => e.Wait);
+        var movedAfter = plain.Max(e => e.MovedAfter);
         var extra = withSettle.Wait - two.Wait;
+        if (Math.Abs(extra) < 0.05) extra = 0; // no "-0.0 s"
         var used = Math.Abs(extra - 3) <= 1;
         var correcting = fine >= 0.5 && fine >= idle;
 
@@ -729,9 +771,11 @@ public static class AreaDiagnostics
         if (wait >= 0.6)
             findings.Add(FormattableString.Invariant($"the {wait:0.0} s Slewing stays true after every slew, with no settle time, is ") +
                          (correcting
-                             ? FormattableString.Invariant($"a final correction, not a wait: the position still creeps (steps up to {plain.Max(e => e.LargestFineStep):0.00}\") for {fine:0.0} s after the main slew")
+                             ? FormattableString.Invariant($"a final correction, not a wait: the position still creeps (up to {plain.Max(e => e.LargestFineStep):0.00}\" from where it stops) for {fine:0.0} s after the main slew")
                              : FormattableString.Invariant($"a wait with the mount still ({idle:0.0} s after the last movement)")) +
                          (spread <= 1 ? ", the same for every length and axis" : FormattableString.Invariant($", varying by {spread:0.0} s with the slew")));
+        if (movedAfter > 0.3)
+            findings.Add(FormattableString.Invariant($"Slewing goes false while the mount is still moving (for up to {movedAfter:0.0} s after)"));
         if (abortEnd is { } ab)
             findings.Add(ab < 0.6 ? FormattableString.Invariant($"an aborted slew ends at once ({ab:0.0} s), so the wait belongs to finishing a slew, not to Slewing itself")
                                   : FormattableString.Invariant($"even an aborted slew keeps Slewing true {ab:0.0} s"));
@@ -765,12 +809,14 @@ public static class AreaDiagnostics
             fix.Append($"{(used ? 1 : 2)}. Move the settle wait after the final stage of the slew ({List(before.Select(b => $"{b.Stage.Location}, after {b.Delay.Location}"))}): " +
                        "where it is, it runs between the main slew and the precision correction, so the mount isn't still yet when it starts, " +
                        "and the correction then adds its own time. After the last stage, the settle time starts when the mount is truly still. ");
+        if (movedAfter > 0.3)
+            fix.Append(FormattableString.Invariant($"Slewing went false up to {movedAfter:0.0} s before the position stopped changing: clear it only after the slew's last stage (and the settle time). "));
         if (correcting)
             fix.Append(FormattableString.Invariant($"The {wait:0.0} s itself is the slew's final correction: Slewing true during it is right (the mount is still moving), and clients see the settle time on top of it."));
         else if (wait >= 0.6)
             fix.Append(FormattableString.Invariant($"Find what keeps Slewing true {idle:0.0} s after the mount is still: a fixed wait at the end of every slew would be better as part of SlewSettleTime."));
 
-        var outcome = used && !(wait >= 0.6 && !correcting) ? Outcome.Info : Outcome.Fail;
+        var outcome = used && !(wait >= 0.6 && !correcting) && movedAfter <= 0.3 ? Outcome.Info : Outcome.Fail;
         ctx.Report(id, "SlewSettleTime", outcome, $"Tier 3: {string.Join("; ", findings)}.",
             expected: said, actual: actual.ToString().TrimEnd(), fix: fix.Length > 0 ? fix.ToString().Trim() : null);
         SettleFinalAnalysis(ctx, outcome, string.Join("; ", findings), fix.ToString().Trim(), used);

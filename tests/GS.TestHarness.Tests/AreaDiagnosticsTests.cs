@@ -257,7 +257,8 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
         try
         {
             var (tier2, tier3) = await SettleTiersAsync(
-                new FakeTelescope(Defect.SettleTimeIgnored, Defect.SlewEndsWithPrecisionCorrection), GsServerLikeSource(root));
+                // With GSServer's RA jitter too: the readings' own jumps mustn't be taken for movement.
+                new FakeTelescope(Defect.SettleTimeIgnored, Defect.SlewEndsWithPrecisionCorrection, Defect.PositionJitter), GsServerLikeSource(root));
             // Tier 2 sees the wait after every slew, the same with any setting: the setting adds nothing.
             Assert.Contains("adds nothing", Finding(tier2, "Diagnose.SlewSettleTime").Message);
 
@@ -267,6 +268,8 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
             Assert.Contains("a final correction, not a wait", cause.Message);
             Assert.Contains("the same for every length and axis", cause.Message);
             Assert.Contains("aborted slew ends at once", cause.Message);
+            Assert.DoesNotContain("still moving", cause.Message);
+            Assert.Contains("the readings jump up to", cause.Actual);
             Assert.Contains(".TotalMilliseconds", cause.Fix);
             Assert.Contains("Move the settle wait after the final stage", cause.Fix);
             Assert.Contains("#region Final precision slew", cause.Actual);

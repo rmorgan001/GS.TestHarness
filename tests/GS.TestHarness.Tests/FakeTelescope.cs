@@ -124,7 +124,7 @@ public enum Defect
 
     /// <summary>
     /// As GSServer's simulator: after the main slew a final precision correction runs for 1.5 s, the position creeping
-    /// the last 0.6" (Slewing true throughout), and the settle time (if used) comes before it.
+    /// the last 0.9" (Slewing true throughout), and the settle time (if used) comes before it.
     /// </summary>
     SlewEndsWithPrecisionCorrection
 }
@@ -384,7 +384,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     }
 
     /// <summary>The position as the properties report it: now, or with a defect, cached or jittering.</summary>
-    /// <summary>SlewEndsWithPrecisionCorrection: when the final correction ends; until then Dec is off by what's left of 0.6".</summary>
+    /// <summary>SlewEndsWithPrecisionCorrection: when the final correction ends; until then Dec is off by what's left of 0.9".</summary>
     private DateTime _correctUntil;
 
     private const double CorrectionSeconds = 1.5;
@@ -393,7 +393,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     {
         var (ra, dec) = ReportedRaw();
         var left = (_correctUntil - DateTime.UtcNow).TotalSeconds;
-        return left > 0 ? (ra, dec + 0.6 / 3600 * left / CorrectionSeconds) : (ra, dec);
+        return left > 0 ? (ra, dec + 0.9 / 3600 * left / CorrectionSeconds) : (ra, dec);
     }
 
     private (double Ra, double Dec) ReportedRaw()
@@ -684,7 +684,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         // With the defect, the mount never changes side (though DestinationSideOfPier says it will).
         PointingState? keep = Has(Defect.NoMeridianFlip) ? SideOfPier : null;
         // The mount arrives after 300 ms, then settles (Slewing still true) for SlewSettleTime; with the defect a final
-        // correction follows, creeping the last 0.6" for 1.5 s.
+        // correction follows, creeping the last 0.9" for 1.5 s.
         var settle = Has(Defect.SettleTimeIgnored) ? 0 : _settle * 1000;
         var correct = Has(Defect.SlewEndsWithPrecisionCorrection) ? (int)(CorrectionSeconds * 1000) : 0;
         StartMotion(300 + settle + correct, () =>
