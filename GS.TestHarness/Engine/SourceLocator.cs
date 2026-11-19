@@ -31,7 +31,7 @@ public sealed record SourceLine(string File, int Line, string Text)
 /// <summary>Where a codebase's source is, from the "Codebases" configuration section.</summary>
 public sealed class CodebaseOptions
 {
-    /// <summary>The repository folder: absolute, or a folder name looked for beside this app's folders.</summary>
+    /// <summary>A default folder for the repository: a whole path (nothing is looked for beside this app); empty for none.</summary>
     public string Root { get; set; } = "";
 
     /// <summary>The telescope driver's source files (relative to <see cref="Root"/>), where interface members are.</summary>
@@ -42,7 +42,7 @@ public sealed class CodebaseOptions
 /// Finds the code a finding is about, in the source of the server under test, so a report can say where to make
 /// the fix ("GS.Ascom.SkyTelescope/Telescope.cs:731"). Finds nothing when the source isn't on this computer.
 /// Each codebase's folder is the one the person running the harness set (<see cref="SetFolder"/>, the Options tab's
-/// Source code), or else the configured default ("Codebases" in appsettings.json, looked for beside this app).
+/// Source code); left blank, there is none (no code review), unless appsettings.json's "Codebases" gives a whole path.
 /// </summary>
 public sealed class SourceLocator
 {
@@ -69,7 +69,7 @@ public sealed class SourceLocator
     /// <summary>The codebase's folder on this computer, or null if it isn't here.</summary>
     public string? RootOf(Codebase codebase) => _codebases.TryGetValue(codebase, out var c) ? c.Root : null;
 
-    /// <summary>The folder the person set for the codebase (null: the configured default is used).</summary>
+    /// <summary>The folder the person set for the codebase (null: none, so no code review).</summary>
     public string? FolderSetFor(Codebase codebase) => _set.TryGetValue(codebase, out var f) ? f : null;
 
     /// <summary>The configured default folder, as found on this computer (null if it isn't here).</summary>
@@ -81,7 +81,7 @@ public sealed class SourceLocator
         => _options.TryGetValue(codebase, out var o) ? o.TelescopeFiles : [];
 
     /// <summary>
-    /// Uses this folder for the codebase from now on; null or empty goes back to the configured default. Returns why
+    /// Uses this folder for the codebase from now on; null or empty means none (no code review). Returns why
     /// it can't be used, or null when it can.
     /// </summary>
     public string? SetFolder(Codebase codebase, string? folder)
@@ -98,15 +98,58 @@ public sealed class SourceLocator
         return problem;
     }
 
-    /// <summary>Why a folder isn't usable as the codebase's source, or null when it is (it holds the driver file).</summary>
+    /// <summary>
+    /// Why a folder (or a GitHub repository's URL, read from its downloaded copy) isn't usable as the codebase's
+    /// source, or null when it is (it holds the driver file).
+    /// </summary>
     public string? Check(Codebase codebase, string folder)
     {
-        if (!Path.IsPathRooted(folder)) return "Give the whole path, starting with the drive (C:\\...).";
+        if (GitHubSource.Parse(folder) is { } repo)
+        {
+            if (repo.LocalFolder is not { } local) return $"{repo.Display} hasn't been downloaded from GitHub yet.";
+            return HasDriver(codebase, local) ? null
+                : $"{repo.Display} has no telescope driver (no class implementing ITelescopeV4 or ITelescopeV3): give the repository's URL, or /tree/branch/folder for the folder with the server's code.";
+        }
+        if (GitHubSource.LooksLikeUrl(folder)) return "Only GitHub URLs can be used (https://github.com/owner/repo, optionally /tree/branch).";
+        if (!Path.IsPathRooted(folder)) return "Give the whole path, starting with the drive (C:\\...), or a GitHub URL.";
         if (!Directory.Exists(folder)) return "There's no such folder on this computer.";
-        var files = DriverFilesOf(codebase);
-        if (files.Count > 0 && !files.Any(f => File.Exists(Path.Combine(folder, f))))
-            return $"It doesn't hold {string.Join(" or ", files)}: pick the repository's top folder.";
-        return null;
+        return HasDriver(codebase, folder) ? null
+            : "It has no telescope driver (no class implementing ITelescopeV4 or ITelescopeV3): pick the repository's top folder of the server's code.";
+    }
+
+    /// <summary>A class declaration implementing the telescope interface: how any server's driver is found.</summary>
+    private static readonly Regex DriverClass = new(@"\bclass\s+\w+[^{;]*:[^{;]*\bITelescopeV[234]\b");
+
+    /// <summary>The source files left out of the search: build output, packages, tests.</summary>
+    private static readonly Regex Skipped = new(@"[\\/](obj|bin|packages|\.git|\.vs)[\\/]|Tests?[\\/]", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// A file for another kind of ASCOM device (in a repository of several simulators, say): its path names one and
+    /// not the telescope. The code review sticks to the telescope's code and the code every device shares.
+    /// </summary>
+    private static readonly Regex OtherDevice = new(@"camera|covercalibrator|dome|filterwheel|focuser|observingconditions|rotator|safetymonitor|switch|video", RegexOptions.IgnoreCase);
+
+    private static readonly Regex TelescopeDevice = new(@"telescope", RegexOptions.IgnoreCase);
+
+    /// <summary>Whether a file (its path within the repository) is another device's code, not the telescope's or shared.</summary>
+    internal static bool IsOtherDevice(string relativePath) => OtherDevice.IsMatch(relativePath) && !TelescopeDevice.IsMatch(relativePath);
+
+    /// <summary>Whether the folder holds a telescope driver: the codebase's usual driver file, or (any server) a class implementing the interface.</summary>
+    private bool HasDriver(Codebase codebase, string folder)
+        => DriverFilesOf(codebase).Any(f => File.Exists(Path.Combine(folder, f))) || DriversIn(folder).Length > 0;
+
+    /// <summary>The files in <paramref name="folder"/> with a class implementing ITelescopeV4 (or V3, V2), at most a few.</summary>
+    private static string[] DriversIn(string folder)
+    {
+        try
+        {
+            return [.. Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !Skipped.IsMatch(f) && !IsOtherDevice(Path.GetRelativePath(folder, f)))
+                .Where(f => File.ReadLines(f).Any(DriverClass.IsMatch))
+                .Take(4)];
+        }
+        catch (IOException) { return []; }
+        catch (UnauthorizedAccessException) { return []; }
     }
 
     /// <summary>Works out the codebase's folder (the one set, else the default) and its driver files.</summary>
@@ -114,26 +157,23 @@ public sealed class SourceLocator
     {
         _allFiles.TryRemove(codebase, out _);
         var root = _set.TryGetValue(codebase, out var set)
-            ? (Directory.Exists(set) ? Path.GetFullPath(set) : null)
+            ? GitHubSource.Parse(set) is { } repo ? repo.LocalFolder : Directory.Exists(set) ? Path.GetFullPath(set) : null
             : DefaultRootOf(codebase);
         if (root is null)
         {
             _codebases.TryRemove(codebase, out _);
             return;
         }
-        _codebases[codebase] = (root, [.. DriverFilesOf(codebase).Select(f => Path.Combine(root, f)).Where(File.Exists)]);
+        // The codebase's usual driver file; else (another server's code) the files with a class implementing the interface.
+        string[] drivers = [.. DriverFilesOf(codebase).Select(f => Path.Combine(root, f)).Where(File.Exists)];
+        _codebases[codebase] = (root, drivers.Length > 0 ? drivers : DriversIn(root));
     }
 
     private static string? ResolveRoot(string root, string searchFrom)
     {
         if (string.IsNullOrWhiteSpace(root)) return null;
-        if (Path.IsPathRooted(root)) return Directory.Exists(root) ? Path.GetFullPath(root) : null;
-        for (var dir = string.IsNullOrEmpty(searchFrom) ? null : new DirectoryInfo(searchFrom); dir is not null; dir = dir.Parent)
-        {
-            var candidate = Path.Combine(dir.FullName, root);
-            if (Directory.Exists(candidate)) return Path.GetFullPath(candidate);
-        }
-        return null;
+        // Only a whole path: nothing is looked for beside this program, so a blank Source Code field means no code review.
+        return Path.IsPathRooted(root) && Directory.Exists(root) ? Path.GetFullPath(root) : null;
     }
 
     /// <summary>
@@ -255,7 +295,7 @@ public sealed class SourceLocator
             try
             {
                 return [.. Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
-                    .Where(f => !Regex.IsMatch(f, @"[\\/](obj|bin|packages|\.git|\.vs)[\\/]|Tests?[\\/]", RegexOptions.IgnoreCase))
+                    .Where(f => !Skipped.IsMatch(f) && !IsOtherDevice(Path.GetRelativePath(root, f)))
                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
             }
             catch (IOException) { return []; }

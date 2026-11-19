@@ -66,7 +66,7 @@
                 <ol>
                     <li>Add the server to the <strong>Servers</strong> list on the left (see <a href="help#servers">The server list</a>).</li>
                     <li>Drag it onto the <strong>Server and sites</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
-                    <li>Tick the sites to run at, choose what the run may do, and press <strong>Start run</strong> beside the server.
+                    <li>Check the server's <strong>Settings</strong> (and the sites to run at), choose what the run may do, and press <strong>Start run</strong> beside the server.
                         A warning asks you to remove the OTAs and watch the mount for the whole run, and lists the settings under
                         the server to check first (Mount, flip angle, timeouts and source code), with ⚠ on any that look wrong. Clicking
                         <strong>Start</strong> there accepts responsibility for the run.</li>
@@ -112,13 +112,16 @@
                     show only full conformance runs. The check groups a run makes are listed under
                     <a href="help#checks">What gets checked</a>, and every check in them under <a href="help#tests">The tests</a>.</p>
                 <p>The <strong>Server and sites</strong> card holds the server to test. Drag one onto it from the list;
-                    <strong>✕</strong> clears it. Under the server, on both tests:</p>
+                    <strong>✕</strong> clears it. Under the server, on both tests, a <strong>Settings</strong> section (closed
+                    until you open it, with a reminder to check it before starting a run) holds these, and the
+                    <a href="help#sites">Sites</a> to run at:</p>
                 <dl>
-                    <dt>Source code</dt>
-                    <dd>Where the server's source code is, so findings can name a file (see
+                    <dt>Source Code local Path or GitHub full URL to the code</dt>
+                    <dd>Where the code of the server selected is: a folder on this computer or a GitHub URL. Leave it blank if
+                        the code isn't available for review. It lets findings name a file (see
                         <a href="help#source">Where to check the code</a>).</dd>
                     <dt>Mount</dt>
-                    <dd>What the server drives: <strong>GSServer simulator</strong> or a <strong>Real mount</strong>. GSServer takes
+                    <dd>What the server drives: <strong>Simulator</strong> or a <strong>Real mount</strong>. GSServer takes
                         different code paths for each, so the ConformU diagnoses' recommendations follow it; not specified, they
                         list both. It's remembered as soon as it's changed. On the command line, <code>--mount simulator</code>
                         or <code>--mount real</code>.</dd>
@@ -126,7 +129,8 @@
                     <dd>Degrees either side of the meridian (0 to 90) where the mount can point from either side of the pier.
                         Inside it the flip checks flip the mount with the SideOfPier command, halfway in on each side, and it must
                         keep pointing at the same place. A goto 5° past it, across the meridian, must flip the mount by itself.
-                        Needs <em>Move the mount</em> (under Options). Remembered as soon as it is changed.</dd>
+                        Needs <em>Move the mount</em> (under Options). Remembered as soon as it is changed. 0 (the default) when
+                        it isn't known: there's no zone, so the SideOfPier flip isn't checked.</dd>
                     <dt>Slew timeout and call timeout</dt>
                     <dd>How long a slew, and any single call, may take before it counts as never answered. Remembered as soon as they are changed.</dd>
                 </dl>
@@ -281,7 +285,7 @@
 
             <section id="sites">
                 <h2>Sites</h2>
-                <p>A conformance test can be made at up to three sites, ticked under the server (the ConformU Debug Log Test
+                <p>A conformance test can be made at up to three sites, ticked in the server's <strong>Settings</strong> section (the ConformU Debug Log Test
                     doesn't use them):</p>
                 <dl>
                     <dt>Server's current settings</dt>
@@ -412,18 +416,27 @@
 
             <section id="source">
                 <h2>Where to check the code</h2>
-                <p>A finding names the file and line to look at, such as <code>GS.Ascom.SkyTelescope/Telescope.cs:1265</code>,
-                    when the server's source code is on this computer. Under the server, on either test's Server card, paste
-                    the repository's top folder into <strong>source code</strong>, or click the folder button beside it to
-                    choose it: the popup lists the folders on this computer (start from <code>source\repos</code>, Documents, your home
-                    folder or a drive) and marks the ones that hold the server's driver file. The folder is checked for that
-                    file, and the card says which folder findings will use. The path is your own: it's saved in
+                <p>A finding names the file and line to look at, such as <code>Driver/Telescope.cs:1265</code>, when the
+                    server's source code is available. Under the server, on either test's Server card, paste the top folder of
+                    the server's code (or its GitHub URL) into <strong>Source Code local Path or GitHub full URL to the code</strong>,
+                    or click the folder button beside it to choose it: the popup lists the folders on this computer (start from
+                    <code>source\repos</code>, Documents, your home folder or a drive). It can be any server's code: the
+                    folder is checked for a telescope driver (a class implementing ITelescopeV4 or ITelescopeV3), and the card
+                    says which folder findings will use. The path is your own: it's saved in
                     <code>source-folders.json</code> beside the reports folder, so everyone who runs the harness sets their own,
                     and it's shared by both tests.</p>
-                <p>Left empty, <code>appsettings.json</code> → <code>Codebases</code> gives the default: a folder name looked for
-                    beside this program's folder and its parents, so <code>GSServer</code> and <code>GreenSwampAlpaca</code>
-                    cloned next to it are found by themselves. On the command line, <code>--source &lt;folder&gt;</code> sets
-                    it for that run.</p>
+                <p>Left blank, there is no code review: findings don't name files, and tier 2 says the code wasn't reviewed.
+                    Nothing is looked for beside this program. On the command line, <code>--source &lt;folder or GitHub URL&gt;</code>
+                    sets it for that run.</p>
+                <p>A <strong>GitHub URL</strong> works too: <code>https://github.com/owner/repo</code>, or
+                    <code>…/tree/branch</code> for a branch, tag or commit, and <code>…/tree/branch/folder</code> when the
+                    driver is in a folder of the repository. It's downloaded once (as a zip, into
+                    <code>%LOCALAPPDATA%\GS.TestHarness\github</code>) and read from there; the card says when, and its
+                    download button fetches the latest. A private repository needs a GitHub token in the
+                    <code>GITHUB_TOKEN</code> environment variable. <code>--source</code> takes a URL as well.</p>
+                <p>The code is only reviewed when it's the server answering's: for an Alpaca server, its name (from the
+                    management API) must appear in the source. Another server answering (the ASCOM Alpaca Simulators, say,
+                    with GreenSwampAlpaca's source set) gets no file names and no code review, and the findings say why.</p>
                 <p>The source adds file names to findings, and lets tier 2 review the code (quoting the lines it found). The
                     checks and the diagnoses work without it; a tier 2 finding then says the code wasn't reviewed.</p>
             </section>

@@ -42,14 +42,14 @@ public sealed class ClientsChecks : ICheckGroup
         await ConnectCyclesAsync(ctx);
     }
 
-    private static async Task ConnectAsync(ITelescopeSession s)
+    internal static async Task ConnectAsync(ITelescopeSession s)
     {
         await s.RunAsync(t => t.Connect(), Timeout);
         var watch = Stopwatch.StartNew();
         while (watch.Elapsed < Timeout && await s.RunAsync(t => t.Connecting, Timeout)) await Task.Delay(50);
     }
 
-    private static async Task DisconnectAsync(ITelescopeSession s)
+    internal static async Task DisconnectAsync(ITelescopeSession s)
     {
         await s.RunAsync(t => t.Disconnect(), Timeout);
         var watch = Stopwatch.StartNew();

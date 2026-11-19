@@ -223,7 +223,8 @@
         Bench.Highlight(server);
         var dialog = new ServerDialogModel(Servers, server);
         if (!await Dialogs.ShowAsync(dialog)) return;
-        var edited = dialog.Entry;
+        // The dialog edits the name and address: the server keeps its settings.
+        var edited = dialog.Entry with { Settings = server.Settings };
         Servers.Update(edited);
         // A new address is a different device: don't stay connected to the old one.
         if (!ServerEntry.SameDevice(server.Target, edited.Target) && Connections.IsConnected(server.Id))

@@ -32,22 +32,23 @@ namespace GS.TestHarness.Engine.Checks;
 /// out, where a setting is used. Each finding says what the pattern points to and what to change. The harness only
 /// recommends: it never changes the server.
 /// </summary>
-public static class AreaDiagnostics
+public static partial class AreaDiagnostics
 {
     public const string Arguments = "Arguments";
     public const string Preconditions = "Preconditions";
     public const string NotConnected = "NotConnected";
     public const string Registration = "Registration";
+    public const string RateOffsets = "RateOffsets";
 
     /// <summary>The diagnoses made here (by their <see cref="Diagnosis.Member"/>); the measurements are <see cref="Diagnostics"/>'.</summary>
     public static readonly IReadOnlySet<string> Areas = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        { Arguments, Preconditions, "SlewSettleTime", "AxisRates", "DriverVersion", Registration, NotConnected };
+        { Arguments, Preconditions, RateOffsets, ClientConnections, AlpacaRequests, "SlewSettleTime", "AxisRates", "DriverVersion", Registration, NotConnected };
 
     /// <summary>
-    /// Whether a diagnosis moves the mount (it needs Move the mount): the measurements, the preconditions and the
-    /// settle time do; the arguments, the connection, AxisRates, DriverVersion and the registration don't.
+    /// Whether a diagnosis moves the mount (it needs Move the mount): the measurements, the preconditions, the rate
+    /// offsets and the settle time do; the arguments, the connection, AxisRates, DriverVersion and the registration don't.
     /// </summary>
-    public static bool MovesMount(string member) => !Areas.Contains(member) || member is Preconditions or "SlewSettleTime";
+    public static bool MovesMount(string member) => !Areas.Contains(member) || member is Preconditions or RateOffsets or "SlewSettleTime";
 
     /// <summary>Runs one area's diagnosis, against what the run it follows up found (<see cref="CheckContext.FollowsUp"/>).</summary>
     public static async Task RunAsync(CheckContext ctx, string area)
@@ -58,6 +59,9 @@ public static class AreaDiagnostics
         {
             case Arguments: await ArgumentsAsync(ctx, found, said); break;
             case Preconditions: await PreconditionsAsync(ctx, found, said); break;
+            case RateOffsets: await RateOffsetsAsync(ctx, found, said); break;
+            case ClientConnections: await ClientConnectionsAsync(ctx, found, said); break;
+            case AlpacaRequests: await AlpacaRequestsAsync(ctx, found, said); break;
             case NotConnected: await NotConnectedAsync(ctx, found, said); break;
             case "SlewSettleTime":
                 if (ctx.Options.Tier >= 3) await SettleDeepAsync(ctx, said);
@@ -77,7 +81,10 @@ public static class AreaDiagnostics
     /// <summary>The member's code, or null (the source isn't here, or the member isn't in it).</summary>
     private static IReadOnlyList<SourceLine>? Code(CheckContext ctx, string member) => ctx.Locator.Body(ctx.Target.Codebase, member);
 
-    private const string NoSource = "Code not reviewed: the server's source isn't on this computer (set it under Options → Source code).";
+    /// <summary>Why the code wasn't reviewed: another server is answering (<see cref="CheckContext.OtherServer"/>), or the source isn't here.</summary>
+    private static string NoSource(CheckContext ctx) => ctx.OtherServer is { } other
+        ? $"Code not reviewed: the server answering is {other}, not {ctx.Target.Codebase}, and its source isn't on this computer."
+        : "Code not reviewed: the server's source isn't on this computer (set it under Options → Source code).";
 
     /// <summary>The helpers a member's code calls (CheckSerialIO, CheckRange...), in order: the guards it has.</summary>
     internal static List<string> Calls(IReadOnlyList<SourceLine> body)
@@ -98,23 +105,102 @@ public static class AreaDiagnostics
 
     // ---------- Arguments ----------
 
-    /// <summary>A member that takes an axis or a guide direction: its valid values and a call with one.</summary>
-    private sealed record ArgumentProbe(string Member, string Parameter, int[] Valid, int[] Invalid, Func<ITelescopeV4, int, string> Call);
+    /// <summary>One call of a member: the value's label ("3", "ra 25"), whether it's valid, and the call.</summary>
+    private sealed record ArgValue(string Label, bool Valid, Func<ITelescopeV4, string> Call);
+
+    /// <summary>
+    /// A member that takes an argument (an axis, a direction, coordinates, a setting's value): the values it's called
+    /// with, what's valid in words, an example of the check to add, whether its argument is a list of choices (an enum)
+    /// or a range, and (a setting) how to put its value back.
+    /// </summary>
+    private sealed record ArgumentProbe(string Member, string Parameter, string ValidText, string Check, bool Choices,
+        IReadOnlyList<ArgValue> Values, Action<ITelescopeV4>? Restore = null);
 
     /// <summary>What a call that returned a null collection answers (over COM the client library fails on it instead).</summary>
     private const string ReturnedNull = "returned null";
 
-    private static readonly ArgumentProbe[] ArgumentProbes =
+    /// <summary>The settings tier 1 writes out-of-range values to: these need Change settings to be diagnosed.</summary>
+    private static readonly HashSet<string> RangeSettings =
     [
-        new("CanMoveAxis", "axis", [0, 1, 2], [-1, 3, 9, 99], (t, v) => CheckContext.Show(t.CanMoveAxis((TelescopeAxis)v))),
-        new("AxisRates", "axis", [0, 1, 2], [-1, 3, 9, 99],
-            (t, v) => Values.Rates(t.AxisRates((TelescopeAxis)v)) is { } r ? $"{r.Count} rate{(r.Count == 1 ? "" : "s")}" : ReturnedNull),
-        // A pulse of no length: nothing moves even if a direction is accepted.
-        new("PulseGuide", "direction", [0, 1, 2, 3], [-1, 4, 9, 99], (t, v) => { t.PulseGuide((GuideDirection)v, 0); return ""; })
+        "SiteLatitude", "SiteLongitude", "SiteElevation", "SlewSettleTime", "GuideRateRightAscension", "GuideRateDeclination",
+        "TargetRightAscension", "TargetDeclination", "TrackingRate"
     ];
 
+    private static ArgumentProbe Choices(string member, string parameter, string validText, string check, int[] invalid, int[] valid,
+        Func<ITelescopeV4, int, string> call, Action<ITelescopeV4>? restore = null)
+        => new(member, parameter, validText, check, true,
+            [.. invalid.Select(v => new ArgValue(v.ToString(CultureInfo.InvariantCulture), false, t => call(t, v))),
+             .. valid.Select(v => new ArgValue(v.ToString(CultureInfo.InvariantCulture), true, t => call(t, v)))], restore);
+
+    /// <summary>
+    /// The members to call: those taking an axis or direction, DestinationSideOfPier at the current position with one
+    /// coordinate out of range at a time, and (with Change settings) each setting tier 1 writes out-of-range values to,
+    /// with those values and then its own value, which is put back afterwards.
+    /// </summary>
+    private static async Task<List<ArgumentProbe>> ArgumentProbesAsync(CheckContext ctx)
+    {
+        var c = ctx.Caps;
+        const string AxisCheck = "`if (axis < 0 || axis > 2) throw new InvalidValueException(...)`";
+        var probes = new List<ArgumentProbe>
+        {
+            Choices("CanMoveAxis", "axis", "0, 1 or 2 (TelescopeAxis)", AxisCheck, [-1, 3, 9, 99], [0, 1, 2],
+                (t, v) => CheckContext.Show(t.CanMoveAxis((TelescopeAxis)v))),
+            Choices("AxisRates", "axis", "0, 1 or 2 (TelescopeAxis)", AxisCheck, [-1, 3, 9, 99], [0, 1, 2],
+                (t, v) => Values.Rates(t.AxisRates((TelescopeAxis)v)) is { } r ? $"{r.Count} rate{(r.Count == 1 ? "" : "s")}" : ReturnedNull)
+        };
+        // A pulse of no length: nothing moves even if a direction is accepted.
+        if (c.CanPulseGuide && !(await ctx.TryAsync(t => t.AtPark)).Value)
+            probes.Add(Choices("PulseGuide", "direction", "0 to 3 (GuideDirection)", "`if (!Enum.IsDefined(direction)) throw new InvalidValueException(...)`",
+                [-1, 4, 9, 99], [0, 1, 2, 3], (t, v) => { t.PulseGuide((GuideDirection)v, 0); return ""; }));
+
+        var ra = await ctx.TryAsync(t => t.RightAscension);
+        var dec = await ctx.TryAsync(t => t.Declination);
+        if (ra.Ok && dec.Ok)
+        {
+            var (r0, d0) = (ra.Value, dec.Value);
+            static string Side(ITelescopeV4 t, double r, double d) => t.DestinationSideOfPier(r, d).ToString();
+            probes.Add(new("DestinationSideOfPier", "coordinates", "right ascension 0 up to 24 hours and declination -90 to 90 degrees",
+                "`if (rightAscension < 0 || rightAscension >= 24 || declination < -90 || declination > 90) throw new InvalidValueException(...)`", false,
+                [.. new[] { -1.0, 25, 99 }.Select(v => new ArgValue($"ra {CheckContext.Show(v)}", false, t => Side(t, v, d0))),
+                 .. new[] { -91.0, 91, 180 }.Select(v => new ArgValue($"dec {CheckContext.Show(v)}", false, t => Side(t, r0, v))),
+                 new ArgValue($"ra {CheckContext.Show(Math.Round(r0, 4))}, dec {CheckContext.Show(Math.Round(d0, 4))} (here)", true, t => Side(t, r0, d0))]));
+        }
+
+        if (!ctx.Options.AllowSettingsWrites) return probes;
+        await SettingAsync("SiteLatitude", "-90 to 90 degrees", [-91, 91], t => t.SiteLatitude, (t, v) => t.SiteLatitude = v);
+        await SettingAsync("SiteLongitude", "-180 to 180 degrees", [-181, 181], t => t.SiteLongitude, (t, v) => t.SiteLongitude = v);
+        await SettingAsync("SiteElevation", "-300 to 10000 metres", [-301, 10001], t => t.SiteElevation, (t, v) => t.SiteElevation = v);
+        await SettingAsync("SlewSettleTime", "0 seconds or more", [-1], t => t.SlewSettleTime, (t, v) => t.SlewSettleTime = (short)v);
+        if (c.CanSetGuideRates)
+        {
+            await SettingAsync("GuideRateRightAscension", "0 degrees per second or more", [-1, -0.001], t => t.GuideRateRightAscension, (t, v) => t.GuideRateRightAscension = v);
+            await SettingAsync("GuideRateDeclination", "0 degrees per second or more", [-1, -0.001], t => t.GuideRateDeclination, (t, v) => t.GuideRateDeclination = v);
+        }
+        await SettingAsync("TargetRightAscension", "0 up to 24 hours", [-1, 25], t => t.TargetRightAscension, (t, v) => t.TargetRightAscension = v);
+        await SettingAsync("TargetDeclination", "-90 to 90 degrees", [-91, 91], t => t.TargetDeclination, (t, v) => t.TargetDeclination = v);
+        if (await ctx.TryAsync(t => t.TrackingRate) is { Ok: true } rate)
+        {
+            var current = (int)rate.Value;
+            probes.Add(Choices("TrackingRate", "rate", "a DriveRate listed in TrackingRates",
+                "`if (!Enum.IsDefined(value) || !TrackingRates.Contains(value)) throw new InvalidValueException(...)`",
+                [-1, 5, 99], [current], (t, v) => { t.TrackingRate = (DriveRate)v; return ""; }, t => t.TrackingRate = (DriveRate)current));
+        }
+        return probes;
+
+        // Out-of-range values, then the setting's own value (written back unchanged, so nothing is left changed).
+        async Task SettingAsync(string member, string validText, double[] invalid, Func<ITelescopeV4, double> get, Action<ITelescopeV4, double> set)
+        {
+            if (await ctx.TryAsync(get) is not { Ok: true } read) return; // e.g. a target never set: nothing to put back
+            var v0 = read.Value;
+            probes.Add(new(member, "value", validText, $"`if (value < min || value > max) throw new InvalidValueException(...)` ({validText})", false,
+                [.. invalid.Select(v => new ArgValue(CheckContext.Show(v), false, t => { set(t, v); return ""; })),
+                 new ArgValue($"{CheckContext.Show(v0)} (its value)", true, t => { set(t, v0); return ""; })],
+                t => set(t, v0)));
+        }
+    }
+
     /// <summary>How the member answered one value.</summary>
-    private enum Answer { Accepted, Null, InvalidValue, WrongAscomError, FromMountCode, OtherError }
+    private enum Answer { Accepted, Null, InvalidValue, ServerRefused, WrongAscomError, FromMountCode, OtherError }
 
     private static (Answer Answer, string Text) Classify<T>(Call<T> call)
     {
@@ -126,6 +212,9 @@ public static class AreaDiagnostics
         if (error is NullReferenceException && error.StackTrace?.Contains("ASCOM.", StringComparison.Ordinal) == true)
             return (Answer.Null, "returned null (the ASCOM client library failed on it: NullReferenceException)");
         if (call.Kind == AscomErrorKind.InvalidValue) return (Answer.InvalidValue, "InvalidValueException");
+        // The Alpaca server's request validation refused it (HTTP 400) before the driver saw it.
+        if (error.Message.Contains("HTTP Completion Status: BadRequest", StringComparison.OrdinalIgnoreCase))
+            return (Answer.ServerRefused, "refused by the Alpaca server: HTTP 400");
         // A .NET exception from below the driver, passed on (GSServer wraps them in DriverException).
         var inner = Regex.Match(error.Message, @"System\.(\w+Exception)");
         if (inner.Success && inner.Groups[1].Value is not "NullReferenceException")
@@ -135,87 +224,357 @@ public static class AreaDiagnostics
 
     private static async Task ArgumentsAsync(CheckContext ctx, List<CheckResult> found, string said)
     {
-        var parked = (await ctx.TryAsync(t => t.AtPark)).Value;
-        var results = new Dictionary<string, List<(int Value, bool Valid, Answer Answer, string Text)>>();
-        foreach (var probe in ArgumentProbes)
+        var probes = await ArgumentProbesAsync(ctx);
+        var results = new Dictionary<string, List<(ArgValue Value, Answer Answer, string Text)>>();
+        foreach (var probe in probes)
         {
-            if (probe.Member == "PulseGuide" && (!ctx.Caps.CanPulseGuide || parked)) continue;
-            var rows = new List<(int, bool, Answer, string)>();
-            foreach (var (value, valid) in probe.Invalid.Select(v => (v, false)).Concat(probe.Valid.Select(v => (v, true))))
+            var rows = new List<(ArgValue, Answer, string)>();
+            foreach (var value in probe.Values)
             {
-                var (answer, text) = Classify(await ctx.TryAsync(t => probe.Call(t, value)));
-                rows.Add((value, valid, answer, text));
+                var (answer, text) = Classify(await ctx.TryAsync(value.Call));
+                rows.Add((value, answer, text));
             }
+            if (probe.Restore is { } restore) await ctx.TryAsync(t => { restore(t); return 0; });
             results[probe.Member] = rows;
         }
         if (ctx.Caps.CanPulseGuide) await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromSeconds(5), 100);
 
         // The members whose invalid values aren't all refused with InvalidValueException.
-        var wrong = results.Where(r => r.Value.Any(x => !x.Valid && x.Answer != Answer.InvalidValue)).Select(r => r.Key).ToList();
+        var wrong = results.Where(r => r.Value.Any(x => !x.Value.Valid && x.Answer != Answer.InvalidValue)).Select(r => r.Key).ToList();
         foreach (var member in found.Select(r => r.Member).Distinct())
         {
-            var probe = ArgumentProbes.FirstOrDefault(p => p.Member == member);
+            var probe = probes.FirstOrDefault(p => p.Member == member);
             if (probe is null || !results.TryGetValue(member, out var rows))
             {
                 ctx.Report($"Arguments.{member}", member, Outcome.Skipped,
-                    probe is null ? $"{member}'s arguments have no diagnosis yet." : $"{member} couldn't be called here (the mount is parked, or can't pulse guide).",
+                    RangeSettings.Contains(member) && !ctx.Options.AllowSettingsWrites ? $"{member} wasn't written: turn on Change settings to diagnose it."
+                    : member is "PulseGuide" ? "PulseGuide couldn't be called here (the mount is parked, or can't pulse guide)."
+                    : member is "DestinationSideOfPier" ? "DestinationSideOfPier wasn't called: the current position couldn't be read."
+                    : RangeSettings.Contains(member) ? $"{member} wasn't written: its value couldn't be read to put back (or it can't be set)."
+                    : $"{member}'s arguments have no diagnosis yet.",
                     expected: said);
                 continue;
             }
-            var invalid = rows.Where(r => !r.Valid).ToList();
-            var refusedValid = rows.Where(r => r.Valid && r.Answer != Answer.Accepted).ToList();
-            var validText = probe.Parameter == "axis" ? "0, 1 or 2 (TelescopeAxis)" : "0 to 3 (GuideDirection)";
+            var invalid = rows.Where(r => !r.Value.Valid).ToList();
+            var accepted = invalid.Where(r => r.Answer == Answer.Accepted).ToList();
+            var refusedValid = rows.Where(r => r.Value.Valid && r.Answer != Answer.Accepted).ToList();
+            static string Labels(IEnumerable<(ArgValue Value, Answer, string)> r) => string.Join(", ", r.Select(x => x.Value.Label));
             string pattern;
             if (invalid.All(r => r.Answer == Answer.InvalidValue))
                 pattern = $"every invalid {probe.Parameter} is now refused with InvalidValueException";
             else if (invalid.All(r => r.Answer == Answer.Accepted))
                 pattern = $"{member} doesn't check the {probe.Parameter} at all: every invalid value is accepted";
+            else if (invalid.All(r => r.Answer == Answer.ServerRefused))
+                pattern = $"the Alpaca server refuses every invalid {probe.Parameter} with HTTP 400 before {member} sees it, so clients get no InvalidValueException";
             else if (invalid.Any(r => r.Answer == Answer.Null))
                 pattern = $"{member} returns null for an invalid {probe.Parameter} instead of refusing it, so a client gets nothing it can use (over COM the client library fails with NullReferenceException)";
             else if (invalid.Any(r => r.Answer == Answer.FromMountCode))
                 pattern = $"{member} doesn't check the {probe.Parameter}: the value reaches the mount code, whose own exception comes back ({invalid.First(r => r.Answer == Answer.FromMountCode).Text})";
+            else if (accepted.Count > 0 && invalid.Any(r => r.Answer == Answer.InvalidValue))
+                pattern = $"{member} checks the {probe.Parameter} only partly: {Labels(accepted)} accepted, {Labels(invalid.Where(r => r.Answer == Answer.InvalidValue))} refused";
             else
                 pattern = $"{member} refuses invalid values with the wrong error ({List(invalid.Select(r => r.Text).Distinct())})";
             var ok = invalid.All(r => r.Answer == Answer.InvalidValue) && refusedValid.Count == 0;
 
             var actual = new StringBuilder();
             actual.AppendLine($"{member}({probe.Parameter}):");
-            foreach (var r in rows) actual.AppendLine($"  {r.Value,3}{(r.Valid ? " (valid)" : "")}: {r.Text}");
-            var others = wrong.Where(w => w != member).ToList();
+            foreach (var r in rows) actual.AppendLine($"  {r.Value.Label}{(r.Value.Valid ? " (valid)" : "")}: {r.Text}");
+            var others = wrong.Where(w => w != member && probes.First(p => p.Member == w).Choices == probe.Choices).ToList();
             if (others.Count > 0) actual.AppendLine($"The same kind of argument is unchecked in: {List(others)}.");
 
             // The code: what it checks first, and where a null comes from.
             var body = Code(ctx, member);
-            var fix = new StringBuilder($"At the top of {member}, before anything uses it: if the {probe.Parameter} isn't {validText}, " +
-                                        "throw InvalidValueException (0x401)");
-            fix.Append(probe.Parameter == "axis" ? " (for example `if (axis < 0 || axis > 2) throw new InvalidValueException(...)`)." : " (for example `if (!Enum.IsDefined(direction)) throw new InvalidValueException(...)`).");
-            if (body is null) actual.AppendLine(NoSource);
+            var driverFix = $"At the top of {member}, before anything uses it: if the {probe.Parameter} isn't {probe.ValidText}, " +
+                            $"throw InvalidValueException (0x401) (for example {probe.Check}).";
+            var fix = new StringBuilder();
+            var driverChecks = false;
+            if (body is null) actual.AppendLine(NoSource(ctx));
             else
             {
                 var calls = Calls(body);
                 var nulls = Lines(body, @"return\s+null", comments: false);
-                var checks = Lines(body, @"InvalidValueException|Enum\.IsDefined|IsDefined\(", comments: false);
+                var checks = Lines(body, @"InvalidValueException|Enum\.IsDefined|IsDefined\(|\bCheck(Range|Rate|TrackingRate)\w*\s*\(", comments: false);
+                driverChecks = checks.Count > 0;
                 actual.AppendLine($"Code reviewed ({body[0].Location}): {(calls.Count > 0 ? $"it calls {List(calls)}" : "it calls no guard")}" +
-                                  $"{(checks.Count == 0 ? $"; nothing checks the {probe.Parameter} (no InvalidValueException or Enum.IsDefined)" : "")}.");
+                                  $"{(checks.Count == 0 ? $"; nothing checks the {probe.Parameter} (no InvalidValueException, Enum.IsDefined or CheckRange)" : "")}.");
                 if (nulls.Count > 0)
                 {
                     actual.AppendLine("It returns null:");
                     actual.AppendLine(Quote(nulls));
-                    fix.Append($" Replace the `return null` ({nulls[0].Location}) with that throw.");
                 }
+                if (checks.Count > 0 && accepted.Count > 0)
+                {
+                    actual.AppendLine("It has checks, yet values were accepted:");
+                    actual.AppendLine(Quote(checks));
+                    // A check of a value worked out from the arguments, not of the arguments themselves.
+                    foreach (var check in checks)
+                    {
+                        var root = Regex.Match(SourceLocator.StripComment(check.Text), @"Check\w*\s*\(\s*([A-Za-z_]\w*)");
+                        if (!root.Success) continue;
+                        var derived = body.Skip(1).FirstOrDefault(l => !l.IsComment && l.Line < check.Line
+                            && Regex.IsMatch(l.Text, $@"\b(?:var|double|float|int)\s+{root.Groups[1].Value}\s*="));
+                        if (derived is null) continue;
+                        actual.AppendLine($"It checks {root.Groups[1].Value}, worked out from the arguments, not the arguments themselves:");
+                        actual.AppendLine(Quote([derived]));
+                        fix.Append($"{member} checks {root.Groups[1].Value} ({check.Location}), which {derived.Location} works out from the arguments: " +
+                                   "a value outside the range can come out of that inside it (right ascension wraps, a transform changes it). Check the arguments themselves first. ");
+                        break;
+                    }
+                    // A check copied from another member raises an error that names that member.
+                    var named = checks.Select(l => Regex.Match(l.Text, @"""([A-Z]\w+)""")).FirstOrDefault(m => m.Success && m.Groups[1].Value != member);
+                    if (named is not null)
+                        fix.Append($"Its range check's error names {named.Groups[1].Value} (copied from there?): name {member}. ");
+                }
+                if (nulls.Count > 0) driverFix += $" Replace the `return null` ({nulls[0].Location}) with that throw.";
             }
+
+            // HTTP 400: the server's binding refused the value; the controller action's parameters show why.
+            if (invalid.Any(r => r.Answer == Answer.ServerRefused))
+            {
+                var routes = ctx.Locator.Search(ctx.Target.Codebase, $@"Route\(""\{{DeviceNumber\}}/{member.ToLowerInvariant()}""\)", 4);
+                var bound = routes.SelectMany(route => ctx.Locator.Search(ctx.Target.Codebase,
+                        @"\]\s*(TelescopeAxis|GuideDirection|DriveRate|PierSide|PointingState)\s+\w+\s*[,)=]", 400)
+                    .Where(l => l.File == route.File && l.Line > route.Line && l.Line <= route.Line + 8)).ToList();
+                if (bound.Count > 0)
+                {
+                    actual.AppendLine("The Alpaca controller takes it as an enum, so ASP.NET's model validation answers HTTP 400 for any number that isn't one of its values, before the driver is called:");
+                    actual.AppendLine(Quote(bound));
+                    fix.Append($"In the Alpaca controller ({bound[0].Location}), take the parameter as an int and cast it in the call, so the value reaches {member} and its InvalidValueException comes back as HTTP 200 with ErrorNumber 0x401. ");
+                }
+                else
+                    fix.Append($"The Alpaca server's request validation refuses the value (HTTP 400) before {member} is called: let a value that parses through (bind it as a number, not an enum or a [Range]) so the driver judges it and its InvalidValueException comes back as HTTP 200 with ErrorNumber 0x401. Keep HTTP 400 for values that can't be parsed. ");
+            }
+            if (!(invalid.All(r => r.Answer == Answer.ServerRefused) && driverChecks) && !invalid.All(r => r.Answer == Answer.InvalidValue))
+                fix.Append(invalid.All(r => r.Answer == Answer.ServerRefused) ? "The driver must then refuse it itself: " + driverFix + " " : driverFix + " ");
             if (invalid.Any(r => r.Answer == Answer.FromMountCode))
-                fix.Append($" Check it in the driver rather than letting the mount code's exception through: clients get a DriverException they can't tell from a fault.");
+                fix.Append("Check it in the driver rather than letting the mount code's exception through: clients get a DriverException they can't tell from a fault. ");
             if (others.Count > 0)
-                fix.Append($" {List(others)} {(others.Count == 1 ? "needs" : "need")} the same check: one shared helper (as CheckRange is for numbers) keeps them alike.");
+                fix.Append($"{List(others)} {(others.Count == 1 ? "needs" : "need")} the same kind of check: one shared helper (as CheckRange is for numbers) keeps them alike. ");
             if (refusedValid.Count > 0)
-                fix.Append($" It also refuses valid values ({List(refusedValid.Select(r => $"{r.Value}: {r.Text}"))}): those must work.");
+                fix.Append($"It also refuses valid values ({List(refusedValid.Select(r => $"{r.Value.Label}: {r.Text}"))}): those must work.");
 
             ctx.Report($"Arguments.{member}", member, ok ? Outcome.Info : Outcome.Fail,
-                $"{member}: {pattern}.", expected: said + $"\n\nExpected: InvalidValueException for any {probe.Parameter} that isn't {validText}.",
-                actual: actual.ToString().TrimEnd(), fix: ok ? null : fix.ToString());
+                $"{member}: {pattern}.", expected: said + $"\n\nExpected: InvalidValueException for any {probe.Parameter} that isn't {probe.ValidText}.",
+                actual: actual.ToString().TrimEnd(), fix: ok ? null : fix.ToString().Trim());
         }
     }
+
+    // ---------- Rate offsets at the other tracking rates ----------
+
+    /// <summary>An offset to diagnose, set large enough to measure in a few seconds (0.5 s of RA per sidereal second is 7.5"/s).</summary>
+    private sealed record OffsetProbe(string Member, double Value, string Unit, Func<ITelescopeV4, double> Get, Action<ITelescopeV4, double> Set);
+
+    /// <summary>How long each movement is measured for.</summary>
+    private const double OffsetSeconds = 3;
+
+    /// <summary>
+    /// Why RightAscensionRate or DeclinationRate isn't 0 (or can be written) at a tracking rate other than sidereal:
+    /// whether the mount still applies the offset there (measured against the same rate without one) or only the
+    /// reading is wrong, what writing one there does, and what is left on going back to sidereal; with the offset's
+    /// getter and TrackingRate's setter reviewed.
+    /// </summary>
+    private static async Task RateOffsetsAsync(CheckContext ctx, List<CheckResult> found, string said)
+    {
+        var c = ctx.Caps;
+        var members = found.Select(r => r.Member).Where(m => m is "RightAscensionRate" or "DeclinationRate").Distinct().ToList();
+        void Skip(string why)
+        {
+            foreach (var m in members) ctx.Report($"RateOffsets.{m}", m, Outcome.Skipped, why, expected: said);
+        }
+        if (!ctx.Options.AllowMotion) { Skip("The offsets are measured with the mount tracking at them: turn on Move the mount."); return; }
+        if ((await ctx.TryAsync(t => t.AtPark)).Value) { Skip("The mount is parked: unpark it to measure the offsets."); return; }
+        var listed = await ctx.TryAsync(t => Values.Rates(t.TrackingRates));
+        var others = listed is { Ok: true, Value: { } l } ? l.Where(r => r != DriveRate.Sidereal).Distinct().ToList() : [];
+        if (others.Count == 0) { Skip("The mount lists no tracking rate but sidereal, so there's nothing to diagnose."); return; }
+
+        var probes = new List<OffsetProbe>();
+        if (c.CanSetRightAscensionRate) probes.Add(new("RightAscensionRate", 0.5, "s of RA per sidereal second", t => t.RightAscensionRate, (t, v) => t.RightAscensionRate = v));
+        if (c.CanSetDeclinationRate) probes.Add(new("DeclinationRate", 10, "\"/s", t => t.DeclinationRate, (t, v) => t.DeclinationRate = v));
+        // The rate tier 1 found it at first, else the first listed.
+        var measured = others.FirstOrDefault(r => found.Any(f => f.Id.EndsWith(r.ToString(), StringComparison.Ordinal)), others[0]);
+
+        var originalRate = await ctx.TryAsync(t => t.TrackingRate);
+        var originalTracking = await ctx.TryAsync(t => t.Tracking);
+        var reads = new Dictionary<(string, DriveRate), string>();
+        var writes = new Dictionary<string, string>();
+        var backAtSidereal = new Dictionary<string, string>();
+        var refused = new Dictionary<string, string>();
+        (double Ra, double Dec)? baseline = null, withOffsets = null;
+        try
+        {
+            if (originalTracking is { Ok: true, Value: false }) await ctx.TryAsync(t => t.Tracking = true);
+
+            // The same rate with no offset: how the mount moves there anyway (King, lunar and solar move RA a little).
+            await SetOffsetsAsync(ctx, probes, 0);
+            if ((await ctx.TryAsync(t => t.TrackingRate = measured)).Ok) baseline = await MovementAsync(ctx);
+
+            // The offsets set at sidereal, then the rate changed: what's read, and how the mount moves.
+            await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
+            foreach (var p in probes)
+                if (await ctx.TryAsync(t => p.Set(t, p.Value)) is { Ok: false } w) refused[p.Member] = w.ErrorText ?? "refused";
+            foreach (var rate in others.OrderBy(r => r != measured))
+            {
+                if (!(await ctx.TryAsync(t => t.TrackingRate = rate)).Ok) continue;
+                foreach (var p in probes)
+                {
+                    var read = await ctx.TryAsync(p.Get);
+                    reads[(p.Member, rate)] = read.Ok ? CheckContext.Show(read.Value) : read.ErrorText ?? "error";
+                }
+                if (rate != measured) continue;
+                withOffsets = await MovementAsync(ctx);
+                // Writing one at this rate (half the value, so a write that takes shows on reading back at sidereal).
+                foreach (var p in probes)
+                {
+                    var write = await ctx.TryAsync(t => p.Set(t, p.Value / 2));
+                    writes[p.Member] = write.Ok ? "accepted" : $"refused ({write.ErrorText})";
+                }
+            }
+            await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
+            foreach (var p in probes)
+            {
+                var back = await ctx.TryAsync(p.Get);
+                backAtSidereal[p.Member] = back.Ok ? CheckContext.Show(back.Value) : back.ErrorText ?? "error";
+            }
+        }
+        finally
+        {
+            await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
+            await SetOffsetsAsync(ctx, probes, 0);
+            if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
+            if (originalTracking.Ok) await ctx.TryAsync(t => t.Tracking = originalTracking.Value);
+        }
+
+        // How much of each offset the mount still applied at the measured rate (1 = all of it).
+        double? Applied(OffsetProbe p)
+        {
+            if (baseline is not { } b || withOffsets is not { } o || refused.ContainsKey(p.Member)) return null;
+            var extra = p.Member == "RightAscensionRate" ? (o.Ra - b.Ra) / 1.0027379 : o.Dec - b.Dec;
+            return extra / p.Value;
+        }
+        var shared = probes.Select(p => (p.Member, Reads: others.Any(r => reads.TryGetValue((p.Member, r), out var v) && v != "0"), Applied: Applied(p))).ToList();
+
+        var tracking = Code(ctx, "TrackingRate");
+        var trackingSetter = tracking is null ? null : SetterOf(tracking);
+        foreach (var member in members)
+        {
+            var p = probes.FirstOrDefault(x => x.Member == member);
+            if (p is null)
+            {
+                ctx.Report($"RateOffsets.{member}", member, Outcome.Skipped, $"Can{(member == "RightAscensionRate" ? "SetRightAscensionRate" : "SetDeclinationRate")} is false: {member} can't be set.", expected: said);
+                continue;
+            }
+            var wrongRates = others.Where(r => reads.TryGetValue((member, r), out var v) && v != "0").ToList();
+            var readsWrong = wrongRates.Count > 0;
+            var applied = Applied(p);
+            var appliedState = applied switch { null => "unknown", >= 0.5 => "yes", <= 0.2 => "no", _ => "partly" };
+
+            var actual = new StringBuilder();
+            actual.AppendLine(FormattableString.Invariant($"{member} = {p.Value} {p.Unit} set at sidereal rate, then TrackingRate changed:"));
+            foreach (var r in others)
+                actual.AppendLine($"  {r}: reads {(reads.TryGetValue((member, r), out var v) ? v : "not read (the rate couldn't be set)")}");
+            if (refused.TryGetValue(member, out var why)) actual.AppendLine($"The offset was refused at sidereal rate ({why}), so its movement wasn't measured.");
+            else if (applied is { } a)
+                actual.AppendLine(FormattableString.Invariant($"Measured over {OffsetSeconds:0} s at {measured}, against {measured} with no offset: the mount moved {a * 100:0}% of the offset ") +
+                                  (appliedState switch { "yes" => "(still applied)", "no" => "(not applied)", _ => "(partly applied)" }) + ".");
+            else actual.AppendLine("The movement couldn't be measured (a position read or the rate change failed).");
+            if (writes.TryGetValue(member, out var write)) actual.AppendLine($"Writing {member} at {measured}: {write}.");
+            if (backAtSidereal.TryGetValue(member, out var back)) actual.AppendLine($"Back at sidereal rate, {member} reads {back}.");
+            var otherMember = shared.FirstOrDefault(s => s.Member != member);
+            if (otherMember.Member is not null && otherMember.Reads == readsWrong && readsWrong)
+                actual.AppendLine($"{otherMember.Member} does the same: one cause behind both.");
+
+            string pattern, fixText;
+            var at = string.Join(", ", wrongRates);
+            if (readsWrong && appliedState is "yes" or "partly")
+            {
+                pattern = $"{member} carries on at {at}: the mount keeps moving at the offset and reports it";
+                fixText = $"When TrackingRate changes from driveSidereal, stop applying the offsets (suspend or clear them), and have {member} read 0 while TrackingRate isn't driveSidereal.";
+            }
+            else if (readsWrong && appliedState == "no")
+            {
+                pattern = $"only {member}'s reading is wrong: the mount drops the offset at {measured}, but {member} still returns the value set";
+                fixText = $"In {member}'s getter, return 0 while TrackingRate isn't driveSidereal (for example `return TrackingRate == DriveRate.Sidereal ? offset : 0;`).";
+            }
+            else if (readsWrong)
+            {
+                pattern = $"{member} reads the offset set at sidereal rate at {at} (whether the mount still applies it couldn't be measured)";
+                fixText = $"{member} must read 0 while TrackingRate isn't driveSidereal; and make sure the mount stops applying it there.";
+            }
+            else if (appliedState is "yes" or "partly")
+            {
+                pattern = $"{member} reads 0 at {measured}, but the mount still moves at the offset";
+                fixText = "When TrackingRate changes from driveSidereal, stop applying the offsets: the reading is right, the movement isn't.";
+            }
+            else
+            {
+                pattern = $"{member} now reads 0 at every other rate{(appliedState == "no" ? ", and the offset isn't applied there" : "")}";
+                fixText = "";
+            }
+            if (write == "accepted")
+                fixText += $" Writing {member} while TrackingRate isn't driveSidereal must be refused with InvalidOperationException.";
+
+            // The code: what the getter returns, and whether TrackingRate's setter touches the offsets.
+            var body = Code(ctx, member);
+            if (body is null) actual.AppendLine(NoSource(ctx));
+            else
+            {
+                var getter = GetterOf(body);
+                var looks = getter.Where(l => !l.IsComment && Regex.IsMatch(l.Text, @"TrackingRate|Sidereal")).ToList();
+                var returns = getter.Where(l => !l.IsComment && Regex.IsMatch(l.Text, @"\breturn\b|=>")).ToList();
+                actual.AppendLine($"Code reviewed ({body[0].Location}): {(looks.Count > 0 ? "its getter looks at TrackingRate:" : "its getter doesn't look at TrackingRate:")}");
+                actual.AppendLine(Quote(looks.Count > 0 ? looks : returns.Take(2)));
+                if (readsWrong && looks.Count > 0)
+                    fixText += $" The getter does check TrackingRate ({looks[0].Location}), yet {member} read {reads[(member, wrongRates[0])]} at {wrongRates[0]}: check that the TrackingRate it reads is the one clients set (not a copy, or a setting saved later).";
+            }
+            if (trackingSetter is { Count: > 0 })
+            {
+                var touches = trackingSetter.Where(l => !l.IsComment && Regex.IsMatch(l.Text, @"RightAscensionRate|DeclinationRate|Rate(Ra|Dec)|Offset", RegexOptions.IgnoreCase)).ToList();
+                if (touches.Count > 0)
+                {
+                    actual.AppendLine("TrackingRate's setter touches the offsets:");
+                    actual.AppendLine(Quote(touches));
+                }
+                else
+                {
+                    actual.AppendLine($"TrackingRate's setter ({trackingSetter[0].Location}) doesn't touch the offsets.");
+                    if (appliedState is "yes" or "partly") fixText += $" TrackingRate's setter ({trackingSetter[0].Location}) is the place: it changes the rate but leaves the offsets running.";
+                }
+            }
+
+            var ok = !readsWrong && appliedState is "no" or "unknown" && write != "accepted";
+            ctx.Report($"RateOffsets.{member}", member, ok ? Outcome.Info : Outcome.Fail, $"{member}: {pattern}.",
+                expected: said + $"\n\nExpected: {member} reads 0 while TrackingRate isn't driveSidereal, and the mount doesn't move at the offset there.",
+                actual: actual.ToString().TrimEnd(), fix: ok ? null : fixText.Trim());
+        }
+    }
+
+    private static async Task SetOffsetsAsync(CheckContext ctx, List<OffsetProbe> probes, double value)
+    {
+        foreach (var p in probes) await ctx.TryAsync(t => p.Set(t, value));
+    }
+
+    /// <summary>How fast the mount moves: RA in seconds of RA per second, Dec in arc-seconds per second; null if a read fails.</summary>
+    private static async Task<(double Ra, double Dec)?> MovementAsync(CheckContext ctx)
+    {
+        await Task.Delay(300, ctx.Token); // let the new rate take
+        var ra0 = await ctx.TryAsync(t => t.RightAscension);
+        var dec0 = await ctx.TryAsync(t => t.Declination);
+        var clock = Stopwatch.StartNew();
+        await Task.Delay(TimeSpan.FromSeconds(OffsetSeconds), ctx.Token);
+        var ra1 = await ctx.TryAsync(t => t.RightAscension);
+        var dec1 = await ctx.TryAsync(t => t.Declination);
+        var s = clock.Elapsed.TotalSeconds;
+        if (!(ra0.Ok && dec0.Ok && ra1.Ok && dec1.Ok)) return null;
+        return (Values.HoursDiff(ra1.Value, ra0.Value) * 3600 / s, (dec1.Value - dec0.Value) * 3600 / s);
+    }
+
+    /// <summary>A property's getter lines (up to its setter).</summary>
+    private static List<SourceLine> GetterOf(IReadOnlyList<SourceLine> body)
+        => [.. body.Skip(1).TakeWhile(l => !Regex.IsMatch(l.Text, @"^\s*(private\s+|internal\s+)?set\b"))];
+
+    /// <summary>A property's setter lines (from its setter on), or none.</summary>
+    private static List<SourceLine> SetterOf(IReadOnlyList<SourceLine> body)
+        => [.. body.Skip(1).SkipWhile(l => !Regex.IsMatch(l.Text, @"^\s*(private\s+|internal\s+)?set\b"))];
 
     // ---------- Preconditions ----------
 
@@ -378,7 +737,7 @@ public static class AreaDiagnostics
                                $": put them back ({commented[0].Location}). ");
                 }
             }
-            if (body is null) actual.AppendLine(NoSource);
+            if (body is null) actual.AppendLine(NoSource(ctx));
             var untested = (memberNotTracking && !offRows.ContainsKey(member))
                            || (memberSlewing && (slewingRow is null || slewingRow.StartsWith("not tested", StringComparison.Ordinal)));
             var ok = problems.Count == 0;
@@ -456,7 +815,7 @@ public static class AreaDiagnostics
                                     "Disconnect, Name, Description, DriverInfo, DriverVersion, InterfaceVersion and SupportedActions): " +
                                     "throw NotConnectedException (0x407) when the device isn't connected, that is whenever Connected reads false.");
         var bodies = found.Select(r => r.Member).Distinct().Select(m => (Member: m, Body: Code(ctx, m))).Where(x => x.Body is not null).ToList();
-        if (bodies.Count == 0) actual.AppendLine(NoSource);
+        if (bodies.Count == 0) actual.AppendLine(NoSource(ctx));
         else
         {
             actual.AppendLine("Code reviewed:");
@@ -535,7 +894,7 @@ public static class AreaDiagnostics
         var fix = new StringBuilder("After the mount stops, keep Slewing true for SlewSettleTime seconds before clearing it.");
         var uses = ctx.Locator.Search(ctx.Target.Codebase, @"SlewSettleTime", 20)
             .Where(l => !l.IsComment && !Regex.IsMatch(l.Text, @"\b(?:public|private|internal)\b.*\bSlewSettleTime\b\s*(?:$|\{|=>)")).ToList();
-        if (uses.Count == 0 && ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource);
+        if (uses.Count == 0 && ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource(ctx));
         else if (uses.Count > 0)
         {
             actual.AppendLine("Code reviewed: where the settle time is used:");
@@ -805,7 +1164,7 @@ public static class AreaDiagnostics
         var fix = new StringBuilder();
         var delays = ctx.Locator.Search(ctx.Target.Codebase, @"Delay\w*\(.*SlewSettleTime|SlewSettleTime.*(Delay|Sleep|Wait)", 10).Where(l => !l.IsComment).ToList();
         var stages = ctx.Locator.Search(ctx.Target.Codebase, @"(?i)precision\s*(slew|goto)|PrecisionGoto\(", 20);
-        if (delays.Count == 0 && ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource);
+        if (delays.Count == 0 && ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource(ctx));
         var before = new List<(SourceLine Delay, SourceLine Stage)>();
         StageReview? stage = null;
         if (delays.Count > 0)
@@ -947,7 +1306,7 @@ public static class AreaDiagnostics
         var fix = new StringBuilder("At the top of AxisRates, return an empty collection when CanMoveAxis(axis) is false (the collection must " +
                                     "be empty for an axis that can't be moved, not left out or null).");
         var body = Code(ctx, "AxisRates");
-        if (body is null) actual.AppendLine(NoSource);
+        if (body is null) actual.AppendLine(NoSource(ctx));
         else
         {
             var returns = Lines(body, @"return\b", comments: false);
@@ -995,7 +1354,7 @@ public static class AreaDiagnostics
         var source = fileVersion is not null && v == fileVersion?.Trim() ? "the program's whole file (assembly) version" : "a full build version";
         var fix = new StringBuilder($"Return only the major and minor version from DriverVersion (\"{majorMinor}\").");
         var body = Code(ctx, "DriverVersion");
-        if (body is null) actual.AppendLine(NoSource);
+        if (body is null) actual.AppendLine(NoSource(ctx));
         else
         {
             var lines = Lines(body, @"Version|return", comments: false).Where(l => !Regex.IsMatch(l.Text, @"Monitor|CheckVersion")).ToList();
@@ -1200,7 +1559,7 @@ public static class AreaDiagnostics
             if (missing.Contains("64-bit") && !code.Any(l => l.Text.Contains("Registry64")))
                 fix.Append(" The registration code never opens RegistryView.Registry64.");
         }
-        else if (ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource);
+        else if (ctx.Locator.RootOf(ctx.Target.Codebase) is null) actual.AppendLine(NoSource(ctx));
         ctx.Report(id, "COM registration", outcome, message,
             expected: said + "\n\nExpected: a server registered for 64-bit and 32-bit clients, and both able to create the driver.",
             actual: actual.ToString().TrimEnd(), fix: outcome == Outcome.Info ? null : fix.ToString().Trim(),

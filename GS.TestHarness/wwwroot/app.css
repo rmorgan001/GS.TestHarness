@@ -480,6 +480,10 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .folder-item.marked .icon { color: var(--green); }
 .folder-item small { margin-left: auto; color: var(--green); font-size: .78rem; white-space: nowrap; }
 .source-folder p { margin: 0; overflow-wrap: anywhere; }
+.source-examples { font-size: .85rem; }
+.source-examples summary { cursor: pointer; color: var(--muted, inherit); }
+.source-examples ul { margin: .3rem 0; padding-left: 1.2rem; display: grid; gap: .15rem; }
+.source-examples .mono { overflow-wrap: anywhere; }
 .drop-zone {
     position: absolute; inset: 0; display: grid; place-items: center; border-radius: var(--radius);
     background: var(--green-soft); border: 2px dashed var(--green); color: var(--green-hover); font-family: var(--font-display);
@@ -688,3 +692,15 @@ body:has(.print-page) { background: #fff; }
     .print-actions, #blazor-error-ui, #components-reconnect-modal { display: none !important; }
     .print-page { padding: 0; max-width: none; }
 }
+
+/* The picked server's settings, folded away under the server with a reminder to check them. */
+.server-settings { margin-top: .9rem; border: 1px solid var(--line); border-radius: 8px; padding: .45rem .75rem; }
+.server-settings > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; list-style: none; }
+.server-settings > summary::-webkit-details-marker { display: none; }
+/* The chevron: right while closed, down while open. */
+.server-settings-toggle { display: inline-flex; transition: transform .15s ease; }
+.server-settings[open] .server-settings-toggle { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .server-settings-toggle { transition: none; } }
+.server-settings-title { font-weight: 600; }
+.server-settings-warn { color: var(--warning); font-size: .85rem; }
+.server-settings[open] > summary { margin-bottom: .25rem; }

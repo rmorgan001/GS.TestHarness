@@ -22,7 +22,7 @@ namespace GS.TestHarness.Services;
 /// <summary>
 /// Where each server's source code is on this computer, as the person running the harness set it (the Options tab's
 /// Source code): saved to source-folders.json beside the reports folder, so it's their own, not the app's. Applied to
-/// the <see cref="SourceLocator"/> when the app starts; an empty folder means the configured default.
+/// the <see cref="SourceLocator"/> when the app starts; an empty folder means no code review.
 /// </summary>
 public sealed class SourceStore
 {
@@ -44,7 +44,23 @@ public sealed class SourceStore
         _log = log;
         _folders = Load();
         foreach (var (codebase, folder) in _folders) _locator.SetFolder(codebase, folder);
+        // A GitHub repository set earlier but not downloaded on this computer (or since deleted): fetch it now.
+        foreach (var (codebase, folder) in _folders)
+            if (GitHubSource.Parse(folder) is { LocalFolder: null } repo)
+                _ = Task.Run(async () =>
+                {
+                    if (await repo.DownloadAsync() is { } problem) _log?.LogWarning("{Repo}: {Problem}", repo.Display, problem);
+                    else _locator.SetFolder(codebase, folder);
+                });
     }
+
+    /// <summary>The GitHub repositories being downloaded now, by codebase.</summary>
+    public bool Downloading(Codebase codebase)
+    {
+        lock (_gate) return _downloading.Contains(codebase);
+    }
+
+    private readonly HashSet<Codebase> _downloading = [];
 
     /// <summary>The folder set for the codebase, or "" for the default.</summary>
     public string FolderOf(Codebase codebase)
@@ -52,8 +68,12 @@ public sealed class SourceStore
         lock (_gate) return _folders.GetValueOrDefault(codebase, "");
     }
 
-    /// <summary>Sets (or, empty, clears) the codebase's folder and saves it. Returns why it can't be used, or null.</summary>
-    public string? Set(Codebase codebase, string? folder)
+    /// <summary>
+    /// Sets (or, empty, clears) the codebase's folder, or GitHub repository URL, and saves it. A URL is downloaded
+    /// (again, so it's the latest). Returns why it can't be used, or null.
+    /// </summary>
+    /// <param name="refresh">Download a GitHub repository again even if a copy is here (false when a server's settings are recalled).</param>
+    public async Task<string?> SetAsync(Codebase codebase, string? folder, CancellationToken token = default, bool refresh = true)
     {
         folder = folder?.Trim().Trim('"') ?? "";
         lock (_gate)
@@ -61,6 +81,22 @@ public sealed class SourceStore
             if (folder.Length == 0) _folders.Remove(codebase);
             else _folders[codebase] = folder;
             Save();
+        }
+        if (GitHubSource.Parse(folder) is { } repo && (refresh || repo.LocalFolder is null))
+        {
+            lock (_gate) _downloading.Add(codebase);
+            try
+            {
+                if (await repo.DownloadAsync(token) is { } problem)
+                {
+                    _locator.SetFolder(codebase, folder);
+                    return problem;
+                }
+            }
+            finally
+            {
+                lock (_gate) _downloading.Remove(codebase);
+            }
         }
         return _locator.SetFolder(codebase, folder);
     }

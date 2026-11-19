@@ -27,6 +27,7 @@ public class EngineTests(ITestOutputHelper output)
         AllowMotion = true,
         AllowSettingsWrites = true,
         AllowSetPark = true,
+        FlipAngle = 15, // the fake mount's flip zone
         IncludeProtocol = false, // no HTTP server here
         IncludeDisconnected = true,
         SlewTimeoutSeconds = 10,

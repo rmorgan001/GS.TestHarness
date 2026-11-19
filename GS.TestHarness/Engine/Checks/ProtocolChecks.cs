@@ -39,14 +39,24 @@ public sealed class ProtocolChecks : ICheckGroup
 
     private static readonly string[] ReplyFields = ["ClientTransactionID", "ServerTransactionID", "ErrorNumber", "ErrorMessage"];
 
-    public async Task RunAsync(CheckContext ctx)
+    /// <summary>An HTTP client for the target's Alpaca server (with its credentials, if any).</summary>
+    internal static HttpClient CreateHttp(CheckContext ctx)
     {
-        using var http = new HttpClient { BaseAddress = new Uri(ctx.Target.BaseUrl), Timeout = ctx.CallTimeout };
+        var http = new HttpClient { BaseAddress = new Uri(ctx.Target.BaseUrl), Timeout = ctx.CallTimeout };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("GS.TestHarness/1.0");
         if (!string.IsNullOrEmpty(ctx.Target.UserName))
             http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic",
                 Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ctx.Target.UserName}:{ctx.Target.Password}")));
-        var device = $"api/v1/telescope/{ctx.Target.DeviceNumber}";
+        return http;
+    }
+
+    /// <summary>The device's path on the Alpaca server.</summary>
+    internal static string DevicePath(CheckContext ctx) => $"api/v1/telescope/{ctx.Target.DeviceNumber}";
+
+    public async Task RunAsync(CheckContext ctx)
+    {
+        using var http = CreateHttp(ctx);
+        var device = DevicePath(ctx);
 
         await ManagementAsync(ctx, http);
         await TransactionIdsAsync(ctx, http, device);
@@ -58,7 +68,7 @@ public sealed class ProtocolChecks : ICheckGroup
         await DiscoveryWideAsync(ctx);
     }
 
-    private sealed record Reply(HttpStatusCode Status, JsonElement? Json, string Body, double Ms, string? ContentType, Exception? Error)
+    internal sealed record Reply(HttpStatusCode Status, JsonElement? Json, string Body, double Ms, string? ContentType, Exception? Error)
     {
         public bool IsJson => Json is { ValueKind: JsonValueKind.Object };
         public JsonElement? Field(string name) => IsJson && Json!.Value.TryGetProperty(name, out var v) ? v : null;
@@ -71,7 +81,7 @@ public sealed class ProtocolChecks : ICheckGroup
         private static string Trim(string s) => s.Length > 300 ? s[..300] + "…" : s;
     }
 
-    private static async Task<Reply> SendAsync(CheckContext ctx, HttpClient http, HttpMethod method, string path,
+    internal static async Task<Reply> SendAsync(CheckContext ctx, HttpClient http, HttpMethod method, string path,
         IEnumerable<KeyValuePair<string, string>>? form = null)
     {
         ctx.Token.ThrowIfCancellationRequested();
@@ -92,7 +102,7 @@ public sealed class ProtocolChecks : ICheckGroup
         }
     }
 
-    private static Task<Reply> GetAsync(CheckContext ctx, HttpClient http, string path) => SendAsync(ctx, http, HttpMethod.Get, path);
+    internal static Task<Reply> GetAsync(CheckContext ctx, HttpClient http, string path) => SendAsync(ctx, http, HttpMethod.Get, path);
 
     private static Task<Reply> PutAsync(CheckContext ctx, HttpClient http, string path, params (string Key, string Value)[] form)
         => SendAsync(ctx, http, HttpMethod.Put, path, form.Select(f => KeyValuePair.Create(f.Key, f.Value)));

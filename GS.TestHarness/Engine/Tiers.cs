@@ -114,7 +114,13 @@ public static class Tiers
         // The ASCOM Conformance Check's tier 2 for its other problems: each takes apart one kind of problem, for every
         // member tier 1 found it with, by testing around it and reviewing the member's source (AreaDiagnostics).
         new(2, AreaDiagnostics.Arguments, ["Diagnose.Arguments.{member}"],
-            "Every invalid value (and the valid ones) of a member that took an invalid axis or direction: no check, the wrong error, or a value that reaches the mount code; with the member's code reviewed.", AnyMember: true),
+            "Every invalid value (and the valid ones) of a member that took an invalid argument (an axis, a direction, coordinates, a setting's value): no check, a partial one, the wrong error, a value that reaches the mount code, or HTTP 400 from the Alpaca server; with the member's code reviewed.", AnyMember: true),
+        new(2, AreaDiagnostics.ClientConnections, ["Diagnose.Clients.Connections"],
+            "Two more clients connect beside the run's own; one disconnects, connects again, and they all disconnect, every client's Connected and a read after each step: a count of clients, or one Disconnect turning the hardware off for all; the connection code reviewed.", AnyMember: true),
+        new(2, AreaDiagnostics.AlpacaRequests, ["Diagnose.Alpaca.Binding", "Diagnose.Alpaca.Setup"],
+            "Requests straight to the Alpaca server: values the driver must judge against ones nobody can parse, bad ClientTransactionIDs, and the setup pages: what the server's own request validation refuses with HTTP 400, and what a setup page throws; the controller code reviewed.", AnyMember: true),
+        new(2, AreaDiagnostics.RateOffsets, ["Diagnose.RateOffsets.{member}"],
+            "An offset set at sidereal rate, read at each other tracking rate and its movement measured at one: the mount still applying it, or only the reading wrong; with the getter and TrackingRate's setter reviewed.", AnyMember: true),
         new(2, AreaDiagnostics.Preconditions, ["Diagnose.Preconditions.{member}"],
             "The member and its siblings with tracking off, or during a slew: whether only this one lacks the guard, and what it does instead; the guards the siblings' code has and this one's lacks.", AnyMember: true),
         new(2, AreaDiagnostics.NotConnected, ["Diagnose.NotConnected"],

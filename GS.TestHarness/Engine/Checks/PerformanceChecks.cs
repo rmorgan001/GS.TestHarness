@@ -53,10 +53,12 @@ public sealed class PerformanceChecks : ICheckGroup
                 sourceMember: slow.FirstOrDefault()?.Member);
         }
 
-        // Calls that never answered (the harness gave up waiting): a hang, whatever the call.
-        var hung = results.Where(r => r.Actual?.Contains("no answer within", StringComparison.OrdinalIgnoreCase) == true
-                                      || r.Message.Contains("did not answer", StringComparison.OrdinalIgnoreCase)
-                                      || r.Message.Contains("no answer", StringComparison.OrdinalIgnoreCase)).ToList();
+        // Calls that never answered (the harness gave up waiting): a hang, whatever the call. Not UDP discovery: a
+        // discovery request nobody answers is a missing reply (the Discovery checks report it), not a call that hung.
+        var hung = results.Where(r => !(r.Group == "Protocol" && r.Id.StartsWith("Discovery", StringComparison.Ordinal))
+                                      && (r.Actual?.Contains("no answer within", StringComparison.OrdinalIgnoreCase) == true
+                                          || r.Message.Contains("did not answer", StringComparison.OrdinalIgnoreCase)
+                                          || r.Message.Contains("no answer", StringComparison.OrdinalIgnoreCase))).ToList();
         ctx.Report("Hangs", "all members", hung.Count == 0 ? Outcome.Pass : Outcome.Fail,
             hung.Count == 0 ? "No call hung: every one answered or failed within the call timeout."
                 : $"{hung.Count} call(s) never answered within {ctx.Options.CallTimeoutSeconds} s.",

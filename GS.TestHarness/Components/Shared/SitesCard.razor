@@ -24,7 +24,9 @@
     <h3>Sites <small class="muted">one report per site ticked</small></h3>
 
     <label class="check">
-        <input type="checkbox" checked="@_s.UseServer" disabled="@Disabled" @onchange="e => UseServer((bool)e.Value!)" />
+        @* Always ticked (and fixed) while it's the only site: the hemisphere sites are off for now. *@
+        <input type="checkbox" checked="@(_s.UseServer || !SiteStore.HemisphereSites)" disabled="@(Disabled || !SiteStore.HemisphereSites)"
+               title="@(SiteStore.HemisphereSites ? null : "The only site for now: always used")" @onchange="e => UseServer((bool)e.Value!)" />
         <span>Server's current settings <small>Whatever the server is set to now; nothing is changed.</small></span>
     </label>
 

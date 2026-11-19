@@ -40,20 +40,20 @@ public sealed class SourceFolderTests : IDisposable
     }
 
     [Fact]
-    public void A_folder_set_is_checked_saved_and_used()
+    public async Task A_folder_set_is_checked_saved_and_used()
     {
         var locator = new SourceLocator(Config, AppContext.BaseDirectory);
         var file = Path.Combine(_temp, "source-folders.json");
         var store = new SourceStore(locator, file, null);
         Assert.Null(locator.RootOf(Codebase.GSServer));
 
-        Assert.Contains("whole path", store.Set(Codebase.GSServer, "relative\\folder"));
-        Assert.Contains("no such folder", store.Set(Codebase.GSServer, Path.Combine(_temp, "missing")));
+        Assert.Contains("whole path", await store.SetAsync(Codebase.GSServer, "relative\\folder"));
+        Assert.Contains("no such folder", await store.SetAsync(Codebase.GSServer, Path.Combine(_temp, "missing")));
         Directory.CreateDirectory(Path.Combine(_temp, "empty"));
-        Assert.Contains("Telescope.cs", store.Set(Codebase.GSServer, Path.Combine(_temp, "empty")));
+        Assert.Contains("no telescope driver", await store.SetAsync(Codebase.GSServer, Path.Combine(_temp, "empty")));
 
         var repo = Repository();
-        Assert.Null(store.Set(Codebase.GSServer, $"\"{repo}\"")); // pasted with quotes, as Explorer's "Copy as path" gives it
+        Assert.Null(await store.SetAsync(Codebase.GSServer, $"\"{repo}\"")); // pasted with quotes, as Explorer's "Copy as path" gives it
         Assert.Equal(repo, locator.RootOf(Codebase.GSServer));
         Assert.Equal("GS.Ascom.SkyTelescope/Telescope.cs:3", locator.Find(Codebase.GSServer, "PulseGuide"));
 
@@ -63,7 +63,7 @@ public sealed class SourceFolderTests : IDisposable
         Assert.Equal(repo, again.RootOf(Codebase.GSServer));
 
         // Cleared: back to the default (not found here).
-        Assert.Null(store.Set(Codebase.GSServer, ""));
+        Assert.Null(await store.SetAsync(Codebase.GSServer, ""));
         Assert.Null(locator.RootOf(Codebase.GSServer));
         Assert.Equal("", store.FolderOf(Codebase.GSServer));
     }

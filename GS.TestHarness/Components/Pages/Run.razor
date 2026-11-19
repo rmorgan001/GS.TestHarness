@@ -24,6 +24,7 @@
 @inject DialogService Dialogs
 @inject RunPageState State
 @inject SourceLocator Locator
+@inject SourceStore SourceFolders
 
 <PageTitle>Run · GS Test Harness</PageTitle>
 
@@ -150,14 +151,21 @@ else
                         }
                     </div>
                 </div>
+                @* The server's settings, folded away: checked before each run (Start lists them, with ⚠ on any that look wrong). *@
+                <details class="server-settings">
+                    <summary>
+                        <span class="server-settings-toggle" aria-hidden="true"><Icon Kind="ChevronRight" Size="18" /></span>
+                        <span class="server-settings-title">Settings</span>
+                        <span class="server-settings-warn">⚠ Check these before starting a run</span>
+                    </summary>
                 @* Where this server's source is, for "where to check the code": each person's own path, set here on either test. *@
-                <SourceFolderField Codebase="server.Target.Codebase" Disabled="Runs.IsRunning" />
+                <SourceFolderField Codebase="server.Target.Codebase" Disabled="Runs.IsRunning" Changed="SaveOptions" />
                 @* What the server drives: the ConformU diagnoses' recommendations follow GSServer's code path for it. Saved at once. *@
                 <label class="mount-field" title="GSServer takes different code paths for its simulator and a real mount: the ConformU diagnoses and their recommendations follow this.">
                     <span>Mount <small class="muted">for the recommendations' code paths</small></span>
                     <select @bind="_mount" @bind:after="SaveOptions" disabled="@Runs.IsRunning">
                         <option value="@MountKind.Unknown">Not specified</option>
-                        <option value="@MountKind.Simulator">GSServer simulator</option>
+                        <option value="@MountKind.Simulator">Simulator</option>
                         <option value="@MountKind.RealMount">Real mount</option>
                     </select>
                 </label>
@@ -178,11 +186,12 @@ else
                         <input type="number" min="2" class="narrow-input" @bind="_callTimeout" @bind:after="SaveOptions" disabled="@Runs.IsRunning" />
                     </label>
                 </div>
-            }
-            @* The ConformU Debug Log Test only follows up the log's problems, at the server's own site: no sites. *@
-            @if (!conformU)
-            {
-                <SitesCard Disabled="Runs.IsRunning" />
+                @* The ConformU Debug Log Test only follows up the log's problems, at the server's own site: no sites. *@
+                @if (!conformU)
+                {
+                    <SitesCard Disabled="Runs.IsRunning" />
+                }
+                </details>
             }
             @if (dragging)
             {
@@ -433,7 +442,7 @@ else
 
 @code {
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
-    private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 15;
+    private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 0;
     private MountKind _mount = MountKind.Unknown;
     private bool _over;
 
@@ -446,6 +455,7 @@ else
         _extended = options.Extended;
         _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
         _mount = options.Mount;
+        RecallSettings();
         Runs.Changed += OnChanged;
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
@@ -476,7 +486,7 @@ else
         var codebase = server.Target.Codebase;
         var mount = _mount switch
         {
-            MountKind.Simulator => "• Mount: GSServer simulator.",
+            MountKind.Simulator => "• Mount: Simulator.",
             MountKind.RealMount => "• Mount: real mount.",
             _ => "⚠ Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is."
         };
@@ -489,7 +499,7 @@ else
             : $"• Timeouts: slew {slew} s, call {call} s.";
         var source = Locator.RootOf(codebase) is { } root
             ? $"• Source code: {root}"
-            : $"⚠ Source code: {codebase}'s source wasn't found, so findings won't name the code to check. Set its folder under the server.";
+            : "⚠ Source code: none set (or not found), so there's no code review and findings won't name the code to check. Set it under the server's Settings.";
         return SafetyWarning + "\n\nCheck these settings under the server before you start:\n" + string.Join("\n", mount, flip, timeouts, source);
     }
 
@@ -501,8 +511,53 @@ else
         FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount
     };
 
-    /// <summary>Remembers the options now (the Mount on the Server card), not only when a run starts.</summary>
-    private void SaveOptions() => Saved.SaveOptions(CurrentOptions());
+    /// <summary>
+    /// Remembers the options now, not only when a run starts: the run options, and the Settings section with the server
+    /// on the card, so they come back when it's dragged there again.
+    /// </summary>
+    private void SaveOptions()
+    {
+        Saved.SaveOptions(CurrentOptions());
+        if (Bench.Selected is { } server)
+        {
+            var settings = CurrentSettings(server);
+            if (server.Settings != settings) Servers.Update(server with { Settings = settings });
+        }
+    }
+
+    /// <summary>The Settings section's values now, for <paramref name="server"/>.</summary>
+    private ServerSettings CurrentSettings(ServerEntry server) => new()
+    {
+        SourcePath = SourceFolders.FolderOf(server.Target.Codebase),
+        Mount = _mount,
+        FlipAngle = Math.Clamp(_flipAngle, 0, 90),
+        SlewTimeoutSeconds = Math.Max(10, _slewTimeout),
+        CallTimeoutSeconds = Math.Max(2, _callTimeout)
+    };
+
+    /// <summary>The server whose settings the Settings section shows.</summary>
+    private string? _settingsFor;
+
+    /// <summary>
+    /// When another server is put on the card, recalls its settings (a server without any yet keeps the values shown,
+    /// and saves them as its own) and points the source code lookup at its path.
+    /// </summary>
+    private void RecallSettings()
+    {
+        if (Bench.Selected is not { } server || server.Id == _settingsFor) return;
+        _settingsFor = server.Id;
+        if (server.Settings is not { } settings)
+        {
+            Servers.Update(server with { Settings = CurrentSettings(server) });
+            return;
+        }
+        (_mount, _flipAngle, _slewTimeout, _callTimeout) = (settings.Mount, Math.Clamp(settings.FlipAngle, 0, 90),
+            Math.Max(10, settings.SlewTimeoutSeconds), Math.Max(2, settings.CallTimeoutSeconds));
+        Saved.SaveOptions(CurrentOptions());
+        var codebase = server.Target.Codebase;
+        if (!string.Equals(SourceFolders.FolderOf(codebase), settings.SourcePath, StringComparison.Ordinal))
+            _ = SourceFolders.SetAsync(codebase, settings.SourcePath, refresh: false);
+    }
 
     private async Task Start()
     {
@@ -680,6 +735,7 @@ else
     private void OnBenchChanged() => _ = InvokeAsync(() =>
     {
         if (Bench.Dragging is null) _over = false;
+        if (!Runs.IsRunning) RecallSettings();
         StateHasChanged();
     });
 

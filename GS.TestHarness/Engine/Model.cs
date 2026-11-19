@@ -174,9 +174,10 @@ public sealed record RunOptions
 
     /// <summary>
     /// Degrees either side of the meridian (0 to 90) where a German mount can point from either side of the pier.
-    /// The flip checks flip the mount with SideOfPier inside it, and expect a goto past it to flip the mount.
+    /// The flip checks flip the mount with SideOfPier inside it, and expect a goto past it to flip the mount. 0 when
+    /// it isn't known: there's no zone, so the SideOfPier flip isn't checked.
     /// </summary>
-    public int FlipAngle { get; init; } = 15;
+    public int FlipAngle { get; init; }
 
     /// <summary>
     /// Only these check groups (by name); null runs them all. Set by a run started from a ConformU log, to the groups

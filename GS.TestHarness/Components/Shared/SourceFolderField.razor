@@ -25,30 +25,64 @@
 @{
     var root = Locator.RootOf(Codebase);
     var set = Store.FolderOf(Codebase);
+    var repo = GitHubSource.Parse(set);
+    var downloading = _downloading || Store.Downloading(Codebase);
 }
 <div class="source-folder">
     <label>
-        <span><Icon Kind="CodeBraces" Size="14" /> @Codebase source code <small class="muted">for "where to check the code"</small></span>
+        <span><Icon Kind="CodeBraces" Size="14" /> Source Code local Path or GitHub full URL to the code <small class="muted">Code location that matches the server selected. Leave blank if the code is not available for review.</small></span>
         <span class="source-input">
-            <input type="text" value="@set" placeholder="@(Locator.DefaultRootOf(Codebase) ?? $@"C:\...\{Codebase}")"
-                   spellcheck="false" disabled="@Disabled" aria-label="@Codebase source folder"
-                   title="The repository's top folder. Left empty, a folder named @Codebase beside this program is used if there is one."
-                   @onchange="e => Set(e.Value as string)" />
-            <button type="button" class="icon-btn" title="Choose the folder" aria-label="Choose the @Codebase source folder"
-                    disabled="@Disabled" @onclick="ChooseAsync"><Icon Kind="FolderOpen" Size="18" /></button>
+            <input type="text" value="@set" placeholder="C:\...\MyServer or https://github.com/owner/repo"
+                   spellcheck="false" disabled="@(Disabled || downloading)" aria-label="Source code folder or GitHub URL"
+                   title="The top folder of the server's code, or its GitHub URL (https://github.com/owner/repo, optionally /tree/branch/folder)."
+                   @onchange="e => SetAsync(e.Value as string)" />
+            @if (repo is not null)
+            {
+                <button type="button" class="icon-btn" title="Download @repo.Display again (the latest)" aria-label="Download the source code again"
+                        disabled="@(Disabled || downloading)" @onclick="() => SetAsync(set)"><Icon Kind="Download" Size="18" /></button>
+            }
+            else
+            {
+                <button type="button" class="icon-btn" title="Choose the folder" aria-label="Choose the source code folder"
+                        disabled="@Disabled" @onclick="ChooseAsync"><Icon Kind="FolderOpen" Size="18" /></button>
+            }
         </span>
     </label>
-    @if (_problem is not null)
+    <details class="source-examples" open="@(set.Length == 0)">
+        <summary>Examples</summary>
+        <p class="muted small">The top folder of the server's code (the one with its telescope driver, the class implementing ITelescopeV4), or the repository's address on GitHub.</p>
+        <ul class="small">
+            <li><span class="muted">A folder on this computer:</span> <span class="mono">C:\Users\you\source\repos\MyServer</span></li>
+            <li><span class="muted">A GitHub repository (its default branch):</span> <span class="mono">https://github.com/owner/repo</span></li>
+            <li><span class="muted">A branch, tag or commit:</span> <span class="mono">https://github.com/owner/repo/tree/develop</span></li>
+            <li><span class="muted">The code in a folder of a repository:</span> <span class="mono">https://github.com/owner/repo/tree/main/src/MyServer</span></li>
+        </ul>
+        <p class="muted small">Not:</p>
+        <ul class="small muted">
+            <li>a single file: <span class="mono">C:\…\MyServer\Driver\Telescope.cs</span></li>
+            <li>a link to a file on GitHub: <span class="mono">https://github.com/owner/repo/blob/main/…</span></li>
+            <li>a .zip, or the code of a different server than the one selected: it isn't reviewed.</li>
+        </ul>
+    </details>
+    @if (downloading)
+    {
+        <p class="muted small">Downloading @repo?.Display from GitHub…</p>
+    }
+    else if (_problem is not null)
     {
         <p class="field-error">@_problem</p>
     }
+    else if (repo is not null && root is not null)
+    {
+        <p class="muted small">Findings name files in @repo.Display, downloaded from GitHub @(repo.Downloaded?.ToString("yyyy-MM-dd HH:mm")) (<span class="mono">@root</span>).</p>
+    }
     else if (root is not null)
     {
-        <p class="muted small">Findings name files in <span class="mono">@root</span>@(set.Length == 0 ? " (found beside this program)" : "").</p>
+        <p class="muted small">Findings name files in <span class="mono">@root</span>.</p>
     }
     else
     {
-        <p class="muted small">Not found on this computer: paste the repository's top folder, or findings won't name a file.</p>
+        <p class="muted small">@(set.Length == 0 ? "Blank: no code review, and findings won't name a file." : "Not found: findings won't name a file.")</p>
     }
 </div>
 
@@ -56,7 +90,11 @@
     [Parameter, EditorRequired] public Codebase Codebase { get; set; }
     [Parameter] public bool Disabled { get; set; }
 
+    /// <summary>Raised after the path is set (so the server's settings can keep it).</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
     private string? _problem;
+    private bool _downloading;
 
     protected override void OnInitialized() => Locator.Changed += OnChanged;
 
@@ -64,14 +102,28 @@
     protected override void OnParametersSet()
         => _problem = Store.FolderOf(Codebase) is { Length: > 0 } f ? Locator.Check(Codebase, f) : null;
 
-    private void Set(string? folder) => _problem = Store.Set(Codebase, folder);
+    private async Task SetAsync(string? folder)
+    {
+        _downloading = GitHubSource.Parse(folder) is not null;
+        _problem = null;
+        StateHasChanged();
+        try
+        {
+            _problem = await Store.SetAsync(Codebase, folder);
+        }
+        finally
+        {
+            _downloading = false;
+        }
+        await Changed.InvokeAsync();
+    }
 
     /// <summary>The folder popup, starting at the folder in use; folders holding the driver file are marked.</summary>
     private async Task ChooseAsync()
     {
-        var dialog = new FolderDialogModel($"{Codebase} source code", Locator.RootOf(Codebase) ?? Store.FolderOf(Codebase),
-            Locator.DriverFilesOf(Codebase), $"{Codebase} source");
-        if (await Dialogs.ShowAsync(dialog) && dialog.Selected is { } folder) Set(folder);
+        var dialog = new FolderDialogModel("Source code", Locator.RootOf(Codebase) ?? Store.FolderOf(Codebase),
+            Locator.DriverFilesOf(Codebase), "Source code");
+        if (await Dialogs.ShowAsync(dialog) && dialog.Selected is { } folder) await SetAsync(folder);
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);

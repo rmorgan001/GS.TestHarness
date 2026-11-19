@@ -132,7 +132,18 @@ public enum Defect
     /// As GSServer's simulator measured (R0008): after the main slew, Slewing stays true 1.5 s with the mount still
     /// (its precision stage's tries make corrections too small to see), and the settle time (if used) comes before it.
     /// </summary>
-    SlewEndsWithStillWait
+    SlewEndsWithStillWait,
+
+    // As the ASCOM Alpaca Simulators 0.5.0 (R0010): the arguments and rate offsets areas.
+
+    /// <summary>The mount keeps moving at the rate offsets at tracking rates other than sidereal (with <see cref="RateOffsetKeptAtOtherRates"/>, they're read too).</summary>
+    RateOffsetAppliedAtOtherRates,
+
+    /// <summary>DestinationSideOfPier doesn't check its coordinates: any value is accepted.</summary>
+    DestinationSideOfPierUnchecked,
+
+    /// <summary>The guide rates accept a negative value.</summary>
+    GuideRateNegativeAccepted
 }
 
 /// <summary>
@@ -449,12 +460,15 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
                 axisDec += pulse.Dec * done;
             }
             if (!_tracking) return (Values.Wrap24(Lst - _ha + axisRa), Math.Clamp(_dec + axisDec, -90, 90));
-            var raRate = Has(Defect.RaOffsetScaled) ? _raRate * 1.5 : _raRate;
+            // Offsets only move the mount at sidereal rate.
+            var offsets = _trackingRate == DriveRate.Sidereal || Has(Defect.RateOffsetAppliedAtOtherRates);
+            var raRate = !offsets ? 0 : Has(Defect.RaOffsetScaled) ? _raRate * 1.5 : _raRate;
+            var decRate = offsets ? _decRate : 0;
             if (Has(Defect.SmallRaOffsetRounded)) raRate = Math.Round(raRate / 0.002) * 0.002;
             // Seconds of RA per sidereal second, as the offset: 0.0007 s per SI second.
             if (Has(Defect.RaTrackingDrift)) raRate += 0.0007 / 1.0027379;
             return (Values.Wrap24(_ra + raRate * seconds * 1.0027379 / 3600 + axisRa),
-                Math.Clamp(_dec + _decRate * seconds / 3600 + axisDec, -90, 90));
+                Math.Clamp(_dec + decRate * seconds / 3600 + axisDec, -90, 90));
         }
     }
 
@@ -541,13 +555,13 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public double GuideRateDeclination
     {
         get { NeedConnected(); return _guideDec; }
-        set { NeedConnected(); if (value < 0) throw new InvalidValueException("rate"); _guideDec = value; }
+        set { NeedConnected(); if (value < 0 && !Has(Defect.GuideRateNegativeAccepted)) throw new InvalidValueException("rate"); _guideDec = value; }
     }
 
     public double GuideRateRightAscension
     {
         get { NeedConnected(); return _guideRa; }
-        set { NeedConnected(); if (value < 0) throw new InvalidValueException("rate"); _guideRa = value; }
+        set { NeedConnected(); if (value < 0 && !Has(Defect.GuideRateNegativeAccepted)) throw new InvalidValueException("rate"); _guideRa = value; }
     }
 
     public double SiteElevation
@@ -620,6 +634,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
             NeedConnected();
             if (!Enum.IsDefined(value) || (!SupportedRates.Contains(value) && !Has(Defect.TrackingRateAcceptsUnlisted)))
                 throw new InvalidValueException("rate");
+            Bake(); // the offsets stop (or start) moving the mount from here
             _trackingRate = value;
         }
     }
@@ -656,7 +671,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public PointingState DestinationSideOfPier(double rightAscension, double declination)
     {
         NeedConnected();
-        CheckRaDec(rightAscension, declination);
+        if (!Has(Defect.DestinationSideOfPierUnchecked)) CheckRaDec(rightAscension, declination);
         return SideFor(rightAscension);
     }
 

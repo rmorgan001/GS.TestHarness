@@ -90,7 +90,8 @@ public sealed class SiteStore
     {
         var s = Current;
         var list = new List<SiteLocation?>();
-        if (s.UseServer) list.Add(null);
+        // The server's own site is the only one while the hemisphere sites are off: always used then (whatever was saved).
+        if (s.UseServer || !HemisphereSites) list.Add(null);
         if (HemisphereSites && s.UseNorth) list.Add(s.North);
         if (HemisphereSites && s.UseSouth) list.Add(s.South);
         return list;

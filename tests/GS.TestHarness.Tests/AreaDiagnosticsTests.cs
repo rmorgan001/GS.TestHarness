@@ -14,7 +14,9 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+using ASCOM.Common.DeviceInterfaces;
 using GS.TestHarness.Engine;
+using GS.TestHarness.Engine.Checks;
 using Xunit.Abstractions;
 
 namespace GS.TestHarness.Tests;
@@ -329,6 +331,230 @@ public class AreaDiagnosticsTests(ITestOutputHelper output)
     }
 
     /// <summary>A small copy of the GSServer 1.2.3.3 code the diagnoses review (the driver, and where it keeps its state).</summary>
+    // ---------- Arguments and rate offsets (R0010, the ASCOM Alpaca Simulators 0.5.0) ----------
+
+    private static readonly TestTarget Alpaca = new() { Codebase = Codebase.GreenSwampAlpaca, Host = "127.0.0.1", Port = 32323 };
+
+    /// <summary>The argument and rate offset problems R0010 found, as findings, from the server <paramref name="server"/>.</summary>
+    private static RunReport SimulatorTier1(string server = "ASCOM Alpaca Simulators 0.5.0+1c01cfc6 (ASCOM Initiative)") => new()
+    {
+        Target = Alpaca,
+        Options = EngineTests.Everything,
+        Identity = new DeviceIdentity { Name = "Alpaca Telescope Simulator", ServerDescription = server },
+        Results =
+        [
+            Found("Methods.DestinationSideOfPier.InvalidRa", "DestinationSideOfPier"),
+            Found("Methods.DestinationSideOfPier.InvalidDec", "DestinationSideOfPier"),
+            Found("Settings.GuideRateRightAscension.InvalidLow", "GuideRateRightAscension"),
+            Found("Settings.GuideRateDeclination.InvalidLow", "GuideRateDeclination"),
+            Found("Motion.RightAscensionRate.ZeroAtLunar", "RightAscensionRate"),
+            Found("Motion.DeclinationRate.ZeroAtLunar", "DeclinationRate"),
+            Found("Motion.RightAscensionRate.ZeroAtSolar", "RightAscensionRate"),
+            Found("Motion.DeclinationRate.ZeroAtSolar", "DeclinationRate")
+        ]
+    };
+
+    private async Task<RunReport> SimulatorTier2Async(FakeTelescope fake, RunReport tier1, SourceLocator? locator = null)
+    {
+        var next = Tiers.Next(tier1);
+        Assert.True(next is { Tier: 2 }, "tier 2 wasn't offered");
+        Assert.Equal([AreaDiagnostics.Arguments, AreaDiagnostics.RateOffsets], next!.Members.Order());
+        Assert.Empty(Tiers.OutlookFor(tier1).Uncovered);
+        var runner = new TestRunner(locator ?? SourceLocator.None);
+        await using var session = new DirectSession(fake);
+        var report = await runner.RunAsync(session, Alpaca, Tiers.Options(EngineTests.Everything, next), followsUp: tier1);
+        Assert.DoesNotContain(report.Results, r => TestCatalog.For(r.Id) is null);
+        foreach (var r in report.Results.Where(Tiers.IsDiagnosis))
+            output.WriteLine($"{r.Outcome,-8} {r.Number} {r.Id}: {r.Message}\n  {r.Actual?.Replace("\n", "\n  ")}\n  FIX: {r.Fix}\n");
+        return report;
+    }
+
+    [Fact]
+    public async Task Tier_2_takes_apart_unchecked_ranges_and_offsets_that_carry_on_at_other_rates()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gs-harness-sim-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fake = new FakeTelescope(Defect.DestinationSideOfPierUnchecked, Defect.GuideRateNegativeAccepted,
+                Defect.RateOffsetKeptAtOtherRates, Defect.RateOffsetAppliedAtOtherRates);
+            // The source is this server's (it names itself as the server answering does).
+            var report = await SimulatorTier2Async(fake, SimulatorTier1("Simulator Like Server 1.0 (Somebody)"), SimulatorLikeSource(root, "Simulator Like Server"));
+
+            var side = Finding(report, "Diagnose.Arguments.DestinationSideOfPier");
+            Assert.Equal(Outcome.Fail, side.Outcome);
+            Assert.Contains("doesn't check the coordinates at all", side.Message);
+            Assert.Contains("ra 25: accepted", side.Actual);
+            Assert.Contains("It checks raDec, worked out from the arguments", side.Actual);
+            Assert.Contains("Check the arguments themselves first", side.Fix);
+            Assert.Contains("names SlewToCoordinatesAsync", side.Fix);
+
+            var guide = Finding(report, "Diagnose.Arguments.GuideRateRightAscension");
+            Assert.Equal(Outcome.Fail, guide.Outcome);
+            Assert.Contains("doesn't check the value at all", guide.Message);
+            Assert.Contains("nothing checks the value", guide.Actual);
+            Assert.Contains("GuideRateDeclination", guide.Actual); // the same kind of argument unchecked there too
+            Assert.Equal(Outcome.Fail, Finding(report, "Diagnose.Arguments.GuideRateDeclination").Outcome);
+
+            var ra = Finding(report, "Diagnose.RateOffsets.RightAscensionRate");
+            Assert.Equal(Outcome.Fail, ra.Outcome);
+            Assert.Contains("carries on at Lunar, Solar", ra.Message);
+            Assert.Contains("(still applied)", ra.Actual);
+            Assert.Contains("its getter looks at TrackingRate", ra.Actual);
+            Assert.Contains("TrackingRate's setter", ra.Fix);
+            var dec = Finding(report, "Diagnose.RateOffsets.DeclinationRate");
+            Assert.Equal(Outcome.Fail, dec.Outcome);
+            Assert.Contains("its getter doesn't look at TrackingRate", dec.Actual);
+            Assert.Contains("RightAscensionRate does the same", dec.Actual);
+
+            // Everything put back.
+            await using var session = new DirectSession(fake);
+            var after = await session.RunAsync(t => { t.Connected = true; return (t.GuideRateRightAscension, t.TrackingRate, t.RightAscensionRate); }, TimeSpan.FromSeconds(5));
+            Assert.Equal((0.004, DriveRate.Sidereal, 0.0), after);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(Defect.RateOffsetKeptAtOtherRates, "only RightAscensionRate's reading is wrong", "(not applied)")]
+    [InlineData(Defect.RateOffsetAppliedAtOtherRates, "reads 0 at Lunar, but the mount still moves", "(still applied)")]
+    public async Task Tier_2_tells_a_wrong_reading_from_an_offset_still_applied(Defect defect, string pattern, string measured)
+    {
+        var report = await SimulatorTier2Async(new FakeTelescope(defect), SimulatorTier1());
+        var ra = Finding(report, "Diagnose.RateOffsets.RightAscensionRate");
+        Assert.Equal(Outcome.Fail, ra.Outcome);
+        Assert.Contains(pattern, ra.Message);
+        Assert.Contains(measured, ra.Actual);
+    }
+
+    [Fact]
+    public async Task Tier_2_finds_the_arguments_and_offsets_right_and_reviews_no_code_of_another_server()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gs-harness-sim-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // The source on this computer is another server's: R0010's case (the ASCOM simulator answering, GreenSwampAlpaca's source here).
+            var report = await SimulatorTier2Async(new FakeTelescope(), SimulatorTier1(), SimulatorLikeSource(root, "Green Swamp Alpaca Server"));
+            foreach (var id in new[]
+                     {
+                         "Diagnose.Arguments.DestinationSideOfPier", "Diagnose.Arguments.GuideRateRightAscension", "Diagnose.Arguments.GuideRateDeclination",
+                         "Diagnose.RateOffsets.RightAscensionRate", "Diagnose.RateOffsets.DeclinationRate"
+                     })
+            {
+                var r = Finding(report, id);
+                Assert.True(r.Outcome == Outcome.Info, $"{id}: {r.Outcome}: {r.Message}");
+                Assert.Contains("the server answering is ASCOM Alpaca Simulators, not GreenSwampAlpaca", r.Actual);
+            }
+            Assert.Contains("(not applied)", Finding(report, "Diagnose.RateOffsets.DeclinationRate").Actual);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("ASCOM Alpaca Simulators 0.5.0+1c01cfc6 (ASCOM Initiative)", "ASCOM Alpaca Simulators")]
+    [InlineData("Green Swamp Alpaca Server 1.0.0 (Green Swamp Software)", "Green Swamp Alpaca Server")]
+    [InlineData("Some Server (Maker)", "Some Server")]
+    [InlineData("", null)]
+    public void The_server_name_is_the_words_before_its_version(string description, string? name)
+        => Assert.Equal(name, CheckContext.ServerNameOf(description));
+
+    /// <summary>A small server like GreenSwampAlpaca's, naming itself <paramref name="serverName"/>.</summary>
+    private static SourceLocator SimulatorLikeSource(string root, string serverName)
+    {
+        Directory.CreateDirectory(Path.Combine(root, "Driver"));
+        File.WriteAllText(Path.Combine(root, "Program.cs"), $$"""
+            internal static class Program
+            {
+                internal const string ServerName = "{{serverName}}";
+            }
+            """);
+        File.WriteAllText(Path.Combine(root, "Driver", "Telescope.cs"), """
+            public class Telescope
+            {
+                public double RightAscensionRate
+                {
+                    get
+                    {
+                        var r = (TrackingRate == DriveRate.Sidereal) ? _mount.RateRaCurrent : 0.0;
+                        return r;
+                    }
+                    set
+                    {
+                        CheckRate(value);
+                        _mount.RateRaCurrent = value;
+                    }
+                }
+
+                public double DeclinationRate
+                {
+                    get
+                    {
+                        return _mount.RateDecCurrent;
+                    }
+                    set
+                    {
+                        CheckRate(value);
+                        _mount.RateDecCurrent = value;
+                    }
+                }
+
+                public DriveRate TrackingRate
+                {
+                    get
+                    {
+                        return _mount.Settings.TrackingRate;
+                    }
+                    set
+                    {
+                        CheckTrackingRate("TrackingRate", value);
+                        _mount.Settings.TrackingRate = value;
+                    }
+                }
+
+                public double GuideRateRightAscension
+                {
+                    get
+                    {
+                        return _mount.GuideRateRa;
+                    }
+                    set
+                    {
+                        _mount.GuideRateRa = value;
+                    }
+                }
+
+                public double GuideRateDeclination
+                {
+                    get
+                    {
+                        return _mount.GuideRateDec;
+                    }
+                    set
+                    {
+                        _mount.GuideRateDec = value;
+                    }
+                }
+
+                public PointingState DestinationSideOfPier(double RightAscension, double Declination)
+                {
+                    var raDec = Transforms.CoordTypeToInternal(RightAscension, Declination);
+                    CheckRange(raDec.X, 0, 24, "SlewToCoordinatesAsync", "RightAscension");
+                    CheckRange(raDec.Y, -90, 90, "SlewToCoordinatesAsync", "Declination");
+                    return _mount.DetermineSideOfPier(raDec.X, raDec.Y);
+                }
+            }
+            """);
+        return new SourceLocator(new Dictionary<Codebase, CodebaseOptions>
+        {
+            [Codebase.GreenSwampAlpaca] = new() { Root = root, TelescopeFiles = ["Driver/Telescope.cs"] }
+        }, "");
+    }
+
     private static SourceLocator GsServerLikeSource(string root)
     {
         Directory.CreateDirectory(Path.Combine(root, "Driver"));

@@ -59,6 +59,28 @@ public sealed record ServerEntry
 
     /// <summary>Whether two targets are the same device (so the list holds each once).</summary>
     public static bool SameDevice(TestTarget a, TestTarget b) => TestTarget.SameDevice(a, b);
+
+    /// <summary>
+    /// The server's own settings (the Settings section under it on the Run page), saved with it and recalled when it's
+    /// dragged onto the Server card. Null until they're first used.
+    /// </summary>
+    public ServerSettings? Settings { get; init; }
+}
+
+/// <summary>A server's settings: where its code is, what it drives, its flip zone and its timeouts.</summary>
+public sealed record ServerSettings
+{
+    /// <summary>The source code's folder or GitHub URL; empty for no code review.</summary>
+    public string SourcePath { get; init; } = "";
+
+    public MountKind Mount { get; init; } = MountKind.Unknown;
+
+    /// <summary>Degrees either side of the meridian (0: not known).</summary>
+    public int FlipAngle { get; init; }
+
+    public int SlewTimeoutSeconds { get; init; } = 120;
+
+    public int CallTimeoutSeconds { get; init; } = 15;
 }
 
 /// <summary>

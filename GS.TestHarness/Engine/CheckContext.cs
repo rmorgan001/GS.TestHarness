@@ -85,7 +85,41 @@ public sealed class CheckContext(
     public ITelescopeSession Session { get; } = session;
     public TestTarget Target { get; } = target;
     public RunOptions Options { get; } = options;
-    public SourceLocator Locator { get; } = locator;
+    /// <summary>
+    /// Where to find the server's code: finds nothing when another server is answering (<see cref="OtherServer"/>), so
+    /// no finding points to, or quotes, code that isn't the server under test.
+    /// </summary>
+    public SourceLocator Locator => OtherServer is null ? locator : SourceLocator.None;
+
+    private bool _serverChecked;
+    private string? _otherServer;
+
+    /// <summary>
+    /// The Alpaca server answering, when it isn't the target codebase's: its name (from the management API, this run's
+    /// or the run it follows up) appears nowhere in the codebase's source as a string. Null when it does, or when it
+    /// can't be told (a COM driver, the name not read yet, or no source on this computer).
+    /// </summary>
+    public string? OtherServer
+    {
+        get
+        {
+            if (_serverChecked) return _otherServer;
+            if (Target.Kind != TargetKind.Alpaca || locator.RootOf(Target.Codebase) is null) return null;
+            if (ServerNameOf(Identity.ServerDescription ?? FollowsUp?.Identity.ServerDescription) is not { } name) return null;
+            _serverChecked = true;
+            _otherServer = locator.Search(Target.Codebase, System.Text.RegularExpressions.Regex.Escape($"\"{name}\""), 1).Count == 0 ? name : null;
+            return _otherServer;
+        }
+    }
+
+    /// <summary>The server's name from its description ("ASCOM Alpaca Simulators 0.5.0+1c01 (ASCOM Initiative)"): the words before the version.</summary>
+    internal static string? ServerNameOf(string? description)
+    {
+        if (string.IsNullOrWhiteSpace(description)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(description, @"^(.*?)\s+v?\d");
+        var name = (m.Success ? m.Groups[1].Value : description.Split(" (")[0]).Trim();
+        return name.Length > 0 ? name : null;
+    }
     public CancellationToken Token { get; } = token;
     public Capabilities Caps { get; } = new();
     public DeviceIdentity Identity { get; set; } = new();
