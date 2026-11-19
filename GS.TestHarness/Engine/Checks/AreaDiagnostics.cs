@@ -42,7 +42,7 @@ public static partial class AreaDiagnostics
 
     /// <summary>The diagnoses made here (by their <see cref="Diagnosis.Member"/>); the measurements are <see cref="Diagnostics"/>'.</summary>
     public static readonly IReadOnlySet<string> Areas = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        { Arguments, Preconditions, RateOffsets, ClientConnections, AlpacaRequests, "SlewSettleTime", "AxisRates", "DriverVersion", Registration, NotConnected };
+        { Arguments, Preconditions, RateOffsets, ClientConnections, AlpacaRequests, Actions, Discovery, "SlewSettleTime", "AxisRates", "DriverVersion", Registration, NotConnected };
 
     /// <summary>
     /// Whether a diagnosis moves the mount (it needs Move the mount): the measurements, the preconditions, the rate
@@ -62,6 +62,8 @@ public static partial class AreaDiagnostics
             case RateOffsets: await RateOffsetsAsync(ctx, found, said); break;
             case ClientConnections: await ClientConnectionsAsync(ctx, found, said); break;
             case AlpacaRequests: await AlpacaRequestsAsync(ctx, found, said); break;
+            case Actions: await ActionsAsync(ctx, said); break;
+            case Discovery: await DiscoveryDiagnosisAsync(ctx, said); break;
             case NotConnected: await NotConnectedAsync(ctx, found, said); break;
             case "SlewSettleTime":
                 if (ctx.Options.Tier >= 3) await SettleDeepAsync(ctx, said);

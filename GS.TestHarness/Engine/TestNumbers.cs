@@ -255,6 +255,8 @@ public static class TestNumbers
         (2016, "Diagnose.Clients.Connections"),
         (2017, "Diagnose.Alpaca.Binding"),
         (2018, "Diagnose.Alpaca.Setup"),
+        (2019, "Diagnose.Actions"),
+        (2020, "Diagnose.Discovery"),
         (3001, "Diagnose.{member}.Cause"),
         (3002, "Diagnose.{member}.Summary"),
         (3003, "ConformU.Diagnose.{member}.Cause"),

@@ -55,7 +55,8 @@ public sealed record ServerEntry
     /// <summary>The logo for the server's connection: ASCOM for GSServer's COM driver, Alpaca for GreenSwampAlpaca.</summary>
     public string Image => Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png";
 
-    public string KindText => Target.Kind == TargetKind.Com ? "GSServer (COM driver)" : "GreenSwampAlpaca (Alpaca server)";
+    /// <summary>What kind of server it is: a COM driver or an Alpaca server (it needn't be GSServer or GreenSwampAlpaca).</summary>
+    public string KindText => Target.Kind == TargetKind.Com ? "COM driver" : "Alpaca server";
 
     /// <summary>Whether two targets are the same device (so the list holds each once).</summary>
     public static bool SameDevice(TestTarget a, TestTarget b) => TestTarget.SameDevice(a, b);

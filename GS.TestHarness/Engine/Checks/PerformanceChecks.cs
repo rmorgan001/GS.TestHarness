@@ -55,7 +55,7 @@ public sealed class PerformanceChecks : ICheckGroup
 
         // Calls that never answered (the harness gave up waiting): a hang, whatever the call. Not UDP discovery: a
         // discovery request nobody answers is a missing reply (the Discovery checks report it), not a call that hung.
-        var hung = results.Where(r => !(r.Group == "Protocol" && r.Id.StartsWith("Discovery", StringComparison.Ordinal))
+        var hung = results.Where(r => !r.Id.StartsWith("Protocol.Discovery", StringComparison.Ordinal)
                                       && (r.Actual?.Contains("no answer within", StringComparison.OrdinalIgnoreCase) == true
                                           || r.Message.Contains("did not answer", StringComparison.OrdinalIgnoreCase)
                                           || r.Message.Contains("no answer", StringComparison.OrdinalIgnoreCase))).ToList();

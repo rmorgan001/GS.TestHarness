@@ -146,7 +146,10 @@ public enum Defect
     GuideRateNegativeAccepted,
 
     /// <summary>MoveAxis(axis, 0) makes Slewing false at once, but the axis coasts on at its rate for a second before it stops.</summary>
-    SlewingEndsBeforeAxisStops
+    SlewingEndsBeforeAxisStops,
+
+    /// <summary>As the ASCOM Alpaca Simulators: SupportedActions lists one action, and an unknown one gets InvalidOperationException.</summary>
+    ActionWrongError
 }
 
 /// <summary>
@@ -292,9 +295,11 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public string DriverVersion => Has(Defect.DriverVersionFull) ? "1.2.3.3" : "1.0";
     public short InterfaceVersion => (short)(Has(Defect.InterfaceVersion3) ? 3 : 4);
     public string Name => "Fake GEM";
-    public IList<string> SupportedActions => [];
+    public IList<string> SupportedActions => Has(Defect.ActionWrongError) ? ["SLEWTOHA"] : [];
 
-    public string Action(string actionName, string actionParameters) => throw new ActionNotImplementedException(actionName);
+    public string Action(string actionName, string actionParameters) => Has(Defect.ActionWrongError)
+        ? throw new ASCOM.InvalidOperationException($"Command: '{actionName}' is not recognised by the Scope Simulator .NET driver.")
+        : throw new ActionNotImplementedException(actionName);
     public void CommandBlind(string command, bool raw = false) => throw new MethodNotImplementedException("CommandBlind");
     public bool CommandBool(string command, bool raw = false) => throw new MethodNotImplementedException("CommandBool");
     public string CommandString(string command, bool raw = false) => throw new MethodNotImplementedException("CommandString");

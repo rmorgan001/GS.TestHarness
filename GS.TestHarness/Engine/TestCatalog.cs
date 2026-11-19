@@ -413,6 +413,14 @@ public static class TestCatalog
                 "GET /setup and /setup/v1/telescope/{n}/setup; for an HTTP 500, the error the page shows.",
                 "Fail when a page throws (HTTP 500, with its error); Warning when it's missing; Info when both return HTML. The setup routes are quoted." + Review, "Alpaca", "Harness")
                 with { Tier = 2, FollowsUp = ["Protocol.Setup.{page}"] },
+            E("Diagnose", "Actions", "Find why an unknown action gets the wrong error: where the code throws it, and which names Action really handles.",
+                "Reads SupportedActions; calls Action with a made-up name, an empty one and a blank one (never a supported one: it would do something); finds the error's message and the throws in the code, and the names Action handles.",
+                "Fail with the error an unknown action gets and the line to change; Info when it's ActionNotImplementedException. Also lists names handled but not in SupportedActions." + Review, "V4", "Harness")
+                with { Tier = 2, FollowsUp = ["Common.Action.Unknown"] },
+            E("Diagnose", "Discovery", "Find why a discovery broadcast doesn't find the server: listening on localhost only, the broadcast not reaching it, or no discovery at all.",
+                "Sends \"alpacadiscovery1\" to UDP 32227 at the server's address, at each of this PC's network addresses (when the server runs here), at each network's broadcast address and at 255.255.255.255.",
+                "Fail when nothing answers, or only 127.0.0.1 does (localhost only); Info when it answers at this PC's address but a broadcast from the same PC doesn't reach it (check from another PC); Warning when a remote server answers directly but not to a broadcast; Info when a broadcast finds it. The listener's code is quoted." + Review, "Alpaca", "Harness")
+                with { Tier = 2, FollowsUp = ["Protocol.Discovery", "Protocol.Discovery.Broadcast"] },
             E("Diagnose", "RateOffsets.{member}", "Find why RightAscensionRate or DeclinationRate isn't 0 (or can be written) at a tracking rate other than sidereal: the mount still applying the offset there, or only the reading wrong.",
                 "Sets a large offset (0.5 s of RA per sidereal second, 10\"/s in Dec) at sidereal rate, changes to each other listed rate and reads it; at one of them measures the movement for 3 s against the same rate with no offset; writes an offset there; reads it back at sidereal. Everything is put back.",
                 "Fail naming the pattern (carries on and reported, reading only, applied though it reads 0, written at another rate) and what to change, in the getter or TrackingRate's setter; Info when it reads 0 and isn't applied. Needs Move the mount." + Review, "V4", "Offsets", "Harness")

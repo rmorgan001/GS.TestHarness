@@ -249,6 +249,32 @@ public class MotionDefectTests(ITestOutputHelper output)
         Assert.Contains(report.Results, r => r.Group == "Performance" && r.Outcome != Outcome.Skipped);
     }
 
+    /// <summary>R0014: an IPv6 discovery request nobody answered was counted as a call that hung.</summary>
+    [Fact]
+    public async Task Unanswered_UDP_discovery_isnt_a_hang()
+    {
+        CheckResult Found(string id, string member, Outcome outcome, string message, string? actual = null)
+            => new() { Id = id, Group = id[..id.IndexOf('.')], Member = member, Outcome = outcome, Message = message, Actual = actual };
+        var earlier = new List<CheckResult>
+        {
+            Found("Protocol.Discovery.IPv6", "UDP discovery", Outcome.Info, "No answer to IPv6 discovery (multicast ff12::a1:9aca)."),
+            Found("Protocol.Discovery", "UDP discovery", Outcome.Warning, "No answer to an Alpaca discovery request sent to 127.0.0.1:32227.")
+        };
+        var reported = new List<CheckResult>();
+        await using var session = new DirectSession(new FakeTelescope());
+        var ctx = new CheckContext(session, new TestTarget(), EngineTests.Everything, SourceLocator.None, reported.Add, CancellationToken.None, earlier)
+            { Group = "Performance" };
+        await new GS.TestHarness.Engine.Checks.PerformanceChecks().RunAsync(ctx);
+        Assert.Equal(Outcome.Pass, Assert.Single(reported, r => r.Id == "Performance.Hangs").Outcome);
+
+        // A call that really never answered still counts.
+        earlier.Add(Found("Properties.RightAscension.Read", "RightAscension", Outcome.Error, "RightAscension did not answer.", "no answer within 15 s"));
+        reported.Clear();
+        await new GS.TestHarness.Engine.Checks.PerformanceChecks().RunAsync(ctx);
+        var hung = Assert.Single(reported, r => r.Id == "Performance.Hangs");
+        Assert.Equal((Outcome.Fail, "RightAscension"), (hung.Outcome, hung.Actual));
+    }
+
     [Fact]
     public void Lost_connections_are_told_from_ordinary_errors()
     {
