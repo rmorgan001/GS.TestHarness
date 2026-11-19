@@ -196,6 +196,16 @@ public sealed record RunOptions
     /// (GS.Simulator or GS.SkyWatcher), so the diagnostics and their recommendations depend on it.
     /// </summary>
     public MountKind Mount { get; init; } = MountKind.Unknown;
+
+    /// <summary>
+    /// How deep the run goes (<see cref="Tiers"/>): 1 finds problems (the full check, or a ConformU log's follow-up);
+    /// 2 measures a problem found at tier 1 to tell its causes apart; 3 measures further to pin the cause down. A tier 2
+    /// or 3 run only diagnoses <see cref="Members"/>, each one that has a diagnosis at that tier.
+    /// </summary>
+    public int Tier { get; init; } = 1;
+
+    /// <summary>The report this run follows up: the tier below's run that found the problems. Null at tier 1.</summary>
+    public string? FollowsUp { get; init; }
 }
 
 /// <summary>What the server under test drives (the Mount option).</summary>
@@ -328,7 +338,8 @@ public sealed record RunReport
 
     /// <summary>A short label for the run: device name and version.</summary>
     [JsonIgnore]
-    public string Label => $"{Identity.Name ?? Target.Display} {Identity.DriverVersion}".Trim() + (Site is null ? "" : $" @ {Site.Name}");
+    public string Label => $"{Identity.Name ?? Target.Display} {Identity.DriverVersion}".Trim() + (Site is null ? "" : $" @ {Site.Name}")
+                           + (Options.Tier > 1 ? $" (tier {Options.Tier})" : "");
 
     public int Count(Outcome outcome) => Results.Count(r => r.Outcome == outcome);
 }

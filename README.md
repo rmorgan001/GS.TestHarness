@@ -53,10 +53,24 @@ the groups that cover them, only the parts of each group that touch them, and on
 for each problem whether the harness reproduced it, didn't, or couldn't check it. A property no check reached is read by
 a generated check; anything else nothing here can test is flagged to reproduce by hand.
 
-**Diagnoses.** For RightAscensionRate / DeclinationRate and PulseGuide problems, the run measures *why* ConformU saw
+**Diagnoses** (tiers 2 and 3). For RightAscensionRate / DeclinationRate and PulseGuide problems, the deeper tiers measure *why* ConformU saw
 them (a rate that is wrong, or readings too coarse for ConformU's measurement; a stale position reading, a wrong guide
 rate, or time lost per pulse) and recommends where to check GSServer's code, for its simulator or a real mount as set
 by **Mount**. The harness only recommends: it never changes the server's code.
+
+**Diagnostic tiers.** Both tests go in three tiers, and tier 1 always runs first:
+
+| Tier | ASCOM Conformance Check | ConformU Debug Log Test |
+|---|---|---|
+| 1 | Initial testing to identify problems with the known ASCOM standards | Initial testing to verify the problems already found in the ConformU log |
+| 2 | Further tests within the problem area, with the source code reviewed, to identify the core issue and possible fixes | The same, running or creating tests for the log's problems |
+| 3 | Deep dive tests to verify tier 2's recommendations: a final analysis, summary and recommended fixes | The same, for the log's problems |
+
+After a run, the next tier is offered under the results for the problems it found that have a deeper test, and only
+those members are tested; the run is linked to the one it follows up. Every check in the catalog (`Engine/TestCatalog.cs`)
+says its tier and, for tiers 2 and 3, which checks of the tier below it follows up; the tests fail if a new check
+doesn't. Tier 3 ends with a Summary finding: whether it confirms or overturns tier 2, and the final recommendation.
+Compare uses tier 1 runs; Recommendations add each tier 1 run's deeper findings (the deepest tier's).
 
 **The help** (the **?** at the top right) lists every check: its objective, how it's tested, how the result is
 verified, and the ASCOM documentation or ConformU code it's based on.
@@ -82,7 +96,7 @@ GS.TestHarness --run GreenSwampAlpaca --host localhost --port 31416 --device 0 [
 GS.TestHarness --run GSServer
 ```
 
-Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 15), `--mount simulator|real`, `--source <folder>` (the server's source code for this run). `--conformu <debug log>` runs the ConformU Debug Log Test instead (only the log's problem members, with the verdicts and diagnoses).
+Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 15), `--mount simulator|real`, `--source <folder>` (the server's source code for this run). `--conformu <debug log>` runs the ConformU Debug Log Test instead (only the log's problem members, with the verdicts). `--follow <report id>` runs the next tier for what that saved run found (with the same `--conformu` log for a ConformU run); there is no other way to run tier 2 or 3, and a finished run prints the `--follow` command when a deeper tier is available.
 
 The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.
 

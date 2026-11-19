@@ -31,6 +31,21 @@ public sealed record CatalogEntry(string Group, string Id, string Objective, str
     private readonly Regex _pattern = new("^" + Regex.Replace(Regex.Escape($"{Group}.{Id}"), @"\\\{([^}]+)}",
         m => m.Groups[1].Value.EndsWith('*') ? "[A-Za-z0-9.]+" : "[A-Za-z0-9]+") + "$");
 
+    /// <summary>
+    /// The diagnostic tier the check belongs to (<see cref="Tiers"/>): 1 finds problems (every check of the ASCOM
+    /// Conformance Check and the ConformU Debug Log Test); 2 and 3 diagnose what the tier below found. Every entry has one.
+    /// </summary>
+    public int Tier { get; init; } = 1;
+
+    /// <summary>
+    /// For a tier 2 or 3 check: the checks of the tier just below it that it follows up, by their keys (Group.Id, as
+    /// <see cref="Key"/>). A finding of one of them that found a problem is what offers this check. Empty at tier 1.
+    /// </summary>
+    public IReadOnlyList<string> FollowsUp { get; init; } = [];
+
+    /// <summary>The entry's key: Group.Id, placeholders and all.</summary>
+    public string Key => $"{Group}.{Id}";
+
     /// <summary>The ID as shown: placeholders without their <c>*</c>.</summary>
     public string DisplayId => Id.Replace("*}", "}");
 
@@ -85,6 +100,7 @@ public static class TestCatalog
         new("Tracking", "Tracking measured over time.", "Extended checks with motion allowed"),
         new("Clients", "Several clients at once.", "Extended checks"),
         new("Registration", "How a COM driver is registered, read from the registry.", "COM (GSServer) only"),
+        new("Diagnose", "Tiers 2 and 3 of the ASCOM Conformance Check: the problems a lower tier found, measured to tell their causes apart.", "Only in a tier 2 or 3 run following up a conformance run"),
         new("ConformU", "Following up a ConformU log: each problem it found, reproduced or not, and generated checks for members no other group covers.", "Only in a run started from a ConformU log"),
         new("Performance", "How quickly the run's calls answered.", "Always"),
         new("Disconnected", "Disconnecting, and what a disconnected device must refuse.", "Unless disconnected checks are turned off"),
@@ -339,11 +355,32 @@ public static class TestCatalog
             E("ConformU", "{member}.Explained", "Say when a ConformU problem comes from something other than the member itself.", "The member's diagnosis found it working, and ConformU's result explained by something else (a stale or coarse position reading).", "Warning, with the diagnosis's explanation and recommendation. Other problems the harness found with the member are listed as also found, not as ConformU's.", "ConformU", "Harness"),
             E("ConformU", "{member}.NotReproduced", "Say when the harness can't see a problem ConformU found.", "As Reproduced, but every harness check of the member passed, or its diagnosis found it within tolerance.", "Info: fixed since the ConformU run, or ConformU tested something the harness doesn't (or in conditions this run didn't meet).", "ConformU", "Harness"),
             E("ConformU", "{member}.NotChecked", "Say when a ConformU problem couldn't be looked at in this run.", "The groups that check the member were skipped (motion or settings writes off, extended checks off, communication lost).", "Skipped, with the reason; turn on what it needs and run again.", "Harness"),
-            E("ConformU", "Diagnose.Readings", "Show how much the position readings scatter, the yardstick for ConformU's small movements.", "Before a rate offset or pulse guide diagnosis: tracking with no offset, reads RightAscension and Declination 25 times, 80 ms apart.", "Info: the RA and Dec spread, how often the reading changes (a cached position changes every few hundred ms).", "ConformU", "Harness"),
-            E("ConformU", "Diagnose.PulseGuide.{axis}", "Tell apart the causes of a PulseGuide that moved too little or too much (ConformU only says it was outside its tolerance).", "Pulses each way on the axis for three lengths (up to ConformU's 5 s), reading the position as each pulse ends and again a moment later; fits the movement against the pulse's length.", "Info when every pulse moves the expected distance; Warning when the rest of the movement only shows later (a stale position reading); Fail when the shortfall grows with the pulse (wrong guide rate) or is the same for every pulse (time lost per pulse). The fix names the GSServer code to look at (simulator or real mount, by the Mount option).", "V4", "ConformU", "Harness"),
-            E("ConformU", "Diagnose.{member}", "Tell apart the causes of a RightAscensionRate or DeclinationRate outside ConformU's tolerance.", "Applies ConformU's offset (0.05\"/s) and one 800 times larger (40\"/s), each way, for ConformU's 10 s, and measures the movement; compares with the readings' scatter.", "Info when all four are within 5%; Warning when the large offset is right and only ConformU's small one is off (the measurement is at the limit of the readings); Fail when the large one is off too (scaled, sign-dependent or unsteady). The fix names the GSServer code to look at. Skipped when motion is off or the mount is parked.", "V4", "ConformU", "Harness"),
             E("ConformU", "{member}.NoCheck", "Flag a ConformU problem nothing here can check.", "The member isn't checked by any group and isn't a property that can be read safely (a method that needs ConformU's arguments, or a ConformU-only topic).", "Warning: reproduce it by hand.", "ConformU", "Harness"),
 
+        };
+        // The diagnoses (tiers 2 and 3): the same checks in the ConformU group (ConformU.Diagnose.*, following up a
+        // ConformU log's verdicts) and in their own (Diagnose.*, following up a conformance run's tier 1 checks). Each
+        // says its tier and the checks of the tier below it follows up (CatalogTests holds every entry to that).
+        // ConformU found the problem, so whatever tier 1 made of it (a verdict, or a generated read) leads to tier 2.
+        string[] verdicts = ["ConformU.{member}.Reproduced", "ConformU.{member}.Explained", "ConformU.{member}.NotReproduced", "ConformU.{member}.NotChecked", "ConformU.{member}.Probe"];
+        foreach (var (group, prefix) in new[] { ("ConformU", "Diagnose."), ("Diagnose", "") })
+        {
+            var conformU = group == "ConformU";
+            string[] rates = conformU ? verdicts : ["Tracking.RightAscensionRate.Moves", "Tracking.DeclinationRate.Moves"];
+            string[] pulses = conformU ? verdicts : ["Motion.PulseGuide.{direction}.Moves", "Motion.PulseGuide.{direction}.Moves.{side}"];
+            list.Add(E(group, $"{prefix}Readings", "Show how much the position readings scatter, the yardstick for small movements.", "Before a rate offset or pulse guide diagnosis (made again before tier 3's): tracking with no offset, reads RightAscension and Declination 25 times, 80 ms apart.", "Info: the RA and Dec spread, how often the reading changes (a cached position changes every few hundred ms).", "ConformU", "Harness")
+                with { Tier = 2, FollowsUp = [.. rates.Concat(pulses).Distinct()] });
+            list.Add(E(group, $"{prefix}PulseGuide.{{axis}}", "Tell apart the causes of a PulseGuide that moved too little or too much (a check only says it was outside its tolerance).", "Pulses each way on the axis for three lengths (up to ConformU's 5 s), reading the position as each pulse ends and again a moment later; fits the movement against the pulse's length.", "Info when every pulse moves the expected distance; Warning when the rest of the movement only shows later (a stale position reading); Fail when the shortfall grows with the pulse (wrong guide rate) or is the same for every pulse (time lost per pulse). The fix names the GSServer code to look at (simulator or real mount, by the Mount option).", "V4", "ConformU", "Harness")
+                with { Tier = 2, FollowsUp = pulses });
+            list.Add(E(group, $"{prefix}{{member}}", "Tell apart the causes of a RightAscensionRate or DeclinationRate outside tolerance: a wrong rate, or only ConformU's small offset off.", "ConformU's offset (0.05\"/s) and one 800 times larger (40\"/s), each way, for ConformU's 10 s, against the readings' scatter.", "Info when all four are within 5%; Warning when the large offset is right and only the small one is off as ConformU measures it (the readings' limit); Fail when the small one is off however it's measured (each sign shown, tier 3 tells why), or the large one too (scaled, sign-dependent or unsteady). The fix names the GSServer code to look at. Skipped when motion is off, the mount is parked, or the member has no diagnosis at the run's tier.", "V4", "ConformU", "Harness")
+                with { Tier = 2, FollowsUp = rates });
+            list.Add(E(group, $"{prefix}{{member}}.Cause", "Pin down why only ConformU's small RightAscensionRate or DeclinationRate offset is off: a drift with no offset, readings that wander, or a rounded small offset.", "The tier 2 offsets again, plus no offset at all (for as long, and three times as long) and the small offset for three times as long, each sign kept apart.", "Info when everything is within 5% and the mount holds still with no offset; Warning when the error shrinks as the measurement gets longer (the readings); Fail for a drift with no offset (with the settings that cause one), or a small offset off by the same factor at both signs and lengths (rounded or scaled), or no steady pattern. The fix names the GSServer code to look at.", "V4", "ConformU", "Harness")
+                with { Tier = 3, FollowsUp = [$"{group}.{prefix}{{member}}"] });
+            list.Add(E(group, $"{prefix}{{member}}.Summary", "Verify tier 2's recommendation and give the final analysis, summary and recommended fix for a RightAscensionRate or DeclinationRate problem.", "After tier 3's measurements: compares tier 3's finding with the tier 2 diagnosis it follows up (shown under Expected, with its recommendation).", "Says whether tier 3 confirms tier 2 (the same kind of finding, with the cause pinned down) or overturns it (a fault tier 2 put down to the readings, or the other way round), or didn't reproduce it; its outcome is tier 3's, and its fix the final recommendation.", "ConformU", "Harness")
+                with { Tier = 3, FollowsUp = [$"{group}.{prefix}{{member}}"] });
+        }
+        list.AddRange(
+        [
             // ---------- Performance ----------
             E("Performance", "ReadTimes", "Properties answer quickly: clients poll them several times a second.", "Summarises property read times from the run.", "Warning for slow reads.", "Harness", "ConformU"),
             E("Performance", "Hangs", "No call hangs.", "Lists every call the harness gave up waiting for.", "Fail for each hang.", "Harness"),
@@ -354,9 +391,12 @@ public static class TestCatalog
             E("Disconnected", "NotConnected.{member}", "A disconnected device refuses operational members.", "Reads RightAscension, Tracking, CanSlew and calls AxisRates while disconnected.", "Must raise NotConnectedException (0x407).", "V4", "ConformU"),
             E("Disconnected", "WhenDisconnected.{member}", "Identity members work while disconnected.", "Reads Name, DriverInfo, DriverVersion, InterfaceVersion and SupportedActions.", "Fail on an error.", "V4"),
             E("Disconnected", "Disconnect.WhenDisconnected", "Disconnect() while disconnected is harmless.", "Calls Disconnect() again.", NoError, "V4"),
-        };
+        ]);
         return list;
     }
+
+    /// <summary>The entry with this key (Group.Id, placeholders and all), or null.</summary>
+    public static CatalogEntry? Entry(string key) => Entries.FirstOrDefault(e => e.Key == key);
 
     /// <summary>The catalog entry for a finding (the most specific one that matches), or null if it has none.</summary>
     public static CatalogEntry? For(string findingId)

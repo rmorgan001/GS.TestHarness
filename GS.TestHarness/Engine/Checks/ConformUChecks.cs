@@ -26,7 +26,7 @@ namespace GS.TestHarness.Engine.Checks;
 public sealed partial class ConformUChecks : ICheckGroup
 {
     public string Name => "ConformU";
-    public string Description => "Only for a ConformU log: reads the flagged properties no other check reached, diagnoses the problems it knows how to take apart (rate offsets, pulse guiding), then says for each problem whether the harness reproduced it.";
+    public string Description => "Only for a ConformU log: at tier 1 reads the flagged properties no other check reached; at tiers 2 and 3 diagnoses the problems it knows how to take apart (rate offsets, pulse guiding); then says for each problem whether the harness reproduced it.";
 
     public string? SkipReason(CheckContext ctx) => ctx.ConformU is null ? "no ConformU log for this run" : null;
 
@@ -42,13 +42,18 @@ public sealed partial class ConformUChecks : ICheckGroup
             actual: string.Join(", ", log.Areas.Select(a => a.Member)) is { Length: > 0 } members ? $"Areas: {members}" : null,
             reference: TestCatalog.Reference("ConformU").Url);
 
-        // A property no check has looked at in this run (its groups were skipped) still gets read.
+        // Tiers 2 and 3: the problems the harness knows how to take apart, measured to tell their causes apart, with
+        // recommendations. Only the members the run is narrowed to (the ones the tier below found).
+        if (ctx.Options.Tier >= 2)
+        {
+            await Diagnostics.RunAsync(ctx, [.. log.Areas.Where(a => ctx.Wants(a.Member)).Select(a => new DiagnosisProblem(a.Member, Said(a)))]);
+            return;
+        }
+
+        // Tier 1: a property no check has looked at in this run (its groups were skipped) still gets read.
         var results = ctx.Results;
         foreach (var area in log.Areas.Where(a => a.CanProbe && !results.Any(r => r.Group != "ConformU" && r.Outcome != Outcome.Skipped && About(r, a))))
             await ProbeAsync(ctx, area);
-
-        // Problems the harness knows how to take apart: measured to tell their causes apart, with recommendations.
-        await ConformUDiagnostics.RunAsync(ctx, log);
     }
 
     /// <summary>The check made for a member no group covers: read it a few times and report what it does.</summary>
@@ -101,7 +106,8 @@ public sealed partial class ConformUChecks : ICheckGroup
         var group = ctx.Group;
         ctx.Group = "ConformU";
         var results = ctx.Results.Where(r => r.Group != "ConformU").ToList();
-        foreach (var area in log.Areas)
+        // A tier 2 or 3 run only says what became of the problems it diagnosed.
+        foreach (var area in log.Areas.Where(a => ctx.Options.Tier < 2 || ctx.Wants(a.Member)))
         {
             var id = IdOf(area.Member);
             var conformU = Said(area);
@@ -112,6 +118,8 @@ public sealed partial class ConformUChecks : ICheckGroup
             var diagnosis = $"ConformU.Diagnose.{area.Member}";
             var diagnoses = ctx.Results.Where(r => (r.Id == diagnosis || r.Id.StartsWith(diagnosis + ".", StringComparison.Ordinal))
                                                    && r.Outcome is Outcome.Pass or Outcome.Info or Outcome.Warning or Outcome.Fail).ToList();
+            // Tier 3's final analysis, where there is one, is the diagnosis's last word.
+            if (diagnoses.Where(d => d.Id.EndsWith(".Summary", StringComparison.Ordinal)).ToList() is { Count: > 0 } summaries) diagnoses = summaries;
             if (diagnoses.Count == 0 && ctx.Fact($"ConformU.Probed.{area.Member}")) continue;
             if (diagnoses.Count > 0)
             {
@@ -158,7 +166,7 @@ public sealed partial class ConformUChecks : ICheckGroup
     }
 
     /// <summary>
-    /// The verdict for a problem the harness diagnosed (<see cref="ConformUDiagnostics"/>): the diagnosis found the cause
+    /// The verdict for a problem the harness diagnosed (<see cref="Diagnostics"/>, at tier 2 or 3): the diagnosis found the cause
     /// in the driver (Fail: Reproduced), explained it as something else, such as a stale or coarse position reading
     /// (Warning: Explained), or found the member within tolerance (Info: NotReproduced). Problems the harness's own
     /// checks found with the same member are other problems, listed as "also found", not ConformU's.

@@ -251,6 +251,42 @@ button.link.danger, .danger { color: var(--fail); }
 .progress div { height: 100%; background: linear-gradient(90deg, var(--green), var(--green-hover)); border-radius: 3px; transition: width .3s; }
 
 
+/* ---- Diagnostic tiers: where the run is, and the next tier on offer ---- */
+.tier-track { list-style: none; margin: 0 0 .9rem; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; counter-reset: none; }
+.tier-step {
+    position: relative; display: flex; align-items: center; gap: .6rem; min-width: 0; padding: .55rem .7rem;
+    background: var(--well); border: 1px solid var(--line); border-radius: var(--radius-sm);
+}
+.tier-num {
+    flex: none; width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center;
+    font-weight: 700; font-size: .85rem; border: 1px solid var(--line-strong); color: var(--muted); background: var(--panel);
+}
+.tier-text { display: grid; min-width: 0; line-height: 1.25; }
+.tier-name { font-family: var(--font-display); font-weight: 600; font-size: 1rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tier-state { font-size: .78rem; color: var(--muted); }
+.tier-step.done .tier-num { background: var(--green); border-color: var(--green); color: var(--green-ink); }
+.tier-step.running { border-color: var(--green); }
+.tier-step.running .tier-num { border-color: var(--green); color: var(--green); }
+.tier-step.next { border-color: var(--yellow); background: var(--yellow-soft); }
+.tier-step.next .tier-num { border-color: var(--yellow); color: var(--yellow); }
+.tier-step.next .tier-state { color: var(--yellow); }
+.tier-step.locked { opacity: .55; }
+.tier-next {
+    display: flex; align-items: center; gap: 1rem; margin: 0 0 1rem; padding: .8rem 1rem;
+    border: 1px solid var(--yellow); border-left-width: 4px; border-radius: var(--radius-sm); background: var(--yellow-soft);
+}
+.tier-next-text { flex: 1; min-width: 0; }
+.tier-next-text p { margin: 0 0 .35rem; }
+.tier-next-title { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; color: var(--yellow); }
+.tier-members { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.tier-note { margin-top: .4rem !important; font-size: .85rem; color: var(--text); }
+.tier-next .btn { flex: none; }
+@media (max-width: 700px) {
+    .tier-track { grid-template-columns: 1fr; }
+    .tier-next { flex-direction: column; align-items: stretch; }
+    .tier-next .btn { justify-content: center; }
+}
+
 /* ---- Results ---- */
 .summary { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
 .summary .spacer { flex: 1; }

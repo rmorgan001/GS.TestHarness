@@ -203,7 +203,8 @@ else
     private List<RunReport>? _all;  // every saved ASCOM Conformance Check run, newest first (no ConformU runs)
 
     /// <summary>Compare sits under the ASCOM Conformance Check tab: full runs only, never a ConformU follow-up.</summary>
-    private async Task<List<RunReport>> FullRunsAsync() => [.. (await Store.ListAsync()).Where(r => !RunPageState.IsConformU(r))];
+    // Tier 1 conformance runs only: a tier 2 or 3 run diagnoses a few members, so it has nothing to compare check by check.
+    private async Task<List<RunReport>> FullRunsAsync() => [.. (await Store.ListAsync()).Where(r => !RunPageState.IsConformU(r) && r.Options.Tier <= 1)];
     private SiteChange? _filter;
 
     private enum Mode { Sites, Versions }

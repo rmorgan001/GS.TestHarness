@@ -95,8 +95,10 @@ public sealed class ReportStore(string folder)
     /// The run that stands for one device at one site: its newest finished run, or its newest stopped one when
     /// none finished (a stopped run didn't make every check, so it would hide what a finished one found).
     /// </summary>
+    /// A tier 2 or 3 run only diagnoses a few members, so it stands for the device only when there is no tier 1 run.
     public static RunReport? Representative(IEnumerable<RunReport> runsOfOneDeviceAtOneSite)
-        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Cancelled || r.CommunicationLost).ThenByDescending(r => r.Started).FirstOrDefault();
+        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Options.Tier > 1).ThenBy(r => r.Cancelled || r.CommunicationLost)
+            .ThenByDescending(r => r.Started).FirstOrDefault();
 
     /// <summary>The run that stands for <paramref name="target"/> at the site with this hemisphere (null: the server's own site).</summary>
     public static RunReport? LatestAt(IEnumerable<RunReport> runs, TestTarget target, string? hemisphere)

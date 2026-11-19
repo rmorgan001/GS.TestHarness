@@ -77,6 +77,9 @@ public sealed class CheckContext(
     /// <summary>The ConformU log the run follows up, if it was started from one (the ConformU checks).</summary>
     public ConformULog? ConformU { get; init; }
 
+    /// <summary>The run a tier 2 or 3 run follows up (<see cref="RunOptions.FollowsUp"/>): what it found, for the diagnoses' Expected.</summary>
+    public RunReport? FollowsUp { get; init; }
+
     public const string DocsBase = "https://ascom-standards.org/newdocs/telescope.html#Telescope.";
 
     public ITelescopeSession Session { get; } = session;
@@ -185,7 +188,7 @@ public sealed class CheckContext(
     /// </summary>
     private bool Keeps(CheckResult r)
     {
-        if (Options.Members is not { } only || r.Group == "ConformU") return true;
+        if (Options.Members is not { } only || r.Group is "ConformU" or Checks.DiagnoseChecks.GroupName) return true;
         var last = r.Id[(r.Id.LastIndexOf('.') + 1)..];
         if (r.Outcome is Outcome.Skipped or Outcome.Error && Explains.Contains(last)) return true;
         if (r.Group == "Protocol" && only.Contains(ConformUMap.Protocol)) return true;

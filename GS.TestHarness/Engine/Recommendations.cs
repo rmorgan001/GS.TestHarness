@@ -82,14 +82,36 @@ public static class RecommendationBuilder
         return [.. latest.OrderByDescending(r => r.Started)];
     }
 
+    /// <summary>
+    /// The tier 2 and 3 runs that follow up <paramref name="latest"/> (directly or through each other): the newest at
+    /// each tier for each of them. Their diagnoses belong with the tier 1 run they took apart.
+    /// </summary>
+    public static List<RunReport> FollowUps(IEnumerable<RunReport> runs, IReadOnlyList<RunReport> latest)
+    {
+        var all = runs.ToList();
+        var byId = all.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        var roots = latest.Select(r => r.Id).ToHashSet();
+        return [.. all.Where(r => r.Options.Tier > 1 && roots.Contains(Tiers.Root(r, byId).Id))
+            .GroupBy(r => (Tiers.Root(r, byId).Id, r.Options.Tier))
+            .Select(g => g.MaxBy(r => r.Started)!)];
+    }
+
     public static RecommendationSet Build(IEnumerable<RunReport> runs)
     {
-        var latest = LatestRuns(runs);
+        var all = runs.ToList();
+        var latest = LatestRuns(all);
         var recommendations = new List<Recommendation>();
         var clean = new List<CleanCheck>();
 
-        var byCheck = latest
+        // Each tier 1 run with its deeper runs. A check made at more than one tier (a ConformU verdict), or a member
+        // diagnosed at more than one (tier 2's Diagnose.X, tier 3's Diagnose.X.Cause), counts once, from the deepest.
+        var byId = all.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        var findings = latest.Concat(FollowUps(all, latest))
             .SelectMany(run => run.Results.Select(result => (Run: run, Result: result)))
+            .GroupBy(x => (Root: Tiers.Root(x.Run, byId).Id,
+                Key: Tiers.IsDiagnosis(x.Result) && Tiers.Has(x.Result.Member, x.Run.Options.Tier) ? $"diagnosis:{x.Result.Member}" : x.Result.Id))
+            .SelectMany(g => g.Where(x => x.Run.Options.Tier == g.Max(y => y.Run.Options.Tier)));
+        var byCheck = findings
             .GroupBy(x => (x.Run.Target.Codebase, x.Result.Id));
         foreach (var check in byCheck)
         {
