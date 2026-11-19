@@ -59,6 +59,15 @@
                                         <div class="mono small"><a href="help#test-@TestNumbers.For(key)">@TestNumbers.For(key)</a> @key</div>
                                     }
                                 }
+                                @* The other way: the deeper tests that follow this one up, at every tier below it. *@
+                                @foreach (var deeper in TestCatalog.FollowedBy(e).GroupBy(d => d.Tier))
+                                {
+                                    <div class="small muted">followed up at tier @deeper.Key by:</div>
+                                    @foreach (var d in deeper)
+                                    {
+                                        <div class="mono small"><a href="help#test-@d.Number">@d.Number</a> @d.Key</div>
+                                    }
+                                }
                             </td>
                             <td>@e.Objective</td>
                             <td>@e.Method</td>
@@ -117,7 +126,8 @@
     {
         if (string.IsNullOrWhiteSpace(_search)) return true;
         var s = _search.Trim();
-        return new[] { e.Number.ToString(), e.Id, $"tier {e.Tier}", e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs), string.Join(" ", e.FollowsUp), string.Join(" ", e.FollowsUp.Select(TestNumbers.For)) }
+        return new[] { e.Number.ToString(), e.Id, $"tier {e.Tier}", e.Objective, e.Method, e.Verification, string.Join(" ", e.Refs), string.Join(" ", e.FollowsUp), string.Join(" ", e.FollowsUp.Select(TestNumbers.For)),
+            string.Join(" ", TestCatalog.FollowedBy(e).Select(d => $"{d.Number} {d.Key}")) }
             .Any(text => text.Contains(s, StringComparison.OrdinalIgnoreCase));
     }
 }

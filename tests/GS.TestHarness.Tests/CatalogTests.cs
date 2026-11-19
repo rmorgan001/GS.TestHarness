@@ -105,6 +105,11 @@ public class CatalogTests
         var pulse = Assert.Single(chains, c => c.Test.Key == "Motion.PulseGuide.{direction}.Moves");
         Assert.Equal([2001, 2002], pulse.Tier2.Select(e => e.Number));
         Assert.Empty(pulse.Tier3);
+        // The other way round: each test lists every deeper test that follows it up, through all the tiers.
+        Assert.Equal([2001, 2003, 3001, 3002], TestCatalog.FollowedBy(ra.Test).Select(e => e.Number));
+        Assert.Equal([3001, 3002], TestCatalog.FollowedBy(TestCatalog.Entry("Diagnose.{member}")!).Select(e => e.Number));
+        Assert.Contains(TestCatalog.FollowedUp(1), e => e.Key == "Tracking.RightAscensionRate.Moves");
+        Assert.Empty(TestCatalog.FollowedUp(Tiers.Max));
         Assert.All(chains.Where(c => c.ConformU), c => Assert.All(c.Tier2.Concat(c.Tier3), e => Assert.Equal("ConformU", e.Group)));
         Assert.All(chains.Where(c => !c.ConformU), c => Assert.All(c.Tier2.Concat(c.Tier3), e => Assert.Equal("Diagnose", e.Group)));
     }

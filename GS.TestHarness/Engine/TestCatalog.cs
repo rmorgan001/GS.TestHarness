@@ -430,6 +430,27 @@ public static class TestCatalog
         return chains;
     }
 
+    /// <summary>
+    /// The deeper tests that follow <paramref name="entry"/> up: those of the next tier that name it, and the tests that
+    /// follow those up, through every tier. In number order (so by tier).
+    /// </summary>
+    public static IReadOnlyList<CatalogEntry> FollowedBy(CatalogEntry entry)
+    {
+        var found = new List<CatalogEntry>();
+        var keys = new HashSet<string> { entry.Key };
+        for (var tier = entry.Tier + 1; tier <= Tiers.Max; tier++)
+        {
+            var next = Entries.Where(e => e.Tier == tier && e.FollowsUp.Any(keys.Contains)).ToList();
+            found.AddRange(next);
+            keys = [.. next.Select(e => e.Key)];
+        }
+        return [.. found.OrderBy(e => e.Number)];
+    }
+
+    /// <summary>The tests of a tier that a deeper test follows up, in number order.</summary>
+    public static IReadOnlyList<CatalogEntry> FollowedUp(int tier)
+        => [.. Entries.Where(e => e.Tier == tier && FollowedBy(e).Count > 0).OrderBy(e => e.Number)];
+
     /// <summary>The group an entry is shown under: run-level entries (any group) under "Run".</summary>
     public static string DisplayGroup(CatalogEntry e) => e.Group.Contains('{') ? "Run" : e.Group;
 }

@@ -225,12 +225,25 @@
                     Its first digit is its tier: tier 1 tests are numbered from 1001, tier 2 from 2001, tier 3 from 3001.
                     A number stays with its test, and a new test takes the next number of its tier.</p>
                 <table>
-                    <thead><tr><th>Tier</th><th>Tests</th><th>Numbers</th></tr></thead>
+                    <thead><tr><th>Tier</th><th>Tests</th><th>Numbers</th><th>Referenced by the other tiers</th></tr></thead>
                     <tbody>
                         @for (var tier = 1; tier <= Tiers.Max; tier++)
                         {
                             var numbers = TestCatalog.Entries.Where(e => e.Tier == tier).Select(e => e.Number).Order().ToList();
-                            <tr><td>@Tiers.Name(tier)</td><td>@numbers.Count</td><td class="tier-numbers">@Ranges(numbers)</td></tr>
+                            var referenced = TestCatalog.FollowedUp(tier);
+                            <tr>
+                                <td>@Tiers.Name(tier)</td>
+                                <td>@numbers.Count</td>
+                                <td class="tier-numbers">@Ranges(numbers)</td>
+                                <td>
+                                    @foreach (var e in referenced)
+                                    {
+                                        <div class="mono small"><a href="help#test-@e.Number">@e.Number</a> @e.Group.@e.DisplayId
+                                            <span class="muted">→ @string.Join(", ", TestCatalog.FollowedBy(e).Select(d => d.Number))</span></div>
+                                    }
+                                    @if (referenced.Count == 0) { <span class="muted small">none (the deepest tier)</span> }
+                                </td>
+                            </tr>
                         }
                     </tbody>
                 </table>
