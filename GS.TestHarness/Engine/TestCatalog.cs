@@ -264,7 +264,7 @@ public static class TestCatalog
             E("Motion", "{slew}.InvalidDecHigh", "Invalid coordinates are refused.", "Slew to Dec 91.", Invalid, "V4", "ConformU"),
             E("Motion", "{slew}.NotTracking", "An equatorial slew needs tracking on.", "Turns tracking off and slews.", InvalidOp, "V4", "ConformU"),
             E("Motion", "AbortSlew.Idle", "AbortSlew when nothing moves is harmless.", "Calls AbortSlew while idle.", NoError, "V4", "ConformU"),
-            E("Motion", "AbortSlew.DuringSlew", "AbortSlew stops a slew.", "Starts a two-hour slew, aborts after 0.5 s.", "Pass if Slewing goes false within 10 s; Info if the slew finished first.", "V4", "ConformU"),
+            E("Motion", "AbortSlew.DuringSlew", "AbortSlew stops a slew.", "Starts a two-hour slew, waits (up to 3 s) for Slewing to be true, then aborts.", "Pass if Slewing goes false within 15 s; Info if the slew finished first.", "V4", "ConformU"),
 
             // ---------- Motion: syncs ----------
             E("Motion", "SyncToCoordinates", "A sync changes where the mount says it points.", "Syncs to a position 1° west and 1° south of where the mount points (ConformU's 60' error), reads RA/Dec, then syncs back by the same amount.", "Fail if RA/Dec still read the old position (sync ignored) or are over 1° out; Info beyond 10\"; Pass within 10\".", "V4", "ConformU"),
@@ -305,7 +305,7 @@ public static class TestCatalog
             E("Motion", "PulseGuide.{direction}.Asynchronous", "In ITelescopeV4 PulseGuide returns at once.", "Times the call against the pulse duration.", "Fail if it blocked for the pulse.", "V4", "Async", "ConformU"),
             E("Motion", "PulseGuide.{direction}.Slewing", "Slewing \"must not be True\" while pulse guiding.", "Reads Slewing during the pulse.", "Fail if true.", "V4"),
             E("Motion", "PulseGuide.{direction}.IsPulseGuiding", "IsPulseGuiding is true during an asynchronous pulse.", "Reads it straight after the call.", "Fail if false while the pulse should be running.", "V4", "ConformU"),
-            E("Motion", "PulseGuide.{direction}.Moves", "Each pulse moves the right way, about the right distance.", "Compares RA/Dec before and after with the guide rate × duration.", "Fail if it moved the wrong way or far from the expected distance.", "V4", "ConformU"),
+            E("Motion", "PulseGuide.{direction}.Moves", "Each pulse moves the right way, about the right distance.", "Compares RA/Dec before and after (once the position holds still, not only once IsPulseGuiding is false) with the guide rate × duration.", "Fail if it moved the wrong way or far from the expected distance.", "V4", "ConformU"),
             E("Motion", "PulseGuide.{direction}.Moves.{side}", "Pulses are right on both sides of the pier.", "The same, measured west (Normal) and east (ThroughThePole) of the meridian on a German mount.", "Fail if a direction is reversed on one side.", "V4", "PierSide", "ConformU"),
             E("Motion", "PulseGuide.InvalidDirection", "An invalid direction is refused.", "PulseGuide(9, 100).", Invalid, "V4"),
             E("Motion", "PulseGuide.NegativeDuration", "A negative duration is refused.", "PulseGuide(North, -1).", Invalid, "V4"),
@@ -321,8 +321,8 @@ public static class TestCatalog
             E("Motion", "{member}.NotSidereal{rate}", "Offsets only apply at sidereal rate.", "Writes an offset at each other listed rate.", InvalidOp, "V4", "Offsets", "ConformU"),
 
             // ---------- ParkHome ----------
-            E("ParkHome", "AbortSlew.DuringPark", "AbortSlew stops parking.", "Moves away, starts Park, aborts part way.", "Fail on an error, if Slewing stays true, or if AtPark is true.", "V4", "ConformU"),
-            E("ParkHome", "AbortSlew.DuringFindHome", "AbortSlew stops a find-home.", "Moves away, starts FindHome, aborts part way.", "Fail on an error, if Slewing stays true, or if AtHome is true.", "V4", "ConformU"),
+            E("ParkHome", "AbortSlew.DuringPark", "AbortSlew stops parking.", "Moves away, starts Park, waits (up to 3 s) for Slewing to be true, then aborts.", "Fail on an error, if Slewing stays true, or if AtPark is true.", "V4", "ConformU"),
+            E("ParkHome", "AbortSlew.DuringFindHome", "AbortSlew stops a find-home.", "Moves away, starts FindHome, waits (up to 3 s) for Slewing to be true, then aborts.", "Fail on an error, if Slewing stays true, or if AtHome is true.", "V4", "ConformU"),
             E("ParkHome", "FindHome", "FindHome reaches home.", "Calls FindHome and waits.", "Pass when AtHome is true and Slewing false; Fail on an error or timeout.", "V4", "ConformU"),
             E("ParkHome", "FindHome.Returns", "FindHome is asynchronous in ITelescopeV4.", "Times the call.", "Warning over 5 s.", "V4", "Async"),
             E("ParkHome", "AtHome.AfterSlew", "AtHome clears when the mount leaves home.", "Slews 10° away after FindHome.", "Fail if AtHome is still true.", "V4", "ConformU"),
@@ -342,11 +342,11 @@ public static class TestCatalog
 
             // ---------- Tracking (extended) ----------
             E("Tracking", "Prepare", "The mount can be measured.", "Checks it isn't parked.", "Skipped if parked.", "Harness"),
-            E("Tracking", "TrackingOn", "With tracking on, RA/Dec hold still.", "Samples RA/Dec at the start and end of the drift time.", "Pass if the drift is within a few seconds of RA / arc-seconds; Fail beyond.", "V4", "Harness"),
+            E("Tracking", "TrackingOn", "With tracking on, RA/Dec hold still.", "Once the position has settled after tracking is turned on, samples RA/Dec at the start and end of the drift time.", "Pass if the drift is within a few seconds of RA / arc-seconds; Fail beyond.", "V4", "Harness"),
             E("Tracking", "TrackingOff", "With tracking off the mount stays put against the ground: RA follows sidereal time.", "Samples hour angle (LST - RA) over the drift time.", "Fail if the hour angle changes.", "V4", "Harness"),
             E("Tracking", "Offsets", "Say why the offsets weren't measured.", "Motion turned off.", "Skipped.", "Harness"),
-            E("Tracking", "RightAscensionRate.Moves", "RightAscensionRate moves RA at the rate set.", "Sets 0.05 s of RA per sidereal second and measures RA over the drift time.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
-            E("Tracking", "DeclinationRate.Moves", "DeclinationRate moves Dec at the rate set.", "Sets an arc-seconds per second offset towards the equator and measures Dec.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
+            E("Tracking", "RightAscensionRate.Moves", "RightAscensionRate moves RA at the rate set.", "Sets 0.05 s of RA per sidereal second, waits 1 s for the mount to reach it, and measures RA over the drift time.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
+            E("Tracking", "DeclinationRate.Moves", "DeclinationRate moves Dec at the rate set.", "Sets an arc-seconds per second offset towards the equator, waits 1 s, and measures Dec over the drift time.", "Fail if the measured rate is far from the rate set.", "V4", "Offsets", "ConformU"),
 
             // ---------- Clients (extended) ----------
             E("Clients", "DisconnectedClient.Connected", "What a client that disconnected reads while another client keeps the hardware connected. Connected reports the hardware state: in a hub it stays true until every client has disconnected, which the ASCOM notes say is not an error (ConformU still reports it: \"Connected Get returned True\").", "Clients B and C connect; B disconnects; B reads Connected.", "Pass when B reads false (its own state); Info when it reads true (the hardware state: allowed, but ConformU reports it while another client is connected); Fail on an error.", "V4", "ConformU"),

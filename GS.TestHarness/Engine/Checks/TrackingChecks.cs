@@ -93,6 +93,9 @@ public sealed class TrackingChecks : ICheckGroup
 
     private static async Task HoldsStillAsync(CheckContext ctx)
     {
+        // Tracking was just turned on, perhaps straight after a slew: let the mount settle (reach sidereal rate, finish
+        // any final correction) before measuring.
+        await MotionChecks.SettledPositionAsync(ctx);
         var a = await SampleAsync(ctx);
         await Task.Delay(Span(ctx), ctx.Token);
         var b = await SampleAsync(ctx);
@@ -137,6 +140,7 @@ public sealed class TrackingChecks : ICheckGroup
         var raSet = c.CanSetRightAscensionRate && (await ctx.TryAsync(t => t.RightAscensionRate = raRate)).Ok;
         var decSet = c.CanSetDeclinationRate && (await ctx.TryAsync(t => t.DeclinationRate = decRate)).Ok;
         if (!raSet && !decSet) return;
+        await Task.Delay(1000, ctx.Token); // as ConformU: let the mount reach the new rate before measuring
         var a = await SampleAsync(ctx);
         await Task.Delay(Span(ctx), ctx.Token);
         var b = await SampleAsync(ctx);

@@ -221,6 +221,16 @@ public class MotionDefectTests(ITestOutputHelper output)
     public Task Each_motion_defect_is_caught(Defect defect, string id)
         => new EngineTests(output).DefectAsync(defect, id, Outcome.Fail, EngineTests.Everything);
 
+    /// <summary>
+    /// A position reading refreshed only every 300 ms (as GSServer's) lags the end of each pulse: the movement is read
+    /// once the position holds still, so the pulses still measure right.
+    /// </summary>
+    [Theory]
+    [InlineData("Motion.PulseGuide.North.Moves.Normal")]
+    [InlineData("Motion.PulseGuide.East.Moves.ThroughThePole")]
+    public Task A_lagging_position_reading_doesnt_shorten_a_pulse(string id)
+        => new EngineTests(output).DefectAsync(Defect.StalePosition, id, Outcome.Pass, EngineTests.Everything);
+
     [Fact]
     public async Task A_server_that_dies_mid_run_stops_the_run_with_one_error()
     {

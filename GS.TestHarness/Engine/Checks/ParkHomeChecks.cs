@@ -86,14 +86,14 @@ public sealed class ParkHomeChecks : ICheckGroup
                 await ctx.WaitForSlewEndAsync();
             }
             if (!(await ctx.TryAsync(start, ctx.SlewTimeout)).Ok) return;
-            await Task.Delay(150, ctx.Token);
-            if ((await ctx.TryAsync(t => t.Slewing)) is not { Ok: true, Value: true })
+            // A real mount may take a moment (a serial round trip) to report the move: wait for it, up to 3 s.
+            if (!await ctx.WaitUntilAsync(t => t.Slewing, TimeSpan.FromSeconds(3), 100))
             {
                 ctx.Report(id, "AbortSlew", Outcome.Info, $"{member} finished too quickly to stop it, so AbortSlew during {member} wasn't checked.");
                 return;
             }
             var abort = await ctx.TryAsync(t => t.AbortSlew(), ctx.SlewTimeout);
-            var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(10));
+            var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
             var there = await ctx.TryAsync(arrived);
             var ok = abort.Ok && stopped && there is { Ok: true, Value: false };
             ctx.Report(id, "AbortSlew", ok ? Outcome.Pass : Outcome.Fail,

@@ -518,17 +518,17 @@ public sealed class MotionChecks : ICheckGroup
         var dec = MethodChecks.SafeDeclination(ctx);
         var start = await ctx.TryAsync(t => t.SlewToCoordinatesAsync(far, dec));
         if (!start.Ok) return;
-        await Task.Delay(500, ctx.Token);
-        var wasSlewing = (await ctx.TryAsync(t => t.Slewing)).Value;
+        // A real mount may take a moment (a serial round trip) to report the slew: wait for it, up to 3 s.
+        var wasSlewing = await ctx.WaitUntilAsync(t => t.Slewing, TimeSpan.FromSeconds(3), 100);
         var abort = await ctx.TryAsync(t => t.AbortSlew(), ctx.SlewTimeout);
-        var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(10));
+        var stopped = await ctx.WaitUntilAsync(t => !t.Slewing, TimeSpan.FromSeconds(15));
         if (!wasSlewing)
         {
             ctx.Report("AbortSlew.DuringSlew", "AbortSlew", Outcome.Info, "The slew finished too quickly to stop it, so AbortSlew during a slew wasn't checked.");
             return;
         }
         ctx.Report("AbortSlew.DuringSlew", "AbortSlew", abort.Ok && stopped ? Outcome.Pass : Outcome.Fail,
-            abort.Ok && stopped ? "AbortSlew stopped a slew." : abort.Ok ? "Slewing stayed true for 10 s after AbortSlew." : "AbortSlew during a slew raised an error.",
+            abort.Ok && stopped ? "AbortSlew stopped a slew." : abort.Ok ? "Slewing stayed true for 15 s after AbortSlew." : "AbortSlew during a slew raised an error.",
             actual: abort.ErrorText, ms: abort.Ms,
             fix: "AbortSlew must stop the slew straight away and Slewing must then go false.");
         await ctx.WaitForSlewEndAsync();
@@ -927,7 +927,8 @@ public sealed class MotionChecks : ICheckGroup
                     : "IsPulseGuiding stayed true well after the pulse should have ended.",
                 actual: $"returned after {call.Ms:0} ms", ms: call.Ms,
                 fix: "IsPulseGuiding must go false when the pulse's duration has passed.");
-            if (ended && before is { } b && await PositionAsync(ctx) is { } a)
+            // IsPulseGuiding false isn't proof the mount has stopped, or that the position reading has caught up.
+            if (ended && before is { } b && await SettledPositionAsync(ctx) is { } a)
                 ReportGuideMove(ctx, direction, side, b, a, direction is GuideDirection.North or GuideDirection.South ? rateDec : rateRa, duration);
         }
 
@@ -1179,7 +1180,7 @@ public sealed class MotionChecks : ICheckGroup
             var call = await ctx.TryAsync(t => t.PulseGuide(direction, duration), TimeSpan.FromSeconds(ctx.Options.CallTimeoutSeconds) + TimeSpan.FromMilliseconds(duration));
             if (!call.Ok || before is not { } b) continue;
             if (!await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromMilliseconds(duration + 3000), 100)) continue;
-            if (await PositionAsync(ctx) is { } a)
+            if (await SettledPositionAsync(ctx) is { } a)
                 ReportGuideMove(ctx, direction, side, b, a, direction is GuideDirection.North or GuideDirection.South ? rateDec : rateRa, duration);
         }
     }
@@ -1356,6 +1357,29 @@ public sealed class MotionChecks : ICheckGroup
     }
 
     // ---------- Helpers ----------
+
+    /// <summary>
+    /// The position once it has stopped changing: three readings 0.4 s apart within 2" of each other in RA (on the
+    /// sky) and Dec, waiting up to <paramref name="maxSeconds"/>. A real mount may still be finishing a move when
+    /// it reports it done, and a driver that refreshes its position every few hundred ms reads stale until then.
+    /// </summary>
+    public static async Task<(double Ra, double Dec)?> SettledPositionAsync(CheckContext ctx, double maxSeconds = 5)
+    {
+        var last = await PositionAsync(ctx);
+        if (last is null) return null;
+        var clock = Stopwatch.StartNew();
+        var stillSteps = 0;
+        while (clock.Elapsed.TotalSeconds < maxSeconds && stillSteps < 2)
+        {
+            await Task.Delay(400, ctx.Token);
+            if (await PositionAsync(ctx) is not { } now) break;
+            var dRa = Math.Abs(Values.HoursDiff(now.Ra, last.Value.Ra)) * 15 * 3600 * Math.Cos(now.Dec * Math.PI / 180);
+            var dDec = Math.Abs(now.Dec - last.Value.Dec) * 3600;
+            stillSteps = dRa <= 2 && dDec <= 2 ? stillSteps + 1 : 0;
+            last = now;
+        }
+        return last;
+    }
 
     public static async Task<(double Ra, double Dec)?> PositionAsync(CheckContext ctx)
     {
