@@ -189,8 +189,13 @@ public static class Tiers
                 || (report.Options.Tier == 1 ? r.IsProblem : r.Outcome is Outcome.Fail or Outcome.Warning)))];
     }
 
-    /// <summary>A diagnosis finding: Diagnose.* (a conformance run's) or ConformU.Diagnose.* (a ConformU run's).</summary>
-    public static bool IsDiagnosis(CheckResult r) => r.Id.StartsWith("Diagnose.", StringComparison.Ordinal) || r.Id.StartsWith("ConformU.Diagnose.", StringComparison.Ordinal);
+    /// <summary>
+    /// A diagnosis finding: Diagnose.* (a conformance run's) or ConformU.Diagnose.* (a ConformU run's). The pre-motion gate's
+    /// finding (Diagnose.Gate, in a tier 2 or 3 run) is not one: it is about the run, not a member.
+    /// </summary>
+    public static bool IsDiagnosis(CheckResult r)
+        => (r.Id.StartsWith("Diagnose.", StringComparison.Ordinal) || r.Id.StartsWith("ConformU.Diagnose.", StringComparison.Ordinal))
+           && !r.Id.EndsWith(".Gate", StringComparison.Ordinal);
 
     /// <summary>
     /// What the tier after <paramref name="report"/> would do, and why: <see cref="Outlook.Kind"/> says whether it's

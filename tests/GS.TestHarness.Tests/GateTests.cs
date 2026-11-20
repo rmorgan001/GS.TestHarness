@@ -129,4 +129,13 @@ public class GateTests
         Assert.Contains(report.Results, r => r.Id == "Motion.Gate" && r.Outcome == Outcome.Info && r.Message.Contains("nobody was asked"));
         Assert.Contains(report.Results, r => r.Id.StartsWith("Motion.Slew"));
     }
+
+    [Fact]
+    public void The_gates_finding_in_a_tier_2_or_3_run_is_not_a_diagnosis()
+    {
+        var gate = new CheckResult { Id = "Diagnose.Gate", Group = "Diagnose", Member = "Motion", Outcome = Outcome.Warning, Message = "x" };
+        var real = gate with { Id = "Diagnose.SlewSettleTime.Cause" };
+        Assert.False(Tiers.IsDiagnosis(gate));
+        Assert.True(Tiers.IsDiagnosis(real));
+    }
 }
