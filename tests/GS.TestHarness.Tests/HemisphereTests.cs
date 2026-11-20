@@ -54,4 +54,21 @@ public class HemisphereTests
         var report = await RunAsync(Hemisphere.Unknown);
         Assert.Contains(report.Results, r => r.Id == "ParkHome.HomePole" && r.Outcome == Outcome.Pass);
     }
+
+    [Fact]
+    public async Task Home_at_the_other_pole_than_the_hemisphere_you_said_is_a_warning()
+    {
+        // The fake homes at the north pole; saying it is southern puts home at the wrong pole.
+        var report = await RunAsync(Hemisphere.South);
+        var result = Assert.Single(report.Results, r => r.Id == "ParkHome.HomePole");
+        Assert.Equal(Outcome.Warning, result.Outcome);
+        Assert.Contains("southern", result.Message);
+    }
+
+    [Fact]
+    public async Task Home_at_the_pole_of_the_hemisphere_you_said_passes()
+    {
+        var report = await RunAsync(Hemisphere.North);
+        Assert.Contains(report.Results, r => r.Id == "ParkHome.HomePole" && r.Outcome == Outcome.Pass);
+    }
 }

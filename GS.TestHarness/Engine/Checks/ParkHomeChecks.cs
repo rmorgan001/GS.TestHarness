@@ -150,7 +150,8 @@ public sealed class ParkHomeChecks : ICheckGroup
 
     /// <summary>
     /// A German mount at home usually points at the celestial pole of its hemisphere (Dec +90° in the north, -90° in the
-    /// south). Used as a hint for SiteLatitude's sign: ASCOM doesn't say where home is, so a mismatch is only a warning.
+    /// south). A hint: ASCOM doesn't say where home is, so home at the other pole is only Info, unless the user has said
+    /// which hemisphere the mount is in (the Site hemisphere option), when it is a Warning against what they said.
     /// </summary>
     private static async Task HomePoleAsync(CheckContext ctx)
     {
@@ -162,13 +163,28 @@ public sealed class ParkHomeChecks : ICheckGroup
                 $"Home is at Dec {pos.Dec:0.0}°, not at a celestial pole, so it can't say which hemisphere the mount is in.");
             return;
         }
-        var matches = (pos.Dec > 0) == (lat > 0);
-        ctx.Report("HomePole", "FindHome", matches ? Outcome.Pass : Outcome.Warning,
-            matches ? $"Home is at the {(pos.Dec > 0 ? "north" : "south")} celestial pole (Dec {pos.Dec:0.0}°), as SiteLatitude {lat:0.0}° says."
-                    : $"Home is at the {(pos.Dec > 0 ? "north" : "south")} celestial pole (Dec {pos.Dec:0.0}°), but SiteLatitude is {lat:0.0}° ({(lat > 0 ? "north" : "south")}).",
-            expected: $"Dec {(lat > 0 ? "+" : "-")}90° at home", actual: $"Dec {pos.Dec:0.0}°",
-            fix: "A mount's home position is usually the pole of its own hemisphere. Either this mount homes somewhere unusual, " +
-                 "or SiteLatitude has the wrong sign. Check the sign of the latitude where it is set and stored.");
+        var pole = pos.Dec > 0 ? "north" : "south";
+        if (ctx.Options.SiteHemisphere == Hemisphere.Unknown)
+        {
+            // Nothing says which hemisphere is right: a mismatch is only a hint, not a problem.
+            var matches = (pos.Dec > 0) == (lat > 0);
+            ctx.Report("HomePole", "FindHome", matches ? Outcome.Pass : Outcome.Info,
+                matches ? $"Home is at the {pole} celestial pole (Dec {pos.Dec:0.0}°), as SiteLatitude {lat:0.0}° says."
+                        : $"Home is at the {pole} celestial pole (Dec {pos.Dec:0.0}°), but SiteLatitude is {lat:0.0}° ({(lat > 0 ? "north" : "south")}): " +
+                          "either this mount homes at the other pole, or SiteLatitude has the wrong sign. Set the Site hemisphere to check it.");
+        }
+        else
+        {
+            // The user said which hemisphere the mount is in: home at the other pole is worth a warning.
+            var north = ctx.Options.SiteHemisphere == Hemisphere.North;
+            var matches = (pos.Dec > 0) == north;
+            ctx.Report("HomePole", "FindHome", matches ? Outcome.Pass : Outcome.Warning,
+                matches ? $"Home is at the {pole} celestial pole (Dec {pos.Dec:0.0}°), as the {(north ? "northern" : "southern")} hemisphere you said."
+                        : $"Home is at the {pole} celestial pole (Dec {pos.Dec:0.0}°), but you said the mount is in the {(north ? "northern" : "southern")} hemisphere.",
+                expected: $"Dec {(north ? "+" : "-")}90° at home", actual: $"Dec {pos.Dec:0.0}°",
+                fix: "A mount's home position is usually the pole of its own hemisphere. Either this mount homes at the other pole, " +
+                     "or the Site hemisphere setting or SiteLatitude's sign is wrong.");
+        }
     }
 
     private static async Task ParkAsync(CheckContext ctx)
