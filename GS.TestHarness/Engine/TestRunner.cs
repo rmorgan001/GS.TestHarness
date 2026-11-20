@@ -24,7 +24,10 @@ public sealed record RunProgress(int GroupIndex, int GroupCount, string Group, i
 /// <summary>Runs the check groups, in order, against one mount, and gathers the findings into a <see cref="RunReport"/>.</summary>
 public sealed class TestRunner(SourceLocator locator)
 {
-    /// <summary>The groups, in the order they run: connection first, the disconnected checks last.</summary>
+    /// <summary>
+    /// The groups, in the order they run: connection first, the groups that don't move the mount, then the ones that do
+    /// (motion, park and home, tracking rates, the diagnoses), and the disconnected checks last.
+    /// </summary>
     public static IReadOnlyList<ICheckGroup> Groups { get; } =
     [
         new ConnectionChecks(),
@@ -34,11 +37,11 @@ public sealed class TestRunner(SourceLocator locator)
         new PropertyChecks(),
         new MethodChecks(),
         new SettingsChecks(),
+        new ClientsChecks(),
+        new RegistrationChecks(),
         new MotionChecks(),
         new ParkHomeChecks(),
         new TrackingChecks(),
-        new ClientsChecks(),
-        new RegistrationChecks(),
         new DiagnoseChecks(),
         new ConformUChecks(),
         new PerformanceChecks(),
