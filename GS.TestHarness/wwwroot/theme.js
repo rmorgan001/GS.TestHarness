@@ -51,6 +51,20 @@
         root.style.removeProperty('color-scheme');
     }
 
+    // The browser's own window colour (the title bar of an app-style window, a phone's address bar) follows the page's background.
+    function syncWindowColour() {
+        try {
+            const colour = getComputedStyle(root).backgroundColor;
+            let meta = document.querySelector('meta[name="theme-color"]');
+            if (!meta) {
+                meta = document.createElement('meta');
+                meta.name = 'theme-color';
+                document.head.appendChild(meta);
+            }
+            meta.content = colour;
+        } catch { /* nothing to change */ }
+    }
+
     function get() {
         return stored('gsTheme') || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'dark');
     }
@@ -61,6 +75,7 @@
         if (name === 'dark') delete root.dataset.theme;
         else root.dataset.theme = name;
         if (name === 'custom') applyCustom();
+        syncWindowColour();
     }
 
     window.gsTheme = {
@@ -71,6 +86,7 @@
         setCustom: colours => {
             try { localStorage.setItem('gsCustomTheme', JSON.stringify(colours)); } catch { /* not remembered */ }
             if (root.dataset.theme === 'custom') applyCustom();
+            syncWindowColour();
         }
     };
 
