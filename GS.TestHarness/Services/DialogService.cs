@@ -172,6 +172,12 @@ public sealed class GateDialogModel(GateRequest request) : DialogModel
     }
 }
 
+/// <summary>
+/// The "Your own colours" editor in a dialog (a double click on Custom in the header). The page shows through, so the
+/// colours can be seen as they change.
+/// </summary>
+public sealed class ThemeDialogModel : DialogModel;
+
 /// <summary>Picks an ASCOM telescope driver registered on this computer (as GS.Point3DWeb's ASCOM Drivers dialog).</summary>
 public sealed class ComDriversDialogModel : DialogModel
 {

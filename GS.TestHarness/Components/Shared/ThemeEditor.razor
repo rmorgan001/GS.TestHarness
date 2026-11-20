@@ -19,8 +19,8 @@
 
 @* Your own colour theme: seven colours, with a live preview. The rest of the palette (panels, lines, hover shades) is worked
    out from them. Kept by this browser; Export and Import move it between browsers and projects. *@
-<section class="card theme-editor">
-    <h2>Your own colours <HelpLink Anchor="themes" /></h2>
+<section class="@(InDialog ? "theme-editor" : "card theme-editor")">
+    @if (!InDialog) { <h2>Your own colours <HelpLink Anchor="themes" /></h2> }
     <p class="muted small">Change a colour and the page changes with it. Panels, lines and hover shades are worked out from these seven.
         Kept by this browser; use Export to take the palette elsewhere.</p>
 
@@ -79,6 +79,9 @@
 </section>
 
 @code {
+    /// <summary>Shown in the colour dialog (no card or heading of its own).</summary>
+    [Parameter] public bool InDialog { get; set; }
+
     private Dictionary<string, string> _colours = new(ThemeColours.Presets["dark"]);
     private string _base = "dark", _import = "";
     private string? _exported, _message;

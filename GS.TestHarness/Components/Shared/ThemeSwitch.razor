@@ -17,13 +17,14 @@
 @implements IDisposable
 @inject IJSRuntime JS
 @inject ThemeService Theme
+@inject DialogService Dialogs
 
 @* Day / Dark / Dusk / Night / Custom: Dark is the default look; Dusk is dim amber and Night is red only, for dark-adapted eyes
    at the telescope; Custom is the user's own colours (under Options). Remembered by this browser (wwwroot/theme.js, app.css). *@
 <div class="theme-switch" role="group" aria-label="Colour theme">
     @foreach (var (name, label, title) in Themes)
     {
-        <button type="button" aria-pressed="@(Theme.Current == name ? "true" : "false")" title="@title" @onclick="() => Pick(name)">@label</button>
+        <button type="button" aria-pressed="@(Theme.Current == name ? "true" : "false")" title="@title" @onclick="() => Pick(name)" @ondblclick="() => Edit(name)">@label</button>
     }
 </div>
 
@@ -34,7 +35,7 @@
         ("dark", "Dark", "The default dark look"),
         ("dusk", "Dusk", "Dim amber, while your eyes adapt"),
         ("night", "Night", "Red only, to keep your night vision"),
-        ("custom", "Custom", "Your own colours (set under Options)")
+        ("custom", "Custom", "Your own colours: double-click to change them")
     ];
 
     protected override void OnInitialized() => Theme.Changed += OnChanged;
@@ -62,6 +63,13 @@
         }
         catch (Exception) { /* no browser to ask */ }
         Theme.Set(name);
+    }
+
+    /// <summary>A double click on Custom opens the colour editor in a dialog; the first click already switched to it.</summary>
+    private async Task Edit(string name)
+    {
+        if (name != "custom") return;
+        await Dialogs.ShowAsync(new ThemeDialogModel());
     }
 
     public void Dispose() => Theme.Changed -= OnChanged;

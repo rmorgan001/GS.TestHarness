@@ -20,7 +20,7 @@
 @* Renders the dialog DialogService is showing, over everything. Placed once in MainLayout. *@
 @if (Dialogs.Current is { } current)
 {
-    <div class="dialog-backdrop" @onkeydown="e => OnKey(e, current)">
+    <div class="dialog-backdrop @(current is ThemeDialogModel ? "preview" : null)" @onkeydown="e => OnKey(e, current)">
         <div class="dialog" role="dialog" aria-modal="true">
             @switch (current)
             {
@@ -35,6 +35,9 @@
                             <button type="button" class="btn" autofocus="@confirm.Danger" @onclick="() => confirm.Close(false)">@cancel</button>
                         }
                     </div>
+                    break;
+                case ThemeDialogModel theme:
+                    <ThemeDialog Model="theme" />
                     break;
                 case GateDialogModel gate:
                     <GateDialog Model="gate" />
