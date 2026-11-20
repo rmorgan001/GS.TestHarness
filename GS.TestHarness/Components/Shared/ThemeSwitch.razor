@@ -14,14 +14,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *@
 
+@implements IDisposable
 @inject IJSRuntime JS
+@inject ThemeService Theme
 
-@* Day / Dark / Dusk / Night: Dark is the default look; Dusk is dim amber and Night is red only, for dark-adapted eyes at the
-   telescope. Remembered by this browser (wwwroot/app.js, app.css). *@
+@* Day / Dark / Dusk / Night / Custom: Dark is the default look; Dusk is dim amber and Night is red only, for dark-adapted eyes
+   at the telescope; Custom is the user's own colours (under Options). Remembered by this browser (wwwroot/theme.js, app.css). *@
 <div class="theme-switch" role="group" aria-label="Colour theme">
     @foreach (var (name, label, title) in Themes)
     {
-        <button type="button" aria-pressed="@(_theme == name ? "true" : "false")" title="@title" @onclick="() => Pick(name)">@label</button>
+        <button type="button" aria-pressed="@(Theme.Current == name ? "true" : "false")" title="@title" @onclick="() => Pick(name)">@label</button>
     }
 </div>
 
@@ -31,26 +33,36 @@
         ("day", "Day", "Light, for daylight"),
         ("dark", "Dark", "The default dark look"),
         ("dusk", "Dusk", "Dim amber, while your eyes adapt"),
-        ("night", "Night", "Red only, to keep your night vision")
+        ("night", "Night", "Red only, to keep your night vision"),
+        ("custom", "Custom", "Your own colours (set under Options)")
     ];
 
-    private string _theme = "dark";
+    protected override void OnInitialized() => Theme.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         try
         {
-            _theme = await JS.InvokeAsync<string>("gsTheme.get");
-            StateHasChanged();
+            Theme.Set(await JS.InvokeAsync<string>("gsTheme.get"));
         }
         catch (Exception) { /* no browser to ask */ }
     }
 
     private async Task Pick(string name)
     {
-        _theme = name;
-        try { await JS.InvokeVoidAsync("gsTheme.set", name); }
+        try
+        {
+            // The first time Custom is picked it starts as a copy of the dark theme, ready to change under Options.
+            if (name == "custom" && await JS.InvokeAsync<Dictionary<string, string>?>("gsTheme.getCustom") is null)
+                await JS.InvokeVoidAsync("gsTheme.setCustom", ThemeColours.Presets["dark"]);
+            await JS.InvokeVoidAsync("gsTheme.set", name);
+        }
         catch (Exception) { /* no browser to ask */ }
+        Theme.Set(name);
     }
+
+    public void Dispose() => Theme.Changed -= OnChanged;
 }

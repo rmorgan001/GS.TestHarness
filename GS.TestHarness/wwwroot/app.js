@@ -72,14 +72,3 @@ window.gsNotify = {
         }
     }
 };
-
-// Day / Dark / Dusk / Night (see app.css). "dark" is the default look, with no data-theme. The choice is remembered by
-// this browser; with none made, a browser set to a light theme gets Day. App.razor applies it before the page is drawn.
-window.gsTheme = {
-    get: () => localStorage.getItem('gsTheme') || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'day' : 'dark'),
-    set: name => {
-        try { localStorage.setItem('gsTheme', name); } catch { /* not remembered */ }
-        if (name === 'dark') delete document.documentElement.dataset.theme;
-        else document.documentElement.dataset.theme = name;
-    }
-};

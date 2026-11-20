@@ -64,6 +64,7 @@ builder.Services.AddSingleton<HomeService>();
 // Per browser tab: the server picked (and being dragged), and the popup dialogs.
 builder.Services.AddScoped<Workbench>();
 builder.Services.AddScoped<DialogService>();
+builder.Services.AddScoped<ThemeService>();
 builder.Services.AddScoped<RunPageState>();
 
 var app = builder.Build();

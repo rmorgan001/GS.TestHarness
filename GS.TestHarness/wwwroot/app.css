@@ -780,3 +780,41 @@ body:has(.print-page) { background: #fff; }
 .theme-switch button[aria-pressed="true"] { background: var(--accent); color: var(--green-ink); font-weight: 600; }
 .theme-switch { margin-left: auto; }
 .header-run + .theme-switch, .theme-switch + .help-button { margin-left: 0; }
+
+/* The user's own theme: seven colours set by wwwroot/theme.js as --c-*; the rest of the palette is worked out from them. */
+:root[data-theme="custom"] {
+    --sky: var(--c-bg);
+    --panel: color-mix(in srgb, var(--c-bg) 94%, var(--c-text));
+    --panel-raised: color-mix(in srgb, var(--c-bg) 88%, var(--c-text));
+    --well: color-mix(in srgb, var(--c-bg) 97%, var(--c-text));
+    --line: color-mix(in srgb, var(--c-bg) 82%, var(--c-text));
+    --line-strong: color-mix(in srgb, var(--c-bg) 68%, var(--c-text));
+    --moon: var(--c-text);
+    --mare: color-mix(in srgb, var(--c-text) 68%, var(--c-bg));
+    --green: var(--c-accent);
+    --green-hover: color-mix(in srgb, var(--c-accent) 82%, var(--c-text));
+    --green-ink: var(--c-bg);
+    --yellow: var(--c-warn);
+    --red: var(--c-fail);
+    --error: var(--c-error);
+    --info: var(--c-info);
+    --skipped: color-mix(in srgb, var(--c-text) 45%, var(--c-bg));
+    --link-sky: var(--c-info);
+    --fail-text: var(--c-fail);
+    --error-text: var(--c-error);
+    --info-text: var(--c-info);
+    --skipped-text: color-mix(in srgb, var(--c-text) 60%, var(--c-bg));
+    --stop-bg: color-mix(in srgb, var(--c-fail) 60%, var(--c-bg));
+    --fail-surface: color-mix(in srgb, var(--c-fail) 12%, var(--c-bg));
+    --on-strong: var(--c-text);
+    --on-hover: var(--c-text);
+}
+
+/* The colour editor under Options. */
+.theme-editor .theme-row { display: grid; grid-template-columns: 7.5rem 3rem 5.5rem 1fr; gap: .5rem .75rem; align-items: center; padding: .3rem 0; }
+.theme-editor input[type="color"] { width: 3rem; height: 2rem; padding: 0; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; cursor: pointer; }
+.theme-editor .theme-hex { font-family: var(--mono); font-size: .85rem; }
+.theme-editor .ratio-ok { color: var(--green); }
+.theme-editor .ratio-low { color: var(--yellow); }
+.theme-editor .theme-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .75rem 0 .25rem; }
+.theme-editor textarea { width: 100%; min-height: 4.5rem; font-family: var(--mono); font-size: .8rem; }
