@@ -165,7 +165,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private double _ha;                      // hour angle held while not tracking
     private long _anchor = System.Diagnostics.Stopwatch.GetTimestamp();
     private double? _targetRa, _targetDec;
-    private bool _tracking = true, _atPark, _atHome;
+    private bool _tracking = true, _atPark, _atHome = true; // the mount starts at home, as a run expects
     private bool _slewing; // a timed motion (slew, park, home) is under way
     private readonly double[] _axisRates = new double[3];
     private readonly bool[] _coasting = new bool[3]; // SlewingEndsBeforeAxisStops: moving, but not reported as slewing
