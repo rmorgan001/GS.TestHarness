@@ -25,17 +25,7 @@
             @switch (current)
             {
                 case ConfirmDialogModel confirm:
-                    @if (confirm.Icon is { } icon)
-                    {
-                        <h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem;">
-                            <Icon Kind="@icon" Size="52" />
-                            <span>@confirm.Title</span>
-                        </h2>
-                    }
-                    else
-                    {
-                        <h2 class="dialog-title">@confirm.Title</h2>
-                    }
+                    <h2 class="dialog-title">@confirm.Title</h2>
                     <p class="dialog-message">@confirm.Message</p>
                     <div class="dialog-buttons">
                         @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
@@ -46,8 +36,8 @@
                         }
                     </div>
                     break;
-                case HomeDialogModel home:
-                    <HomeDialog Model="home" />
+                case StartDialogModel start:
+                    <StartDialog Model="start" />
                     break;
                 case ComDriversDialogModel drivers:
                     <ComDriversDialog Model="drivers" />

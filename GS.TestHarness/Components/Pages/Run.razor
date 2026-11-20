@@ -22,6 +22,7 @@
 @inject ServerList Servers
 @inject DialogService Dialogs
 @inject HomeService Home
+@inject ConnectionService Connections
 @inject RunPageState State
 @inject SourceLocator Locator
 @inject SourceStore SourceFolders
@@ -512,25 +513,39 @@ else
     }
 
     /// <summary>
-    /// A run that moves the mount starts from the home position. When the mount doesn't report AtHome, asks the user to
-    /// put it there (by hand, or Go home) and returns whether they went on. A run that doesn't move the mount isn't asked.
+    /// The warning before a run. For a run that moves the mount it first connects to the mount and reads whether it's at
+    /// the home position; the one dialog then shows the safety warning, plus the "put the mount in the home position"
+    /// section when it isn't home. Start keeps the mount connected (as if connected from the sidebar); Cancel
+    /// disconnects it. Returns whether the user went on.
     /// </summary>
-    private async Task<bool> ConfirmAtHomeAsync(TestTarget target, RunOptions options)
+    private async Task<bool> ConfirmStartAsync(string title, TestTarget target, RunOptions options)
     {
-        if (!options.AllowMotion) return true;
-        await using var home = Home.Open(target, options);
-        var status = await home.CheckAsync();
-        if (status.Error is null && status.AtHome) return true;
-        return await Dialogs.ShowAsync(new HomeDialogModel(home, status));
+        HomeSession? home = null;
+        HomeStatus? status = null;
+        if (options.AllowMotion)
+        {
+            home = Home.Open(target, options);
+            status = await home.CheckAsync();
+        }
+        try
+        {
+            var accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status));
+            if (accepted && home is not null && Servers.FindDevice(target)?.Id is { } id)
+                home.TryHandOver(session => Connections.Adopt(id, session));
+            return accepted;
+        }
+        finally
+        {
+            if (home is not null) await home.DisposeAsync();
+        }
     }
 
     private async Task Start()
     {
         if (Bench.Selected is not { } server) return;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
         if (Runs.IsRunning) return;
         var options = CurrentOptions();
-        if (!await ConfirmAtHomeAsync(server.RunTarget, options) || Runs.IsRunning) return;
+        if (!await ConfirmStartAsync("Watch the mount", server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         Runs.Start(server.RunTarget, options);
     }
@@ -615,11 +630,10 @@ else
     private async Task StartConformU()
     {
         if (Bench.Selected is not { } server || State.Log is not { } log) return;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
         if (Runs.IsRunning) return;
         var plan = log.Plan();
         var options = CurrentOptions();
-        if (!await ConfirmAtHomeAsync(server.RunTarget, options) || Runs.IsRunning) return;
+        if (!await ConfirmStartAsync("Watch the mount", server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
@@ -671,10 +685,8 @@ else
     {
         if (Runs.IsRunning || NeedsLog(next)) return;
         var target = Runs.Target ?? next.From.Target;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
-        if (Runs.IsRunning) return;
         var tierOptions = Tiers.Options(CurrentOptions(), next);
-        if (!await ConfirmAtHomeAsync(target, tierOptions) || Runs.IsRunning) return;
+        if (!await ConfirmStartAsync($"Run tier {next.Tier}", target, tierOptions) || Runs.IsRunning) return;
         Runs.Start(target, tierOptions, next.From.ConformULog is null ? null : Runs.ConformU, next.From);
     }
 

@@ -163,5 +163,18 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         catch { /* nothing more to do */ }
     }
 
+    /// <summary>
+    /// Hands the connection this made to <paramref name="adopt"/> (the sidebar's connection list), so the mount stays
+    /// connected after the dialog closes. False if there was nothing to hand over (the mount was already connected by
+    /// another client, or the adopter refused): disposing then leaves it as it was, or disconnects what this made.
+    /// </summary>
+    public bool TryHandOver(Func<ITelescopeSession, bool> adopt)
+    {
+        if (_session is null || !_connectedHere || !adopt(_session)) return false;
+        _session = null;
+        _connectedHere = false;
+        return true;
+    }
+
     public ValueTask DisposeAsync() => new(DropAsync());
 }

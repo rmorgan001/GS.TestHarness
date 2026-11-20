@@ -44,6 +44,21 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
         lock (_gate) return _busy.Contains(id);
     }
 
+    /// <summary>
+    /// Takes over a connection made elsewhere (the start dialog's home check), so the server shows as connected and the
+    /// sidebar's Disconnect closes it. False if the server is already connected here.
+    /// </summary>
+    public bool Adopt(string id, ITelescopeSession session)
+    {
+        lock (_gate)
+        {
+            if (_sessions.ContainsKey(id)) return false;
+            _sessions[id] = session;
+        }
+        Changed?.Invoke();
+        return true;
+    }
+
     /// <summary>Connects (V4 Connect, falling back to Connected = true); returns whether the device reports connected.</summary>
     public async Task<bool> ConnectAsync(ServerEntry server)
     {

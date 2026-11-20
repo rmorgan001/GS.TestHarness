@@ -67,42 +67,51 @@ public abstract class DialogModel
 }
 
 /// <summary>Asks a yes/no question, or (with no cancel text) just tells the user something.</summary>
-public sealed class ConfirmDialogModel(string title, string message, string acceptText = "Yes", string? cancelText = "No", bool danger = false, string? icon = null) : DialogModel
+public sealed class ConfirmDialogModel(string title, string message, string acceptText = "Yes", string? cancelText = "No", bool danger = false) : DialogModel
 {
     public string Title { get; } = title;
     public string Message { get; } = message;
     public string AcceptText { get; } = acceptText;
     public string? CancelText { get; } = cancelText;
     public bool Danger { get; } = danger;
-    public string? Icon { get; } = icon;
 }
 
 /// <summary>
-/// Asks the user to put the mount in the home position before a run: by hand (power it off and on, then Check again),
-/// or by the Go home button (FindHome). Accepting means the user confirms the mount is at home, so the run can start.
+/// The warning shown before every run: the user takes responsibility for watching the mount. For a run that moves the
+/// mount it holds a <see cref="HomeSession"/> (the mount is connected while the dialog is open) and, when the mount
+/// isn't at the home position, adds the "put the mount in the home position" section with Go home and Check again.
+/// Accepting means the user confirms the mount is at home (if it was asked), so the run can start.
 /// </summary>
-public sealed class HomeDialogModel(HomeSession home, HomeStatus status) : DialogModel
+public sealed class StartDialogModel(string title, string message, HomeSession? home, HomeStatus? status) : DialogModel
 {
-    public HomeStatus Status { get; private set; } = status;
+    public string Title { get; } = title;
+    public string Message { get; } = message;
+
+    /// <summary>The mount's position, once read; null for a run that doesn't move the mount.</summary>
+    public HomeStatus? Status { get; private set; } = status;
+    public bool HasMount => home is not null;
     public bool Busy { get; private set; }
     public string? Note { get; private set; }
 
+    /// <summary>The mount isn't reporting that it's at home (or couldn't be read): the home section is shown.</summary>
+    public bool NeedsHome => home is not null && Status is { } s && (s.Error is not null || !s.AtHome);
+
     /// <summary>Reads the mount's position again (after the user moved it, or powered it off and on).</summary>
-    public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", () => home.CheckAsync(), changed);
+    public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", h => h.CheckAsync(), changed);
 
     /// <summary>Sends the mount to the home position and waits for it to get there.</summary>
-    public Task GoHomeAsync(Action changed) => RunAsync("Sending the mount home…", () => home.GoHomeAsync(), changed);
+    public Task GoHomeAsync(Action changed) => RunAsync("Sending the mount home…", h => h.GoHomeAsync(), changed);
 
-    private async Task RunAsync(string note, Func<Task<HomeStatus>> work, Action changed)
+    private async Task RunAsync(string note, Func<HomeSession, Task<HomeStatus>> work, Action changed)
     {
-        if (Busy) return;
+        if (Busy || home is null) return;
         Busy = true;
         Note = note;
         changed();
         try
         {
-            Status = await work();
-            Note = Status.Error is null && !Status.AtHome ? "The mount still isn't reporting that it's at home." : null;
+            Status = await work(home);
+            Note = NeedsHome && Status?.Error is null ? "The mount still isn't reporting that it's at home." : null;
         }
         finally
         {
