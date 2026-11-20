@@ -25,7 +25,7 @@
 {
     <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
         <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
-        <span>
+        <span style="white-space: normal;">
             <b style="color: var(--fail); font-size: 1.15rem;">The mount is not connected</b><br /><br />
             <span style="color: var(--fail);">@Model.Status?.Error</span><br /><br />
             The run can't start until the mount is connected. Click Cancel, check the mount and its connection, then start again.
@@ -38,22 +38,28 @@ else
     {
         <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
             <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
-            <span>
+            <span style="white-space: normal;">
                 <b style="color: var(--fail); font-size: 1.15rem;">Put the mount in the home position</b><br /><br />
-                Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check again.<br /><br />
-                <span style="color: var(--yellow);">Finally: Click "Start run" when the mount is in the home position</span>
+                <span style="color: var(--yellow);">Finally: Click "Start run" when the mount is in the home position</span><br /><br />
+                Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check again.
             </span>
         </div>
     }
 
-    @if (Model.Note is { } note)
-    {
-        <p class="muted">@note</p>
-    }
-
-    <p class="dialog-message">@Model.Message</p>
+    @* Each bullet stands out in its own highlighted box. *@
+    <div style="margin: 0 0 1rem;">
+        @foreach (var line in Model.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--yellow); border-radius: 4px; background: rgba(255, 200, 0, .12); font-weight: 600;">@line</div>
+        }
+    </div>
 
     <p class="dialog-message" style="color: var(--yellow);">By clicking Start you accept responsibility for monitoring the mount's safety.</p>
+}
+
+@if (Model.Note is { } note)
+{
+    <p class="dialog-message" style="color: var(--green); text-align: center; margin-bottom: 0;">@note</p>
 }
 
 <div class="dialog-buttons" style="justify-content: center;">
