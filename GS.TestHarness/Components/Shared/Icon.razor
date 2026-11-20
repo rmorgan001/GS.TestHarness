@@ -20,7 +20,7 @@
 </svg>
 
 @code {
-    /// <summary>Plus, Search, Pencil, Delete, Close, Telescope, Connection, ContentSave, ChevronDoubleLeft/Right, Heart, Play, Stop, FileDocument, Compare, Download, CodeBraces, Folder, FolderOpen, ArrowUp or HelpCircle.</summary>
+    /// <summary>Plus, Search, Pencil, Delete, Close, Telescope, Connection, ContentSave, ChevronDoubleLeft/Right, Heart, Play, Stop, FileDocument, Compare, Download, CodeBraces, Folder, FolderOpen, ArrowUp, AlertCircle or HelpCircle.</summary>
     [Parameter, EditorRequired] public string Kind { get; set; } = "";
     [Parameter] public int Size { get; set; } = 20;
 
@@ -49,6 +49,7 @@
         "CodeBraces" => "M8,3A2,2 0 0,0 6,5V9A2,2 0 0,1 4,11H3V13H4A2,2 0 0,1 6,15V19A2,2 0 0,0 8,21H10V19H8V14A2,2 0 0,0 6,12A2,2 0 0,0 8,10V5H10V3M16,3A2,2 0 0,1 18,5V9A2,2 0 0,0 20,11H21V13H20A2,2 0 0,0 18,15V19A2,2 0 0,1 16,21H14V19H16V14A2,2 0 0,1 18,12A2,2 0 0,1 16,10V5H14V3H16Z",
         "Folder" => "M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z",
         "FolderOpen" => "M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z",
+        "AlertCircle" => "M13,13H11V7H13M13,17H11V15H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z",
         "ArrowUp" => "M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z",
         _ => ""
     };

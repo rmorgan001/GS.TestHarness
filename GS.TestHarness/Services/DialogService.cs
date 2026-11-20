@@ -76,6 +76,41 @@ public sealed class ConfirmDialogModel(string title, string message, string acce
     public bool Danger { get; } = danger;
 }
 
+/// <summary>
+/// Asks the user to put the mount in the home position before a run: by hand (power it off and on, then Check again),
+/// or by the Go home button (FindHome). Accepting means the user confirms the mount is at home, so the run can start.
+/// </summary>
+public sealed class HomeDialogModel(HomeService home, TestTarget target, RunOptions options, HomeStatus status) : DialogModel
+{
+    public HomeStatus Status { get; private set; } = status;
+    public bool Busy { get; private set; }
+    public string? Note { get; private set; }
+
+    /// <summary>Reads the mount's position again (after the user moved it, or powered it off and on).</summary>
+    public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", () => home.CheckAsync(target, options), changed);
+
+    /// <summary>Sends the mount to the home position and waits for it to get there.</summary>
+    public Task GoHomeAsync(Action changed) => RunAsync("Sending the mount home…", () => home.GoHomeAsync(target, options), changed);
+
+    private async Task RunAsync(string note, Func<Task<HomeStatus>> work, Action changed)
+    {
+        if (Busy) return;
+        Busy = true;
+        Note = note;
+        changed();
+        try
+        {
+            Status = await work();
+            Note = Status.Error is null && !Status.AtHome ? "The mount still isn't reporting that it's at home." : null;
+        }
+        finally
+        {
+            Busy = false;
+            changed();
+        }
+    }
+}
+
 /// <summary>Picks an ASCOM telescope driver registered on this computer (as GS.Point3DWeb's ASCOM Drivers dialog).</summary>
 public sealed class ComDriversDialogModel : DialogModel
 {

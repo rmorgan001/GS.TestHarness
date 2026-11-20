@@ -1,0 +1,58 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* Asks the user to put the mount in the home position before a run that moves it. *@
+<h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem; color: var(--fail);">
+    <Icon Kind="AlertCircle" Size="44" />
+    <span>Mount not at home</span>
+</h2>
+
+<div class="dialog-message with-icon">
+    <Icon Kind="Telescope" Size="28" />
+    <span>
+        @if (Model.Status.Error is { } error)
+        {
+            @error
+        }
+        else
+        {
+            <text>The mount isn't reporting that it's at the home position.</text>
+        }
+        <br /><br />
+        A run starts from the home position. Either:<br />
+        <span class="danger">• put the mount in the home position yourself, then power it <b>OFF</b> and <b>ON</b> again, and click <b>Check again</b>; or</span><br />
+        • click <b>Go home</b> and the mount will slew to the home position.<br /><br />
+        Finally: When the mount is at home position, click <b>Start run</b>.
+    </span>
+</div>
+
+@if (Model.Note is { } note)
+{
+    <p class="muted">@note</p>
+}
+
+<div class="dialog-buttons">
+    <button type="button" class="btn primary" disabled="@Model.Busy" @onclick="() => Model.Close(true)">Start run</button>
+    <button type="button" class="btn" disabled="@(Model.Busy || (!Model.Status.CanFindHome && Model.Status.Error is null))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
+    <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+    <button type="button" class="btn" @onclick="() => Model.Close(false)">Cancel</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public HomeDialogModel Model { get; set; } = default!;
+
+    private void Changed() => _ = InvokeAsync(StateHasChanged);
+}

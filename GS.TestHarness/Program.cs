@@ -59,6 +59,7 @@ builder.Services.AddSingleton<SourceStore>();
 builder.Services.AddDataProtection().SetApplicationName("GS.TestHarness");
 builder.Services.AddSingleton<ServerList>();
 builder.Services.AddSingleton<ConnectionService>();
+builder.Services.AddSingleton<HomeService>();
 
 // Per browser tab: the server picked (and being dragged), and the popup dialogs.
 builder.Services.AddScoped<Workbench>();

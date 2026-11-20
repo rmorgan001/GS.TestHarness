@@ -21,6 +21,7 @@
 @inject Workbench Bench
 @inject ServerList Servers
 @inject DialogService Dialogs
+@inject HomeService Home
 @inject RunPageState State
 @inject SourceLocator Locator
 @inject SourceStore SourceFolders
@@ -536,12 +537,25 @@ else
             _ = SourceFolders.SetAsync(codebase, settings.SourcePath, refresh: false);
     }
 
+    /// <summary>
+    /// A run that moves the mount starts from the home position. When the mount doesn't report AtHome, asks the user to
+    /// put it there (by hand, or Go home) and returns whether they went on. A run that doesn't move the mount isn't asked.
+    /// </summary>
+    private async Task<bool> ConfirmAtHomeAsync(TestTarget target, RunOptions options)
+    {
+        if (!options.AllowMotion) return true;
+        var status = await Home.CheckAsync(target, options);
+        if (status.Error is null && status.AtHome) return true;
+        return await Dialogs.ShowAsync(new HomeDialogModel(Home, target, options, status));
+    }
+
     private async Task Start()
     {
         if (Bench.Selected is not { } server) return;
         if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", StartMessage(server), "Start", "Cancel", danger: true))) return;
         if (Runs.IsRunning) return;
         var options = CurrentOptions();
+        if (!await ConfirmAtHomeAsync(server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         Runs.Start(server.RunTarget, options);
     }
@@ -630,6 +644,7 @@ else
         if (Runs.IsRunning) return;
         var plan = log.Plan();
         var options = CurrentOptions();
+        if (!await ConfirmAtHomeAsync(server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
@@ -685,7 +700,9 @@ else
         var message = server is not null ? StartMessage(server) : SafetyWarning;
         if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", message, "Start", "Cancel", danger: true))) return;
         if (Runs.IsRunning) return;
-        Runs.Start(target, Tiers.Options(CurrentOptions(), next), next.From.ConformULog is null ? null : Runs.ConformU, next.From);
+        var tierOptions = Tiers.Options(CurrentOptions(), next);
+        if (!await ConfirmAtHomeAsync(target, tierOptions) || Runs.IsRunning) return;
+        Runs.Start(target, tierOptions, next.From.ConformULog is null ? null : Runs.ConformU, next.From);
     }
 
     private static string SeverityCss(ConformUSeverity s) => s switch
