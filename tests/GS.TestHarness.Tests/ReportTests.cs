@@ -126,6 +126,32 @@ public class ReportTests
     }
 
     [Fact]
+    public void Markdown_keeps_every_line_of_actual_and_csv_escapes_minus_infinity()
+    {
+        var diagnosis = Result("Diagnose.X", Outcome.Fail) with
+        {
+            Expected = "first\nsecond", Actual = "5 of 25 members answered:\n  RightAscension: answered\n  Tracking: answered", Fix = "add\nthe guard"
+        };
+        var md = ReportStore.ToMarkdown(Report(diagnosis));
+        Assert.Contains("  RightAscension: answered", md);
+        Assert.Contains("  Tracking: answered", md);
+        Assert.Contains("- Expected: first second", md);
+        Assert.Contains("- Fix: add the guard", md);
+
+        var csv = System.Text.Encoding.UTF8.GetString(ReportCsv.Report(Report(Result("A.X", Outcome.Fail) with { Actual = "-Infinity" }))[3..]);
+        Assert.Contains(",'-Infinity,", csv);
+    }
+
+    [Fact]
+    public void Settings_sit_beside_the_reports_folder_and_inside_one_written_with_a_trailing_separator()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gs-harness-settings");
+        Assert.Equal(root, new ReportStore(Path.Combine(root, "Reports")).SettingsFolder);
+        // As before the upgrade: "...\Reports\" kept its settings in Reports itself.
+        Assert.Equal(Path.Combine(root, "Reports"), new ReportStore(Path.Combine(root, "Reports") + Path.DirectorySeparatorChar).SettingsFolder);
+    }
+
+    [Fact]
     public async Task Reports_are_saved_listed_loaded_and_deleted()
     {
         var folder = Path.Combine(Path.GetTempPath(), "gs-harness-tests-" + Guid.NewGuid().ToString("N"));

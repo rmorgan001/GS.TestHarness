@@ -115,9 +115,12 @@ app.MapRazorComponents<App>()
 app.Run();
 return 0;
 
-// A report by ID, or null when there's none (or the ID isn't one).
+// A report by ID, or null when there's none, the ID isn't one, or its file can't be read (cut short, not JSON): a 404, not a 500.
 static async Task<RunReport?> TryLoadAsync(ReportStore store, string id)
 {
     try { return await store.LoadAsync(id); }
-    catch (ArgumentException) { return null; }
+    catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+    {
+        return null;
+    }
 }

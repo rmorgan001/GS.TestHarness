@@ -73,25 +73,33 @@ public static partial class AreaDiagnostics
         ITelescopeSession? b = null, c = null;
         var steps = new StringBuilder();
         ClientState? cAfterB = null, aAfterB = null, cAfterBack = null, aAfterAll = null;
+        // Which extra clients may still be connected: disconnected in the finally, or one left behind fails the Disconnected checks.
+        bool bOn = false, cOn = false;
         try
         {
             b = await ctx.OpenSession();
             c = await ctx.OpenSession();
+            bOn = true;
             await ClientsChecks.ConnectAsync(b);
+            cOn = true;
             await ClientsChecks.ConnectAsync(c);
             steps.AppendLine($"A (this run), B and C connected: A {await StateOf(a)}; B {await StateOf(b)}; C {await StateOf(c)}");
 
             await ClientsChecks.DisconnectAsync(b);
+            bOn = false;
             aAfterB = await StateOf(a);
             cAfterB = await StateOf(c);
             steps.AppendLine($"B disconnected: A {aAfterB}; B {await StateOf(b)}; C {cAfterB}");
 
+            bOn = true;
             await ClientsChecks.ConnectAsync(b);
             cAfterBack = await StateOf(c);
             steps.AppendLine($"B connected again: C {cAfterBack}");
 
             await ClientsChecks.DisconnectAsync(c);
+            cOn = false;
             await ClientsChecks.DisconnectAsync(b);
+            bOn = false;
             aAfterAll = await StateOf(a);
             steps.AppendLine($"C and B disconnected (A never did): A {aAfterAll}");
         }
@@ -101,8 +109,16 @@ public static partial class AreaDiagnostics
         }
         finally
         {
-            if (c is not null) await c.DisposeAsync();
-            if (b is not null) await b.DisposeAsync();
+            if (c is not null)
+            {
+                if (cOn) await Attempt(async () => { await ClientsChecks.DisconnectAsync(c); return 0; });
+                await c.DisposeAsync();
+            }
+            if (b is not null)
+            {
+                if (bOn) await Attempt(async () => { await ClientsChecks.DisconnectAsync(b); return 0; });
+                await b.DisposeAsync();
+            }
             // Put this run's client back, whatever the others did to it.
             if ((await Attempt(() => a.RunAsync(t => t.Connected, ClientTimeout))) is not (true, null))
             {
@@ -197,8 +213,11 @@ public static partial class AreaDiagnostics
                     var text = Reply.Body.Length > 140 ? Reply.Body[..140] + "…" : Reply.Body;
                     return $"HTTP {(int)Reply.Status}: {text}";
                 }
-                var number = Reply.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } n ? n.GetInt32() : 0;
+                // Read leniently: a number that isn't a whole int32 (1025.0) is shown as sent, not a reason to stop the group.
+                var errorNumber = Reply.Field("ErrorNumber");
+                var number = errorNumber is { ValueKind: JsonValueKind.Number } n ? n.TryGetInt32(out var i) ? i : (int?)null : 0;
                 var txid = Reply.Field("ClientTransactionID")?.ToString();
+                if (number is null) return $"HTTP 200, ErrorNumber {errorNumber}";
                 return number != 0 ? $"HTTP 200, ErrorNumber 0x{number:X}" : $"HTTP 200, Value {Reply.Field("Value")?.ToString() ?? "-"}, ClientTransactionID {txid}";
             }
         }

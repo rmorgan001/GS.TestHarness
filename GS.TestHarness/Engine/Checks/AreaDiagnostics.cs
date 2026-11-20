@@ -231,12 +231,23 @@ public static partial class AreaDiagnostics
         foreach (var probe in probes)
         {
             var rows = new List<(ArgValue, Answer, string)>();
-            foreach (var value in probe.Values)
+            try
             {
-                var (answer, text) = Classify(await ctx.TryAsync(value.Call));
-                rows.Add((value, answer, text));
+                foreach (var value in probe.Values)
+                {
+                    var (answer, text) = Classify(await ctx.TryAsync(value.Call));
+                    rows.Add((value, answer, text));
+                }
             }
-            if (probe.Restore is { } restore) await ctx.TryAsync(t => { restore(t); return 0; });
+            finally
+            {
+                // Put the setting back even after Stop: an invalid value that was accepted mustn't stay.
+                if (probe.Restore is { } restore)
+                {
+                    using var restoring = ctx.Restoring();
+                    await ctx.TryAsync(t => { restore(t); return 0; });
+                }
+            }
             results[probe.Member] = rows;
         }
         if (ctx.Caps.CanPulseGuide) await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromSeconds(5), 100);

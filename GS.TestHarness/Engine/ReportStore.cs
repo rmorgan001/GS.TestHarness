@@ -31,10 +31,10 @@ public sealed class ReportStore(string folder)
 
     /// <summary>
     /// Where the app's settings files (servers.json, last-run.json...) sit: beside the reports folder, or in it when it is a
-    /// drive's root.
+    /// drive's root. A folder written with a trailing separator ("D:\Data\Reports\") keeps its settings in it, as it
+    /// always has, so they are still found after an upgrade.
     /// </summary>
-    public string SettingsFolder => Path.GetDirectoryName(Folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) is { Length: > 0 } parent
-        ? parent : Folder;
+    public string SettingsFolder => Path.GetDirectoryName(Folder) is { Length: > 0 } parent ? parent : Folder;
 
     public static string DefaultFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.Create) is { Length: > 0 } docs
@@ -241,9 +241,10 @@ public sealed class ReportStore(string folder)
                 sb.AppendLine($"### {x.Member}: {x.Message}");
                 sb.AppendLine($"Test {x.Number}: `{x.Id}`");
                 sb.AppendLine();
-                if (x.Expected is not null) sb.AppendLine($"- Expected: {x.Expected}");
-                if (x.Actual is not null) sb.AppendLine($"- Actual: {x.Actual.Split('\n')[0]}");
-                if (x.Fix is not null) sb.AppendLine($"- Fix: {x.Fix}");
+                // Expected and Fix on one line, so each stays one list item; Actual whole, as a code block when it runs to several lines.
+                if (x.Expected is not null) sb.AppendLine($"- Expected: {RecommendationBuilder.Inline(x.Expected)}");
+                if (x.Actual is not null) RecommendationBuilder.AppendActual(sb, x.Actual, indent: "");
+                if (x.Fix is not null) sb.AppendLine($"- Fix: {RecommendationBuilder.Inline(x.Fix)}");
                 if (x.Source is not null) sb.AppendLine($"- Code to check: `{x.Source}`");
                 if (x.Reference is not null) sb.AppendLine($"- Reference: {x.Reference}");
             }
@@ -399,10 +400,11 @@ public static class ReportCsv
     {
         value ??= "";
         // A spreadsheet runs a cell that starts like a formula: device messages are untrusted, so make it text.
-        // A leading '-' is only safe on a plain number: "-2+3+cmd|..." starts with a digit too.
+        // A leading '-' is only safe on a plain, finite number: "-2+3+cmd|..." starts with a digit too, and Excel reads
+        // "-Infinity" as a formula.
         if (value.Length > 0 && (value[0] is '=' or '+' or '@' or '\t' or '\r'
-                                 || (value[0] == '-' && !double.TryParse(value, System.Globalization.NumberStyles.Float,
-                                     System.Globalization.CultureInfo.InvariantCulture, out _))))
+                                 || (value[0] == '-' && !(double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture, out var number) && double.IsFinite(number)))))
             value = "'" + value;
         return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
     }

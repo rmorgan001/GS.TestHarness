@@ -152,7 +152,6 @@ public sealed class ProtocolChecks : ICheckGroup
             : ours is not { ValueKind: JsonValueKind.Object } o ? $"telescope {ctx.Target.DeviceNumber} isn't listed"
             : new[] { "DeviceName", "DeviceType", "DeviceNumber", "UniqueID" }.FirstOrDefault(f => !o.TryGetProperty(f, out _)) is { } f ? $"its entry has no {f}"
             : o.GetProperty("UniqueID").ValueKind != JsonValueKind.String ? "its UniqueID isn't a string"
-            : o.GetProperty("UniqueID").ValueKind != JsonValueKind.String ? "its UniqueID isn't a string"
             : string.IsNullOrWhiteSpace(o.GetProperty("UniqueID").GetString()) ? "its UniqueID is empty" : null;
         ctx.Report("Management.ConfiguredDevices", "/management/v1/configureddevices", problem is null ? Outcome.Pass : Outcome.Fail,
             problem is null ? $"configureddevices lists telescope {ctx.Target.DeviceNumber}." : $"configureddevices: {problem}.",
@@ -181,7 +180,9 @@ public sealed class ProtocolChecks : ICheckGroup
         }
         if (list is not null)
         {
-            var ids = list.Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("UniqueID", out _)).Select(e => Str(e.GetProperty("UniqueID"))).ToList();
+            // Compared as sent: a string's text, any other type's raw JSON (two different numeric IDs aren't a duplicate).
+            var ids = list.Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("UniqueID", out _))
+                .Select(e => e.GetProperty("UniqueID") is var u && Str(u) is { } text ? text : u.GetRawText()).ToList();
             if (ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Count)
                 ctx.Report("Management.UniqueIds", "/management/v1/configureddevices", Outcome.Fail, "Two devices share a UniqueID.",
                     actual: string.Join(", ", ids), reference: ApiReference,

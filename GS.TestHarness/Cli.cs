@@ -128,7 +128,11 @@ public static class Cli
         if (Value("--follow") is { Length: > 0 } followId)
         {
             try { followsUp = await store.LoadAsync(followId); }
-            catch (ArgumentException) { followsUp = null; } // not a report reference or id
+            // Not a report reference or id, or a report file that can't be read (cut short, not JSON).
+            catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+            {
+                followsUp = null;
+            }
             if (followsUp is null)
             {
                 Console.Error.WriteLine($"--follow {followId}: no saved report with that reference or id in {store.Folder}.");
@@ -160,13 +164,16 @@ public static class Cli
         using var cts = new CancellationTokenSource();
         ConsoleCancelEventHandler onCancel = (_, e) =>
         {
+            // A second Ctrl+C quits at once: putting the mount back after Stop ignores the stop, and may take a while.
+            if (cts.IsCancellationRequested) return;
             e.Cancel = true;
+            Console.Error.WriteLine("Stopping: putting the mount back as it was found. Press Ctrl+C again to quit at once.");
             cts.Cancel();
         };
         // Taken off when the run ends: a handler left behind would cancel a disposed source.
         Console.CancelKeyPress += onCancel;
 
-        RunReport report;
+        RunReport? report = null;
         try
         {
             var previous = await store.LatestForAsync(target);
@@ -183,6 +190,11 @@ public static class Cli
                 },
                 cts.Token, previous: previous, conformU: conformU, followsUp: followsUp);
         }
+        catch (Exception ex) when (report is not null)
+        {
+            // The run finished; only closing the session failed. Keep the report.
+            Console.Error.WriteLine($"Closing {target.Display} failed: {AscomError.Describe(ex)}");
+        }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Couldn't open {target.Display}: {AscomError.Describe(ex)}");
@@ -193,13 +205,24 @@ public static class Cli
             Console.CancelKeyPress -= onCancel;
         }
 
-        await store.SaveAsync(report);
+        if (report is null) return 1; // not reached: the run either returned a report or the catch above returned
+        var saved = true;
+        try
+        {
+            await store.SaveAsync(report);
+        }
+        catch (Exception ex)
+        {
+            saved = false;
+            Console.Error.WriteLine($"The report couldn't be saved to {store.Folder}: {ex.Message}");
+        }
         var markdown = ReportStore.ToMarkdown(report);
         if (markdownPath is { } md) await File.WriteAllTextAsync(md, markdown);
 
         Console.WriteLine();
         Console.WriteLine($"{report.Label}: {report.Count(Outcome.Fail)} failed, {report.Count(Outcome.Error)} errors, " +
                           $"{report.Count(Outcome.Warning)} warnings, {report.Count(Outcome.Pass)} passed.");
+        if (!saved) return 1;
         Console.WriteLine($"Report {report.Reference}: {Path.Combine(store.Folder, report.Id + ".json")}");
         if (Tiers.Next(report) is { } next)
             Console.WriteLine($"{Tiers.Name(next.Tier)} can diagnose {string.Join(", ", next.Members)}: run again with --follow {report.Reference}" +

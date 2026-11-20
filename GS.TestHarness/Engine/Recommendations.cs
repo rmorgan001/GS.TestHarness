@@ -71,11 +71,13 @@ public static class RecommendationBuilder
             .Select(g => ReportStore.Representative(g)!)
             .ToList();
 
-        // The version of each server now: the one its newest run reported. A server is its codebase and
-        // the device's Name: every Alpaca server counts as one codebase, and so does every COM driver added from the
-        // ASCOM drivers list, so the codebase alone would set one product's version against another's.
+        // The version of each server now: the one its newest run reported. Every Alpaca server counts as one codebase,
+        // and so does every COM driver added from the ASCOM drivers list, so the codebase alone would set one product's
+        // version against another's. The product is told by what stays the same from build to build: a COM driver's
+        // ProgID, an Alpaca server's name (its description without the version), else the device's Name.
         static (Codebase, string) Server(RunReport r)
-            => (r.Target.Codebase, r.Identity.Name?.Trim().ToUpperInvariant() ?? "");
+            => (r.Target.Codebase, (r.Target.Kind == TargetKind.Com ? "COM|" + r.Target.ProgId
+                : CheckContext.ServerNameOf(r.Identity.ServerDescription) ?? r.Identity.Name ?? "").Trim().ToUpperInvariant());
         var current = all
             .Where(r => !string.IsNullOrWhiteSpace(r.Identity.DriverVersion))
             .GroupBy(Server)
@@ -201,7 +203,7 @@ public static class RecommendationBuilder
         => text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
     /// <summary>Text on one line, so it stays inside its list item.</summary>
-    private static string Inline(string text)
+    internal static string Inline(string text)
         => string.Join(" ", Lines(text).Select(l => l.Trim()).Where(l => l.Length > 0));
 
     /// <summary>A code span that holds any text: the fence is one backtick longer than the longest run inside.</summary>
@@ -216,7 +218,6 @@ public static class RecommendationBuilder
         return $"{fence}{pad}{text}{pad}{fence}";
     }
 
-    /// <summary>The actual value: on the line itself when it's one line, otherwise all of it in a code block under it.</summary>
     /// <summary>
     /// "Actual" as a Markdown list item, at <paramref name="indent"/>: one line inline, more as a fenced code block
     /// inside the item (tier 2/3 diagnoses, ConformU verdicts and probe errors run to many lines).

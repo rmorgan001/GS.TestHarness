@@ -548,12 +548,20 @@ public sealed class MotionChecks : ICheckGroup
         // As ConformU: sync to a position a degree away (so a sync that does nothing shows), check the position and
         // the targets, then sync back by the same amount so the pointing model is left as it was.
         var (syncRa, syncDec) = SyncOffset(ra, dec);
+        // Each sync is undone in a finally, so Stop part way through its checks doesn't leave the pointing a degree out.
         var sync = await ctx.TryAsync(t => t.SyncToCoordinates(syncRa, syncDec));
-        await CheckPositionAfterSync(ctx, "SyncToCoordinates", sync, syncRa, syncDec, ra, dec);
-        if (sync.Ok)
+        try
         {
-            await CheckTargetsAfterSync(ctx, "SyncToCoordinates", syncRa, syncDec);
-            await UndoSyncAsync(ctx, "SyncToCoordinates", ra - syncRa, dec - syncDec);
+            await CheckPositionAfterSync(ctx, "SyncToCoordinates", sync, syncRa, syncDec, ra, dec);
+            if (sync.Ok) await CheckTargetsAfterSync(ctx, "SyncToCoordinates", syncRa, syncDec);
+        }
+        finally
+        {
+            if (sync.Ok)
+            {
+                using var restoring = ctx.Restoring();
+                await UndoSyncAsync(ctx, "SyncToCoordinates", ra - syncRa, dec - syncDec);
+            }
         }
 
         if (await PositionAsync(ctx) is { } here)
@@ -563,8 +571,18 @@ public sealed class MotionChecks : ICheckGroup
             if (target.Ok)
             {
                 var toTarget = await ctx.TryAsync(t => t.SyncToTarget());
-                await CheckPositionAfterSync(ctx, "SyncToTarget", toTarget, targetRa, targetDec, here.Ra, here.Dec);
-                if (toTarget.Ok) await UndoSyncAsync(ctx, "SyncToTarget", here.Ra - targetRa, here.Dec - targetDec);
+                try
+                {
+                    await CheckPositionAfterSync(ctx, "SyncToTarget", toTarget, targetRa, targetDec, here.Ra, here.Dec);
+                }
+                finally
+                {
+                    if (toTarget.Ok)
+                    {
+                        using var restoring = ctx.Restoring();
+                        await UndoSyncAsync(ctx, "SyncToTarget", here.Ra - targetRa, here.Dec - targetDec);
+                    }
+                }
             }
         }
 
@@ -695,27 +713,27 @@ public sealed class MotionChecks : ICheckGroup
                         ctx.Report("SyncToAltAz", "SyncToAltAz", Outcome.Fail, "SyncToAltAz raised an error.",
                             actual: sync.ErrorText, ms: sync.Ms, fix: "CanSyncAltAz is true, so SyncToAltAz (with tracking off) must work.");
                     }
-                    else if (await AltAzPositionAsync(ctx) is { } after)
-                    {
-                        var sep = Values.AltAzSeparation(after.Alt, after.Az, syncAlt, syncAz);
-                        var ignored = sep > PositionOk && Values.AltAzSeparation(after.Alt, after.Az, h.Alt, h.Az) < sep;
-                        ctx.Report("SyncToAltAz", "SyncToAltAz", ignored || sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass,
-                            ignored ? "SyncToAltAz didn't change the position: Altitude/Azimuth still read where the mount was."
-                                : $"SyncToAltAz: Altitude/Azimuth afterwards are {sep * 3600:0.0}\" from the sync coordinates.",
-                            expected: $"alt {CheckContext.Show(syncAlt)}°, az {CheckContext.Show(syncAz)}°",
-                            actual: $"alt {CheckContext.Show(after.Alt)}°, az {CheckContext.Show(after.Az)}°", ms: sync.Ms,
-                            fix: "After SyncToAltAz, Altitude and Azimuth must read the coordinates synced to (the parameters are " +
-                                 "azimuth, then altitude).");
-                        var undo = await ctx.TryAsync(t => t.SyncToAltAz(
-                            ((after.Az + h.Az - syncAz) % 360 + 360) % 360, Math.Clamp(after.Alt + h.Alt - syncAlt, -90, 90)));
-                        if (!undo.Ok)
-                            ctx.Report("SyncToAltAz.Restore", "SyncToAltAz", Outcome.Error,
-                                $"Couldn't sync back after the SyncToAltAz check: the mount's pointing may be {SyncError}° out.",
-                                actual: undo.ErrorText, fix: "Sync the mount on a known star (or restart the simulator) before using it.");
-                    }
                     else
                     {
-                        ctx.Report("SyncToAltAz", "SyncToAltAz", Outcome.Pass, "SyncToAltAz worked (Altitude/Azimuth can't be read, so the position wasn't checked).", ms: sync.Ms);
+                        // Synced back in a finally, so Stop while it's checked doesn't leave the pointing a degree out.
+                        (double Alt, double Az)? read = null;
+                        try
+                        {
+                            read = await AltAzPositionAsync(ctx);
+                            ReportAltAzSync(ctx, read, h, syncAlt, syncAz, sync);
+                        }
+                        finally
+                        {
+                            using var restoring = ctx.Restoring();
+                            // Back by however far the sync moved the readings (by the sync's own offset if they couldn't be read).
+                            var (afterAlt, afterAz) = read ?? (syncAlt, syncAz);
+                            var undo = await ctx.TryAsync(t => t.SyncToAltAz(
+                                ((afterAz + h.Az - syncAz) % 360 + 360) % 360, Math.Clamp(afterAlt + h.Alt - syncAlt, -90, 90)));
+                            if (!undo.Ok)
+                                ctx.Report("SyncToAltAz.Restore", "SyncToAltAz", Outcome.Error,
+                                    $"Couldn't sync back after the SyncToAltAz check: the mount's pointing may be {SyncError}° out.",
+                                    actual: undo.ErrorText, fix: "Sync the mount on a known star (or restart the simulator) before using it.");
+                        }
                     }
                     await ctx.ExpectErrorAsync("SyncToAltAz.InvalidAlt", "SyncToAltAz", "SyncToAltAz(az, 100)",
                         t => t.SyncToAltAz(h.Az, 100), AscomErrorKind.InvalidValue, "an altitude of 100 degrees is invalid");
@@ -727,6 +745,26 @@ public sealed class MotionChecks : ICheckGroup
             using var restoring = ctx.Restoring();
             if (c.CanSetTracking) await ctx.TryAsync(t => t.Tracking = true);
         }
+    }
+
+    /// <summary>Reports whether SyncToAltAz moved Altitude/Azimuth to the coordinates synced to (<paramref name="after"/>: null if they can't be read).</summary>
+    private static void ReportAltAzSync(CheckContext ctx, (double Alt, double Az)? after, (double Alt, double Az) before,
+        double syncAlt, double syncAz, Call<bool> sync)
+    {
+        if (after is not { } a)
+        {
+            ctx.Report("SyncToAltAz", "SyncToAltAz", Outcome.Pass, "SyncToAltAz worked (Altitude/Azimuth can't be read, so the position wasn't checked).", ms: sync.Ms);
+            return;
+        }
+        var sep = Values.AltAzSeparation(a.Alt, a.Az, syncAlt, syncAz);
+        var ignored = sep > PositionOk && Values.AltAzSeparation(a.Alt, a.Az, before.Alt, before.Az) < sep;
+        ctx.Report("SyncToAltAz", "SyncToAltAz", ignored || sep > PositionFail ? Outcome.Fail : sep > PositionOk ? Outcome.Info : Outcome.Pass,
+            ignored ? "SyncToAltAz didn't change the position: Altitude/Azimuth still read where the mount was."
+                : $"SyncToAltAz: Altitude/Azimuth afterwards are {sep * 3600:0.0}\" from the sync coordinates.",
+            expected: $"alt {CheckContext.Show(syncAlt)}°, az {CheckContext.Show(syncAz)}°",
+            actual: $"alt {CheckContext.Show(a.Alt)}°, az {CheckContext.Show(a.Az)}°", ms: sync.Ms,
+            fix: "After SyncToAltAz, Altitude and Azimuth must read the coordinates synced to (the parameters are " +
+                 "azimuth, then altitude).");
     }
 
     private static async Task AltAzSlewAsync(CheckContext ctx, string member, double alt, double az, Action<ITelescopeV4> slew, bool async)
@@ -1406,7 +1444,6 @@ public sealed class MotionChecks : ICheckGroup
         return alt.Ok && az.Ok ? (alt.Value, az.Value) : null;
     }
 
-    /// <summary>Stops any movement a faulty call started and waits for it to end.</summary>
     /// <summary>The AxisRates ranges (a fact the method checks keep) that can be moved at: finite, not negative, Minimum ≤ Maximum; smallest first.</summary>
     private static List<(double Minimum, double Maximum)> ValidRates(object? fact)
         => fact is List<(double Minimum, double Maximum)> rates
@@ -1414,6 +1451,7 @@ public sealed class MotionChecks : ICheckGroup
                 .OrderBy(r => r.Maximum)]
             : [];
 
+    /// <summary>Stops any movement a faulty call started and waits for it to end.</summary>
     public static async Task StopAsync(CheckContext ctx)
     {
         await ctx.TryAsync(t => t.AbortSlew());

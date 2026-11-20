@@ -177,6 +177,7 @@ public sealed class ClientsChecks : ICheckGroup
     private static async Task ConnectCyclesAsync(CheckContext ctx)
     {
         ITelescopeSession? s = null;
+        var connected = false; // still connected after a failed cycle: disconnected in the finally, as a client left behind fails the Disconnected checks
         var problems = new List<string>();
         var watch = Stopwatch.StartNew();
         try
@@ -186,9 +187,11 @@ public sealed class ClientsChecks : ICheckGroup
             {
                 try
                 {
+                    connected = true;
                     await ConnectAsync(s);
                     if (!await s.RunAsync(t => t.Connected, Timeout)) problems.Add($"cycle {i}: Connected false after Connect");
                     await DisconnectAsync(s);
+                    connected = false;
                 }
                 catch (Exception ex)
                 {
@@ -205,7 +208,11 @@ public sealed class ClientsChecks : ICheckGroup
         }
         finally
         {
-            if (s is not null) await s.DisposeAsync();
+            if (s is not null)
+            {
+                if (connected) await Quietly(() => DisconnectAsync(s));
+                await s.DisposeAsync();
+            }
         }
         ctx.Report("ConnectCycles", "Connect", problems.Count == 0 ? Outcome.Pass : Outcome.Fail,
             problems.Count == 0 ? $"10 connect/disconnect cycles worked ({watch.Elapsed.TotalSeconds:0.0} s)." : $"Connect/disconnect cycles had {problems.Count} problem(s).",

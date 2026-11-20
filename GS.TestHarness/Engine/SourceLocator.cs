@@ -47,8 +47,14 @@ public sealed class CodebaseOptions
 public sealed class SourceLocator
 {
     private readonly ConcurrentDictionary<Codebase, (string Root, string[] TelescopeFiles)> _codebases = new();
-    /// <summary>Each file's lines, with the write time and size they were read at: an edited or re-downloaded file is read again.</summary>
-    private readonly ConcurrentDictionary<string, (DateTime Written, long Size, string[] Lines)> _lines = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Each file's lines, with the write time and size they were read at (an edited or re-downloaded file is read again),
+    /// and when that was last checked: a search over every file asks for each many times, so it's checked at most every
+    /// <see cref="RecheckAfter"/>, not on each call.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, (DateTime Written, long Size, string[] Lines, long CheckedAt)> _lines = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly TimeSpan RecheckAfter = TimeSpan.FromSeconds(2);
     private readonly ConcurrentDictionary<Codebase, string[]> _allFiles = new();
     private readonly IReadOnlyDictionary<Codebase, CodebaseOptions> _options;
     private readonly string _searchFrom;
@@ -283,14 +289,21 @@ public sealed class SourceLocator
 
     private string[] Lines(string file)
     {
+        var now = System.Diagnostics.Stopwatch.GetTimestamp();
+        (DateTime Written, long Size, string[] Lines, long CheckedAt)? cached = _lines.TryGetValue(file, out var c) ? c : null;
+        if (cached is { } fresh && System.Diagnostics.Stopwatch.GetElapsedTime(fresh.CheckedAt, now) < RecheckAfter) return fresh.Lines;
         try
         {
             var info = new FileInfo(file);
             if (!info.Exists) return [];
             var (written, size) = (info.LastWriteTimeUtc, info.Length);
-            if (_lines.TryGetValue(file, out var cached) && cached.Written == written && cached.Size == size) return cached.Lines;
+            if (cached is { } same && same.Written == written && same.Size == size)
+            {
+                _lines[file] = same with { CheckedAt = now };
+                return same.Lines;
+            }
             var lines = File.ReadAllLines(file);
-            _lines[file] = (written, size, lines);
+            _lines[file] = (written, size, lines, now);
             return lines;
         }
         catch (IOException) { return []; }

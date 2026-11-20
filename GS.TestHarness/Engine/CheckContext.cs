@@ -485,8 +485,15 @@ public sealed class CheckContext(
         return false;
     }
 
-    /// <summary>Waits for a slew (or park, find home, axis move) to end.</summary>
-    public Task<bool> WaitForSlewEndAsync() => WaitUntilAsync(t => !t.Slewing, SlewTimeout);
+    /// <summary>
+    /// Waits for a slew (or park, find home, axis move) to end. After Stop, while putting the mount back
+    /// (<see cref="Restoring"/>), it aborts the slew first: Stop must stop the mount, not let it run on to its target.
+    /// </summary>
+    public async Task<bool> WaitForSlewEndAsync()
+    {
+        if (_restoring > 0 && Token.IsCancellationRequested) await TryAsync(t => t.AbortSlew());
+        return await WaitUntilAsync(t => !t.Slewing, SlewTimeout);
+    }
 
     public static string Show(object? value) => value switch
     {
