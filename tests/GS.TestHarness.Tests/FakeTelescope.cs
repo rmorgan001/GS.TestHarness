@@ -161,8 +161,9 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private readonly HashSet<Defect> _defects = [.. defects];
     private readonly object _gate = new();
     private readonly HashSet<int> _clients = []; // the clients (DirectSession numbers) connected
-    private double _ra = 3, _dec = 45;      // position at _anchor (while tracking)
-    private double _ha;                      // hour angle held while not tracking
+    // Position at _anchor (while tracking): the home position (the pole, RA = LST - 6), where the mount starts with AtHome true.
+    private double _ra = Values.Wrap24(Values.LocalSiderealTime(DateTime.UtcNow, -81.4) - 6), _dec = 90;
+    private double _ha = 6;                  // hour angle held while not tracking (home is 6 h)
     private long _anchor = System.Diagnostics.Stopwatch.GetTimestamp();
     private double? _targetRa, _targetDec;
     private bool _tracking = true, _atPark, _atHome = true; // the mount starts at home, as a run expects

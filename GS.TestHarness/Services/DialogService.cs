@@ -82,10 +82,13 @@ public sealed class ConfirmDialogModel(string title, string message, string acce
 /// isn't at the home position, adds the "put the mount in the home position" section with Go home and Check again.
 /// Accepting means the user confirms the mount is at home (if it was asked), so the run can start.
 /// </summary>
-public sealed class StartDialogModel(string title, string message, HomeSession? home, HomeStatus? status) : DialogModel
+public sealed class StartDialogModel(string title, string message, HomeSession? home, HomeStatus? status, IReadOnlyList<string>? warnings = null) : DialogModel
 {
     public string Title { get; } = title;
     public string Message { get; } = message;
+
+    /// <summary>Settings that look wrong for this run (each a ⚠ line), shown with the warning.</summary>
+    public IReadOnlyList<string> Warnings { get; } = warnings ?? [];
 
     /// <summary>The mount's position, once read; null for a run that doesn't move the mount.</summary>
     public HomeStatus? Status { get; private set; } = status;

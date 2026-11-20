@@ -59,6 +59,17 @@ else
         }
     </div>
 
+    @* Settings that look wrong for this run, each in its own red box. *@
+    @if (Model.Warnings.Count > 0)
+    {
+        <div style="margin: 0 0 1rem;">
+            @foreach (var warning in Model.Warnings)
+            {
+                <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--fail); border-radius: 4px; background: rgba(220, 70, 70, .12);">@warning</div>
+            }
+        </div>
+    }
+
     <p class="dialog-message" style="color: var(--yellow);">By clicking Start you accept responsibility for monitoring the mount's safety.</p>
 }
 

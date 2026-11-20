@@ -517,6 +517,22 @@ else
     /// section when it isn't home. Start keeps the mount connected (as if connected from the sidebar); Cancel
     /// disconnects it. Returns whether the user went on.
     /// </summary>
+    /// <summary>
+    /// The settings on the Server card that look wrong for this run, for the start dialog: the Mount (which code paths the
+    /// recommendations name), a slew timeout too short for a real mount's flip, and no source code folder. Each is a ⚠ line.
+    /// </summary>
+    private List<string> SettingsWarnings(TestTarget target, RunOptions options)
+    {
+        var warnings = new List<string>();
+        if (options.Mount == MountKind.Unknown)
+            warnings.Add("⚠ Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is.");
+        if (options.SlewTimeoutSeconds < 60 && options.AllowMotion && options.Mount != MountKind.Simulator)
+            warnings.Add($"⚠ Timeouts: slew {options.SlewTimeoutSeconds} s, call {options.CallTimeoutSeconds} s. A long slew or a meridian flip on a real mount can take longer than {options.SlewTimeoutSeconds} s and would count as never finished.");
+        if (Locator.RootOf(target.Codebase) is null)
+            warnings.Add("⚠ Source code: none set (or not found), so there's no code review and findings won't name the code to check. Set it under the server's Settings.");
+        return warnings;
+    }
+
     private bool _starting;
 
     private async Task<bool> ConfirmStartAsync(string title, TestTarget target, RunOptions options)
@@ -533,7 +549,7 @@ else
                 home = Home.Open(target, options);
                 status = await home.CheckAsync();
             }
-            var accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status));
+            var accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status, SettingsWarnings(target, options)));
             if (accepted && home is not null && Servers.FindDevice(target)?.Id is { } id)
                 home.TryHandOver(session => Connections.Adopt(id, session));
             return accepted;
