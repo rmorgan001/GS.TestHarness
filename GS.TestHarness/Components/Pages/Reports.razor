@@ -15,10 +15,11 @@
  *@
 
 @page "/reports"
-@implements IDisposable
+@page "/conformu/reports"
 @inject ReportStore Store
 @inject DialogService Dialogs
 @inject RunPageState State
+@inject NavigationManager Nav
 
 <PageTitle>Reports · GS Test Harness</PageTitle>
 
@@ -139,26 +140,30 @@ else
         _followers = _all!.Where(r => r.Options.Tier > 1).GroupBy(r => Tiers.Root(r, _byId).Id).ToDictionary(g => g.Key, g => g.Count());
     }
 
-    private bool ConformUOnly => State.Tab == RunPageTab.ConformU;
+    // Which test's reports: set by the address (conformu/reports or reports), never by the tab remembered in memory,
+    // so a reload or a link opened on its own shows the right ones.
+    private bool ConformUOnly => RunPageState.IsConformUPage(Nav.ToBaseRelativePath(Nav.Uri));
+    private bool? _shownFor;
 
     protected override async Task OnInitializedAsync()
     {
         _all = await Store.ListAsync();
         Index();
-        _reports = State.Shown(_all);
-        State.Changed += OnTabChanged;
     }
 
-    /// <summary>The top tab changed with this page open: show its runs, and untick the rest so none is deleted unseen.</summary>
-    private void OnTabChanged() => InvokeAsync(() =>
+    /// <summary>
+    /// Shows the address's test's reports, and moves the top tab to that test. Going from one test's Reports to the
+    /// other's keeps this page, so it is done here, not only when the page opens; ticks are cleared so none is deleted unseen.
+    /// </summary>
+    protected override void OnParametersSet()
     {
-        if (_all is null) return;
-        _reports = State.Shown(_all);
+        var conformU = ConformUOnly;
+        State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
+        if (_all is null || _shownFor == conformU) return;
+        _shownFor = conformU;
+        _reports = RunPageState.Shown(_all, conformU);
         _checked.Clear();
-        StateHasChanged();
-    });
-
-    public void Dispose() => State.Changed -= OnTabChanged;
+    }
 
     private static string Pct(int n, int total) => FormattableString.Invariant($"{100.0 * n / total:0.##}%");
 

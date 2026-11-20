@@ -144,7 +144,7 @@ h3 { font-size: 1.1rem; margin: 0 0 .4rem; }
 .tab:focus-visible { outline: 2px solid var(--yellow); outline-offset: -3px; }
 .tab .subtab-count { margin-left: .1rem; font-family: var(--font); }
 
-/* ---- The active top tab's pages (Run, Reports, Compare, Recommendations): pills on the tab's panel colour ---- */
+/* ---- The active top tab's pages (Run, Reports, Recommendations): pills on the tab's panel colour ---- */
 .subnav {
     flex: none; display: flex; align-items: center; gap: .35rem; padding: .5rem 2rem;
     background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto;
@@ -550,11 +550,9 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .run-list li { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
 .run-list b { min-width: 12rem; }
 
-/* ---- Compare: results table ---- */
+/* ---- Results tables ---- */
 .table-scroll { overflow-x: auto; }
-.results .col-change { width: 1%; }
 .results td .badge { white-space: nowrap; }
-.results .col-check { width: 34%; }
 
 /* ---- Reports list ---- */
 .reports .when { white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -647,10 +645,6 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
     .catalog-id { white-space: normal; word-break: break-word; }
 }
 
-/* ---- Compare: versions ---- */
-.versions-pick { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; margin-bottom: .75rem; }
-.versions-pick .field { flex: 1 1 18rem; }
-.versions-pick select { width: 100%; }
 
 /* ---- Report for printing (/reports/{id}/print): a light document on screen and on paper ---- */
 .print-page { max-width: 960px; margin: 0 auto; padding: 1.5rem 16px 3rem; background: #fff; color: #111; min-height: 100vh; }

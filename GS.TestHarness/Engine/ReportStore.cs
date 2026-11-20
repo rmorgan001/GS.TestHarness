@@ -110,11 +110,20 @@ public sealed class ReportStore(string folder)
         }
     }
 
-    /// <summary>A saved run by its ID, or by its reference ("R0012", or just "12").</summary>
+    /// <summary>
+    /// A saved run by its ID, or by its reference: "RAC0012" (an ASCOM Conformance Check run), "RCU0012" (a ConformU
+    /// Debug Log Test run), or, as before the prefixes, "R0012" or just "12" for either. A prefix that names the other
+    /// test finds nothing, so a reference can't open a run of the wrong kind.
+    /// </summary>
     public async Task<RunReport?> LoadAsync(string id)
     {
-        if (Regex.Match(id.Trim(), @"^[Rr]?0*(\d{1,9})$") is { Success: true } reference)
-            return (await ListAsync()).FirstOrDefault(r => r.Number == int.Parse(reference.Groups[1].Value));
+        if (Regex.Match(id.Trim(), @"^(RAC|RCU|R)?0*(\d{1,9})$", RegexOptions.IgnoreCase) is { Success: true } reference)
+        {
+            var prefix = reference.Groups[1].Value.ToUpperInvariant();
+            var number = int.Parse(reference.Groups[2].Value);
+            return (await ListAsync()).FirstOrDefault(r => r.Number == number
+                && (prefix is "" or "R" || (prefix == RunReport.ConformUPrefix) == (r.ConformULog is not null)));
+        }
         var path = PathOf(id);
         if (!File.Exists(path)) return null;
         var report = JsonSerializer.Deserialize<RunReport>(await File.ReadAllTextAsync(path), Json);
@@ -264,102 +273,7 @@ public sealed class ReportStore(string folder)
     }
 }
 
-/// <summary>How one check changed between two runs.</summary>
-public enum Change
-{
-    Fixed, Regressed, StillFailing, Changed, New,
-
-    /// <summary>Only the first run made this check.</summary>
-    Gone,
-
-    /// <summary>Only the second run made this check, and it didn't find a problem.</summary>
-    Added,
-
-    Same
-}
-
-public sealed record ComparedCheck(string Id, string Group, string Member, CheckResult? Before, CheckResult? After, Change Change);
-
-/// <summary>
-/// Compares two runs of the same program check by check (by ID), e.g. two versions of GSServer. Runs of different
-/// programs (see <see cref="AreDifferentPrograms"/>) aren't compared.
-/// </summary>
-public static class ReportComparer
-{
-    private static int Severity(Outcome o) => o.Severity();
-
-    public static List<ComparedCheck> Compare(RunReport before, RunReport after)
-    {
-        // An ID can occur more than once in a run (rarely); compare the worst of each.
-        static Dictionary<string, CheckResult> Index(RunReport r) => r.Results
-            .GroupBy(x => x.Id)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => Severity(x.Outcome)).First());
-        var a = Index(before);
-        var b = Index(after);
-        var list = new List<ComparedCheck>();
-        foreach (var id in a.Keys.Union(b.Keys))
-        {
-            a.TryGetValue(id, out var x);
-            b.TryGetValue(id, out var y);
-            var any = y ?? x!;
-            Change change;
-            if (x is null) change = Severity(y!.Outcome) > 0 ? Change.New : Change.Added;
-            else if (y is null) change = Change.Gone;
-            else if (Severity(x.Outcome) > Severity(y.Outcome)) change = Change.Fixed;
-            else if (Severity(x.Outcome) < Severity(y.Outcome)) change = Change.Regressed;
-            else if (Severity(y.Outcome) > 0) change = x.Message == y.Message ? Change.StillFailing : Change.Changed;
-            else change = Change.Same;
-            list.Add(new ComparedCheck(id, any.Group, any.Member, x, y, change));
-        }
-        return [.. list.OrderBy(c => c.Change).ThenBy(c => c.Id, StringComparer.Ordinal)];
-    }
-
-    /// <summary>
-    /// Whether two runs are of different programs (another server, or another device on it) rather than two
-    /// versions of the same one.
-    /// </summary>
-    public static bool AreDifferentPrograms(RunReport a, RunReport b)
-        => a.Target.Codebase != b.Target.Codebase
-           || !string.Equals(a.Identity.Name, b.Identity.Name, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// The two runs of one device to compare by default, for a regression check across driver versions: its newest
-    /// run (after), and the newest earlier run with another DriverVersion (before); failing that, the newest earlier
-    /// run. Null with fewer than two runs.
-    /// </summary>
-    public static (RunReport Before, RunReport After)? DefaultVersionPair(IEnumerable<RunReport> runsOfOneDevice)
-    {
-        var runs = runsOfOneDevice.OrderByDescending(r => r.Started).ToList();
-        if (runs.Count < 2) return null;
-        var after = runs[0];
-        var earlier = runs.Skip(1).ToList();
-        var before = earlier.FirstOrDefault(r => !string.Equals(r.Identity.DriverVersion, after.Identity.DriverVersion, StringComparison.OrdinalIgnoreCase))
-                     ?? earlier[0];
-        return (before, after);
-    }
-
-    /// <summary>
-    /// What makes two runs not like for like (other options, another program), for a warning above
-    /// the comparison: such differences show up as checks gone or added rather than as regressions.
-    /// </summary>
-    public static List<string> Differences(RunReport before, RunReport after)
-    {
-        var list = new List<string>();
-        if (AreDifferentPrograms(before, after)) list.Add("they are runs of different programs");
-        void Option(string name, bool a, bool b) { if (a != b) list.Add($"{name} was {(a ? "on" : "off")} before and {(b ? "on" : "off")} after"); }
-        Option("motion", before.Options.AllowMotion, after.Options.AllowMotion);
-        Option("settings writes", before.Options.AllowSettingsWrites, after.Options.AllowSettingsWrites);
-        Option("SetPark", before.Options.AllowSetPark, after.Options.AllowSetPark);
-        Option("the protocol checks", before.Options.IncludeProtocol, after.Options.IncludeProtocol);
-        Option("the extended checks", before.Options.Extended, after.Options.Extended);
-        Option("the disconnected checks", before.Options.IncludeDisconnected, after.Options.IncludeDisconnected);
-        if (before.Cancelled || before.CommunicationLost) list.Add("the earlier run stopped part way");
-        if (after.Cancelled || after.CommunicationLost) list.Add("the later run stopped part way");
-        return list;
-    }
-}
-
-/// <summary>Reports and comparisons as CSV (RFC 4180, UTF-8 with a byte order mark so Excel reads it as UTF-8).</summary>
+/// <summary>Reports as CSV (RFC 4180, UTF-8 with a byte order mark so Excel reads it as UTF-8).</summary>
 public static class ReportCsv
 {
     public static byte[] Report(RunReport r)
@@ -369,18 +283,6 @@ public static class ReportCsv
         foreach (var x in r.Results)
             Row(sb, No(x.Id), x.Id, x.Group, x.Member, x.Outcome.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
                 x.DurationMs.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
-        return Bytes(sb);
-    }
-
-    public static byte[] Comparison(RunReport before, RunReport after)
-    {
-        var sb = new StringBuilder();
-        Row(sb, "Change", "No", "Id", "Group", "Member",
-            $"Before outcome ({before.Identity.DriverVersion} {before.Started:yyyy-MM-dd HH:mm})", "Before message",
-            $"After outcome ({after.Identity.DriverVersion} {after.Started:yyyy-MM-dd HH:mm})", "After message", "Fix");
-        foreach (var c in ReportComparer.Compare(before, after))
-            Row(sb, c.Change.ToString(), No(c.Id), c.Id, c.Group, c.Member, c.Before?.Outcome.ToString(), c.Before?.Message,
-                c.After?.Outcome.ToString(), c.After?.Message, (c.After ?? c.Before)?.Fix);
         return Bytes(sb);
     }
 

@@ -41,7 +41,6 @@
                 <li><a href="help#options">Options</a></li>
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
-                <li><a href="help#compare">The Compare tab</a></li>
                 <li><a href="help#recommendations">The Recommendations tab</a></li>
                 <li><a href="help#checks">What gets checked</a></li>
                 <li><a href="help#tests">The tests</a></li>
@@ -102,13 +101,14 @@
                 <p>Three tabs run across the top: <strong>ASCOM Conformance Check</strong> (a full check),
                     <strong>ConformU Debug Log Test</strong> (following up a ConformU debug log, see <a href="help#conformu">ConformU Debug Log Test</a>)
                     and <strong>Options</strong> (what a run may do, for both). Under <strong>ASCOM Conformance Check</strong> a second
-                    row holds its pages: <strong>Run</strong>, <strong>Reports</strong>, <strong>Compare</strong>
+                    row holds its pages: <strong>Run</strong>, <strong>Reports</strong>
                     and <strong>Recommendations</strong>. Under <strong>ConformU Debug Log Test</strong>
                     the same row holds the pages its runs use: <strong>Run</strong>, <strong>Reports</strong>
-                    and <strong>Recommendations</strong> (not Compare). Each tab's pages
+                    and <strong>Recommendations</strong>. Each tab's pages
                     show only its own runs: under ConformU Debug Log Test, Reports and Recommendations show only ConformU runs
-                    (the ones that followed up a log); under ASCOM Conformance Check, Reports, Compare and Recommendations
-                    show only full conformance runs. The check groups a run makes are listed under
+                    (the ones that followed up a log); under ASCOM Conformance Check, Reports and Recommendations
+                    show only full conformance runs. A report's reference says which test made it: <strong>RAC</strong> (ASCOM
+                    Conformance Check, as RAC0031) or <strong>RCU</strong> (ConformU Debug Log Test, as RCU0034). The check groups a run makes are listed under
                     <a href="help#checks">What gets checked</a>, and every check in them under <a href="help#tests">The tests</a>.</p>
                 <p>The <strong>Server</strong> card holds the server to test. Drag one onto it from the list;
                     <strong>✕</strong> clears it. Under the server, on both tests, a <strong>Settings</strong> section (closed
@@ -200,7 +200,7 @@
                 <p>A tier 2 or 3 run can't be started any other way: it follows up the run just below it (same device,
                     the options as set now), and its report says which run that was. Its findings are the
                     <strong>Diagnose…</strong> group for a conformance run, <strong>ConformU.Diagnose…</strong> for a ConformU
-                    run. Compare uses tier 1 runs only; Recommendations add each tier 1 run's deeper findings, the deepest tier's
+                    run. Recommendations add each tier 1 run's deeper findings, the deepest tier's
                     where a check was made at more than one.</p>
                 <p>A conformance run's tier 2 also takes apart its other kinds of problem: invalid arguments, members that work
                     when they must refuse (tracking off, during a slew), members that answer while disconnected, SlewSettleTime, AxisRates against CanMoveAxis, DriverVersion and the COM registration. Each
@@ -332,16 +332,6 @@
                     there with one <strong>CommunicationLost</strong> error that holds the last errors seen. The groups that need
                     the device are skipped, and the findings up to that point are kept. Such runs are tagged
                     <em>connection lost</em> in the list.</p>
-            </section>
-
-            <section id="compare">
-                <h2>The Compare tab</h2>
-                <p>Compare shows two runs of the server on the Run tab, check by check, to see what a new driver version
-                    fixed or broke. It starts with the newest run and the newest earlier run with another
-                    DriverVersion; pick any two runs under Before and After. Regressed and New problem are what to look at;
-                    Problem changed, Still failing, Fixed, Not checked after and New check follow. If the two runs weren't
-                    made alike (motion or settings writes on in one only), a note says so: those differences
-                    show as checks gone or added, not as regressions. <strong>CSV</strong> downloads the comparison.</p>
             </section>
 
             <section id="recommendations">

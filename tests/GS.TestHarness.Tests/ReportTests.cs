@@ -26,64 +26,12 @@ public class ReportTests
     private static RunReport Report(params CheckResult[] results)
         => new() { Target = new TestTarget(), Options = new RunOptions(), Results = [.. results], Identity = new DeviceIdentity { Name = "Dev", DriverVersion = "1.2" } };
 
-    [Fact]
-    public void Comparing_runs_sorts_checks_into_fixed_regressed_and_still_failing()
-    {
-        var before = Report(Result("A.X", Outcome.Fail), Result("A.Y", Outcome.Pass), Result("A.Z", Outcome.Fail, "one"),
-            Result("A.Gone", Outcome.Fail), Result("A.Same", Outcome.Pass));
-        var after = Report(Result("A.X", Outcome.Pass), Result("A.Y", Outcome.Warning), Result("A.Z", Outcome.Fail, "one"),
-            Result("A.New", Outcome.Fail), Result("A.Same", Outcome.Pass), Result("A.Added", Outcome.Pass));
-        var diff = ReportComparer.Compare(before, after).ToDictionary(d => d.Id, d => d.Change);
-        Assert.Equal(Change.Fixed, diff["A.X"]);
-        Assert.Equal(Change.Regressed, diff["A.Y"]);
-        Assert.Equal(Change.StillFailing, diff["A.Z"]);
-        Assert.Equal(Change.Gone, diff["A.Gone"]);
-        Assert.Equal(Change.New, diff["A.New"]);
-        Assert.Equal(Change.Same, diff["A.Same"]);
-        Assert.Equal(Change.Added, diff["A.Added"]);
-    }
-
-    [Fact]
-    public void Runs_of_another_device_codebase_or_transport_are_different_programs()
-    {
-        var gss = Report() with { Target = new TestTarget { Codebase = Codebase.GSServer }, Identity = new DeviceIdentity { Name = "GSServer", DriverVersion = "1.2.3.3" } };
-        var gss2 = gss with { Identity = new DeviceIdentity { Name = "GSServer", DriverVersion = "1.2.3.4" } };
-        var gsa = Report() with { Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca }, Identity = new DeviceIdentity { Name = "GS Simulator (GEM)" } };
-        Assert.False(ReportComparer.AreDifferentPrograms(gss, gss2));
-        Assert.True(ReportComparer.AreDifferentPrograms(gss, gsa));
-    }
-
     private static RunReport Run(string version, int minutesAgo)
         => Report() with
         {
             Identity = new DeviceIdentity { Name = "Dev", DriverVersion = version },
             Started = DateTimeOffset.Now.AddMinutes(-minutesAgo)
         };
-
-    [Fact]
-    public void Versions_compare_the_newest_run_with_the_newest_earlier_version()
-    {
-        var newest = Run("1.3", 1);
-        var sameVersion = Run("1.3", 10);
-        var older = Run("1.2", 30);
-        var pair = ReportComparer.DefaultVersionPair([sameVersion, older, newest]);
-        Assert.Equal(newest.Id, pair!.Value.After.Id);
-        Assert.Equal(older.Id, pair.Value.Before.Id);
-
-        // No other version: the newest earlier run.
-        Assert.Equal(sameVersion.Id, ReportComparer.DefaultVersionPair([newest, sameVersion])!.Value.Before.Id);
-        Assert.Null(ReportComparer.DefaultVersionPair([newest]));
-    }
-
-    [Fact]
-    public void Runs_that_arent_like_for_like_are_called_out()
-    {
-        var before = Run("1.2", 30);
-        var after = Run("1.3", 1) with { Options = new RunOptions { AllowMotion = true } };
-        var differences = ReportComparer.Differences(before, after);
-        Assert.Contains(differences, d => d.StartsWith("motion was off"));
-        Assert.Empty(ReportComparer.Differences(before, Run("1.3", 1)));
-    }
 
     [Fact]
     public void A_report_links_to_every_run_of_its_tiers_and_lists_their_own_tests()
@@ -121,8 +69,6 @@ public class ReportTests
         Assert.Contains(",\"'=HYPERLINK(\"\"x\"\")\",", text);
         Assert.Contains(",-91,", text);
 
-        var compare = System.Text.Encoding.UTF8.GetString(ReportCsv.Comparison(report, Report(Result("A.X", Outcome.Pass)))[3..]);
-        Assert.Contains("Fixed,,A.X,", compare);
     }
 
     [Fact]
@@ -149,6 +95,38 @@ public class ReportTests
         Assert.Equal(root, new ReportStore(Path.Combine(root, "Reports")).SettingsFolder);
         // As before the upgrade: "...\Reports\" kept its settings in Reports itself.
         Assert.Equal(Path.Combine(root, "Reports"), new ReportStore(Path.Combine(root, "Reports") + Path.DirectorySeparatorChar).SettingsFolder);
+    }
+
+    [Fact]
+    public async Task References_are_RAC_for_conformance_runs_and_RCU_for_ConformU_runs()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "gs-harness-tests-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new ReportStore(folder);
+            var conformance = Report(Result("A.X", Outcome.Fail));
+            var conformU = Report(Result("A.Y", Outcome.Fail)) with { ConformULog = "ConformU.debug.txt" };
+            await store.SaveAsync(conformance);
+            await store.SaveAsync(conformU);
+            Assert.Equal("RAC0001", conformance.Reference);
+            Assert.Equal("RCU0002", conformU.Reference);
+
+            Assert.Equal(conformance.Id, (await store.LoadAsync("RAC0001"))!.Id);
+            Assert.Equal(conformU.Id, (await store.LoadAsync("rcu2"))!.Id);
+            // The old form and a bare number still find either kind; a prefix naming the other test finds nothing.
+            Assert.Equal(conformU.Id, (await store.LoadAsync("R0002"))!.Id);
+            Assert.Equal(conformance.Id, (await store.LoadAsync("1"))!.Id);
+            Assert.Null(await store.LoadAsync("RCU0001"));
+            Assert.Null(await store.LoadAsync("RAC0002"));
+
+            // A deeper tier of a ConformU run follows up the same test's run.
+            var tier2 = conformU with { Number = 3, FollowsUpNumber = 2, Options = new RunOptions { Tier = 2, FollowsUp = conformU.Id } };
+            Assert.Equal("RCU0002", tier2.FollowsUpReference);
+        }
+        finally
+        {
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        }
     }
 
     [Fact]

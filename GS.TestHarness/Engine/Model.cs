@@ -288,18 +288,30 @@ public sealed record RunReport
     /// </summary>
     public int Number { get; set; }
 
-    /// <summary>The report's reference, "R0012": what to quote for it (the <see cref="Id"/> until it has a number).</summary>
+    /// <summary>
+    /// The report's reference, what to quote for it (the <see cref="Id"/> until it has a number): "RAC0012" for an ASCOM
+    /// Conformance Check run, "RCU0012" for a ConformU Debug Log Test run. The number is shared: no two reports have it.
+    /// </summary>
     [JsonIgnore]
-    public string Reference => Number > 0 ? ReferenceOf(Number) : Id;
+    public string Reference => Number > 0 ? ReferenceOf(Number, ConformULog is not null) : Id;
 
-    public static string ReferenceOf(int number) => $"R{number:0000}";
+    /// <summary>The prefix of an ASCOM Conformance Check run's reference.</summary>
+    public const string ConformancePrefix = "RAC";
+
+    /// <summary>The prefix of a ConformU Debug Log Test run's reference (one that followed up a ConformU log).</summary>
+    public const string ConformUPrefix = "RCU";
+
+    public static string ReferenceOf(int number, bool conformU) => $"{(conformU ? ConformUPrefix : ConformancePrefix)}{number:0000}";
 
     /// <summary>For a tier 2 or 3 run, the number of the run it follows up (<see cref="RunOptions.FollowsUp"/>), for its reference.</summary>
     public int? FollowsUpNumber { get; set; }
 
-    /// <summary>The reference of the run this one follows up ("R0011"), or null for a tier 1 run.</summary>
+    /// <summary>
+    /// The reference of the run this one follows up ("RAC0011"), or null for a tier 1 run. It is the same test's: a
+    /// ConformU run's deeper tiers follow up its log too.
+    /// </summary>
     [JsonIgnore]
-    public string? FollowsUpReference => Options.FollowsUp is { } up ? FollowsUpNumber is > 0 and var n ? ReferenceOf(n) : up : null;
+    public string? FollowsUpReference => Options.FollowsUp is { } up ? FollowsUpNumber is > 0 and var n ? ReferenceOf(n, ConformULog is not null) : up : null;
     public required TestTarget Target { get; init; }
     public required RunOptions Options { get; init; }
     public DeviceIdentity Identity { get; set; } = new();

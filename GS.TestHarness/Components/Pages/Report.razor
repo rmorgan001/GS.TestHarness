@@ -16,18 +16,19 @@
 
 @page "/reports/{Id}"
 @inject ReportStore Store
+@inject RunPageState State
 
 <PageTitle>@(_report is { } t ? $"{t.Reference} {t.Label}" : "Report") · GS Test Harness</PageTitle>
 
 @if (_missing)
 {
-    <p class="muted">There's no report @Id. <a href="reports">All reports</a>.</p>
+    <p class="muted">There's no report @Id. <a href="@ListHref">All reports</a>.</p>
 }
 else if (_report is { } r)
 {
     <header class="page-head">
         <h1><img class="kind" src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="@r.Target.Kind" /> <span class="report-ref">@r.Reference</span> @r.Label</h1>
-        <p class="muted"><a href="reports">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")@(r.CommunicationLost ? " · stopped: communication lost" : "")</p>
+        <p class="muted"><a href="@ListHref">Reports</a> / @r.Started.ToString("yyyy-MM-dd HH:mm") · @r.Target.Display@(r.Cancelled ? " · stopped early" : "")@(r.CommunicationLost ? " · stopped: communication lost" : "")</p>
     </header>
 
     @* The run at a glance. *@
@@ -136,11 +137,19 @@ else
     private static IEnumerable<int> Issues(RunReport run)
         => run.Results.Where(x => x.IsProblem).Select(x => x.Number).Where(n => n > 0).Distinct().Order();
 
+    /// <summary>The list this report belongs in: the ConformU Debug Log Test's Reports for a ConformU run, else the conformance check's.</summary>
+    private string ListHref => _report is { } r && RunPageState.IsConformU(r) ? RunPageState.ConformUPrefix + "reports" : "reports";
+
     protected override async Task OnParametersSetAsync()
     {
         try { _report = await Store.LoadAsync(Id); }
-        catch (ArgumentException) { _report = null; }
+        catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException or IOException)
+        {
+            _report = null;
+        }
         _missing = _report is null;
         _chain = _report is null ? [] : Tiers.Chain(_report, await Store.ListAsync());
+        // The top tab follows the report, so its Reports sub-tab leads back to the list it is in.
+        if (_report is { } shown) State.Tab = RunPageState.IsConformU(shown) ? RunPageTab.ConformU : RunPageTab.Conformance;
     }
 }

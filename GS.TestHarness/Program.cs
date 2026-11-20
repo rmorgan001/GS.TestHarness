@@ -82,10 +82,16 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 app.MapStaticAssets();
 
-// The Recommendations tab as Markdown. A literal route, so it wins over {id}.md.
+// Each test's Recommendations tab as Markdown, from its own runs only (as the tab shows them). A literal route, so it
+// wins over {id}.md.
 app.MapGet("/download/recommendations.md", async (ReportStore store) =>
-    Results.File(System.Text.Encoding.UTF8.GetBytes(RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build(await store.ListAsync()))),
+    Results.File(System.Text.Encoding.UTF8.GetBytes(RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build(
+            RunPageState.Shown(await store.ListAsync(), conformU: false)))),
         "text/markdown; charset=utf-8", "recommendations.md"));
+app.MapGet("/download/conformu/recommendations.md", async (ReportStore store) =>
+    Results.File(System.Text.Encoding.UTF8.GetBytes(RecommendationBuilder.ToMarkdown(RecommendationBuilder.Build(
+            RunPageState.Shown(await store.ListAsync(), conformU: true)))),
+        "text/markdown; charset=utf-8", "conformu-recommendations.md"));
 
 // Report downloads: Markdown (to paste into an issue) and the raw JSON.
 app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
@@ -95,11 +101,6 @@ app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
 app.MapGet("/download/{id}.csv", async (string id, ReportStore store) =>
     await TryLoadAsync(store, id) is { } report
         ? Results.File(ReportCsv.Report(report), "text/csv; charset=utf-8", $"{report.Reference}_{ReportCsv.FileName(report.Label)}.csv")
-        : Results.NotFound());
-app.MapGet("/download/compare/{before}/{after}.csv", async (string before, string after, ReportStore store) =>
-    await TryLoadAsync(store, before) is { } a && await TryLoadAsync(store, after) is { } b
-        ? Results.File(ReportCsv.Comparison(a, b), "text/csv; charset=utf-8",
-            $"{ReportCsv.FileName($"{a.Label}_vs_{b.Identity.DriverVersion}")}.csv")
         : Results.NotFound());
 app.MapGet("/download/{id}.json", async (string id, ReportStore store) =>
     await TryLoadAsync(store, id) is { } report

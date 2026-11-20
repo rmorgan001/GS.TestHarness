@@ -104,38 +104,52 @@
     ];
 
     private static readonly (string Href, string Label, string Icon) Run = ("", "Run", "Play"),
-        Reports = ("reports", "Reports", "FileDocument"), Compare = ("compare", "Compare", "Compare"),
-        Recommendations = ("recommendations", "Recommendations", "Lightbulb");
+        Reports = ("reports", "Reports", "FileDocument"),
+        Recommendations = ("recommendations", "Recommendations", "Lightbulb"),
+        // The ConformU Debug Log Test's own lists, at their own addresses: they show only its runs.
+        ConformUReports = (RunPageState.ConformUPrefix + "reports", "Reports", "FileDocument"),
+        ConformURecommendations = (RunPageState.ConformUPrefix + "recommendations", "Recommendations", "Lightbulb");
 
     /// <summary>
-    /// The pages under each top tab. The ConformU Debug Log Test has the ones its runs use: its runs are saved as
-    /// reports and feed the recommendations (the test catalog is in the help). Compare is left out: it compares
-    /// full runs. Options has none.
+    /// The pages under each top tab. Each test has its own Reports and Recommendations, which show only its runs: the
+    /// ConformU Debug Log Test's are under conformu/. Options has none.
     /// </summary>
     private static (string Href, string Label, string Icon)[] SubPages(RunPageTab tab) => tab switch
     {
-        RunPageTab.Conformance => [Run, Reports, Compare, Recommendations],
-        RunPageTab.ConformU => [Run, Reports, Recommendations],
+        RunPageTab.Conformance => [Run, Reports, Recommendations],
+        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations],
         _ => []
     };
 
-    /// <summary>The page's first path segment: "" for the Run page, "reports" for a report too.</summary>
-    private string Section => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Split('/')[0];
+    /// <summary>The page's address, base-relative, without query or fragment: "" for the Run page.</summary>
+    private string PathNow => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
 
-    private bool OnRunPage => Section.Length == 0;
+    private bool OnRunPage => PathNow.Length == 0;
+
+    /// <summary>A single report (reports/{id}): it belongs to the test that made it, which its page sets as the tab.</summary>
+    private bool OnReportPage => PathNow.StartsWith("reports/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The tab picked, while the page open is one of its own (Options only has the Run page); otherwise the page
-    /// belongs to the conformance check (Compare, for one).
+    /// The top tab the page open belongs to. The address says it for every page but the Run page (whose panel is the
+    /// tab picked) and a single report (whose page set the tab from the report): conformu/... is the ConformU Debug Log
+    /// Test's; anything else (Reports, Recommendations, Help) the conformance check's.
     /// </summary>
-    private RunPageTab ActiveTop => OnRunPage || SubPages(State.Tab).Any(p => p.Href.Equals(Section, StringComparison.OrdinalIgnoreCase))
-        ? State.Tab : RunPageTab.Conformance;
+    private RunPageTab ActiveTop
+        => OnRunPage ? State.Tab
+            : RunPageState.IsConformUPage(PathNow) ? RunPageTab.ConformU
+            : OnReportPage && State.Tab == RunPageTab.ConformU ? RunPageTab.ConformU
+            : RunPageTab.Conformance;
 
     private void Show(RunPageTab tab)
     {
+        // The page open, by its label: Reports (a single report counts as its list) or Recommendations.
+        var label = OnReportPage ? "Reports"
+            : SubPages(ActiveTop).FirstOrDefault(p => p.Href.Length > 0 && p.Href.Equals(PathNow, StringComparison.OrdinalIgnoreCase)).Label;
         State.Tab = tab;
-        // Stay on the page open if the tab has it too (Reports under either test); otherwise the tab's Run page.
-        if (!OnRunPage && !SubPages(tab).Any(p => p.Href.Equals(Section, StringComparison.OrdinalIgnoreCase))) Nav.NavigateTo("");
+        if (OnRunPage) return;
+        // The same page under the other test (its Reports, its Recommendations); otherwise that test's Run page.
+        var same = label is null ? null : SubPages(tab).FirstOrDefault(p => p.Href.Length > 0 && p.Label == label).Href;
+        Nav.NavigateTo(same ?? "");
     }
 
     protected override void OnInitialized()

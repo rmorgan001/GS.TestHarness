@@ -15,10 +15,12 @@
  *@
 
 @page "/recommendations"
+@page "/conformu/recommendations"
 @implements IDisposable
 @inject ReportStore Store
 @inject RunService Runs
 @inject RunPageState State
+@inject NavigationManager Nav
 
 <PageTitle>Recommendations · GS Test Harness</PageTitle>
 
@@ -49,7 +51,7 @@ else
     <section class="card">
         <div class="rec-runs-head">
             <span class="muted">From @_set.Runs.Count latest run@(_set.Runs.Count == 1 ? "" : "s")</span>
-            <a class="btn" href="download/recommendations.md" download><Icon Kind="Download" Size="16" /> Download Markdown</a>
+            <a class="btn" href="@(ConformUOnly ? "download/conformu/recommendations.md" : "download/recommendations.md")" download><Icon Kind="Download" Size="16" /> Download Markdown</a>
         </div>
         <ul class="run-list">
             @foreach (var run in _set.Runs)
@@ -178,24 +180,30 @@ else
     // Every saved run; the recommendations are built from the top tab's own runs (ConformU, or ASCOM Conformance Check).
     private List<RunReport>? _all;
 
-    private bool ConformUOnly => State.Tab == RunPageTab.ConformU;
+    // Which test's runs: set by the address (conformu/recommendations or recommendations), never by the tab remembered
+    // in memory, so a reload or a link opened on its own shows the right ones.
+    private bool ConformUOnly => RunPageState.IsConformUPage(Nav.ToBaseRelativePath(Nav.Uri));
+    private bool? _builtFor;
 
     protected override async Task OnInitializedAsync()
     {
         _lastRun = Runs.LastReport?.Id;
         _all = await Store.ListAsync();
-        _set = RecommendationBuilder.Build(State.Shown(_all));
         Runs.Changed += OnRunsChanged;
-        State.Changed += OnTabChanged;
     }
 
-    /// <summary>The top tab changed with this page open: rebuild from its runs.</summary>
-    private void OnTabChanged() => InvokeAsync(() =>
+    /// <summary>
+    /// Builds from the address's test's runs, and moves the top tab to that test. Going from one test's
+    /// Recommendations to the other's keeps this page, so it is done here, not only when the page opens.
+    /// </summary>
+    protected override void OnParametersSet()
     {
-        if (_all is null) return;
-        _set = RecommendationBuilder.Build(State.Shown(_all));
-        StateHasChanged();
-    });
+        var conformU = ConformUOnly;
+        State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
+        if (_all is null || _builtFor == conformU) return;
+        _builtFor = conformU;
+        _set = RecommendationBuilder.Build(RunPageState.Shown(_all, conformU));
+    }
 
     /// <summary>The recommendations the server and search filters leave (not yet filtered by outcome).</summary>
     private List<Recommendation> Filtered => [.. _set!.Recommendations.Where(r =>
@@ -218,13 +226,12 @@ else
         if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
         _lastRun = Runs.LastReport?.Id;
         _all = await Store.ListAsync();
-        _set = RecommendationBuilder.Build(State.Shown(_all));
+        _set = RecommendationBuilder.Build(RunPageState.Shown(_all, ConformUOnly));
         StateHasChanged();
     });
 
     public void Dispose()
     {
         Runs.Changed -= OnRunsChanged;
-        State.Changed -= OnTabChanged;
     }
 }

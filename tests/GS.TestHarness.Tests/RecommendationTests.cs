@@ -198,7 +198,7 @@ public class RecommendationTests
     }
 
     [Fact]
-    public void Compare_and_recommendations_pick_the_same_run()
+    public void Reports_and_recommendations_pick_the_same_run()
     {
         var finished = Run(Codebase.GreenSwampAlpaca, 0, 0, Result("A.X", Outcome.Fail));
         var stopped = Run(Codebase.GreenSwampAlpaca, 0, 10, Result("A.X", Outcome.Pass));

@@ -18,7 +18,7 @@ using GS.TestHarness.Engine;
 
 namespace GS.TestHarness.Services;
 
-/// <summary>The top tabs: the conformance test (with Run, Reports, Compare, Recommendations and Tests under it),
+/// <summary>The top tabs: the conformance test (with Run, Reports and Recommendations under it),
 /// the ConformU Debug Log Test and the options.</summary>
 public enum RunPageTab
 {
@@ -57,11 +57,21 @@ public sealed class RunPageState
     }
 
     /// <summary>
-    /// The runs Reports and Recommendations show: each top tab's own. Under the ConformU Debug Log Test tab only
-    /// ConformU runs (the ones that followed up a log); otherwise only ASCOM Conformance Check runs.
+    /// Where the ConformU Debug Log Test's own pages live: conformu/reports and conformu/recommendations. The address
+    /// says which test's runs a page shows, so a reload, a reconnect or a link opened on its own can't mix them.
     /// </summary>
-    public List<RunReport> Shown(IEnumerable<RunReport> runs)
-        => [.. runs.Where(r => IsConformU(r) == (Tab == RunPageTab.ConformU))];
+    public const string ConformUPrefix = "conformu/";
+
+    /// <summary>Whether the page at this base-relative address is one of the ConformU Debug Log Test's own.</summary>
+    public static bool IsConformUPage(string relativePath)
+        => relativePath.StartsWith(ConformUPrefix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The runs Reports and Recommendations show: each test's own. Under the ConformU Debug Log Test only ConformU
+    /// runs (the ones that followed up a log); under the ASCOM Conformance Check only its runs.
+    /// </summary>
+    public static List<RunReport> Shown(IEnumerable<RunReport> runs, bool conformU)
+        => [.. runs.Where(r => IsConformU(r) == conformU)];
 
     /// <summary>A ConformU Debug Log Test run (it followed up a ConformU log), not a full ASCOM Conformance Check.</summary>
     public static bool IsConformU(RunReport r) => r.ConformULog is not null;

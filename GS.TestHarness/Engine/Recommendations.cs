@@ -52,7 +52,7 @@ public sealed record RecommendationSet(
 public static class RecommendationBuilder
 {
     /// <summary>
-    /// The order to list problems in: <see cref="OutcomeExtensions.Severity"/> (shared with Compare), then a failure
+    /// The order to list problems in: <see cref="OutcomeExtensions.Severity"/>, then a failure
     /// before an error, since a failure is a breach of the standard and an error is a check that couldn't finish.
     /// </summary>
     private static (int, bool) Rank(Outcome o) => (o.Severity(), o == Outcome.Fail);
