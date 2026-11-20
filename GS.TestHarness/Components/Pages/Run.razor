@@ -450,36 +450,10 @@ else
 
     /// <summary>The warning shown before every run: the mount moves on its own, so the user watches it and takes responsibility.</summary>
     private const string SafetyWarning =
-        "The run can slew, flip, park and home the mount, and move its axes, without any further warning.\n\n" +
+        "By clicking Start you accept responsibility for starting the run and for monitoring the mount.\n\n" +
+        "• Check all Settings and make sure you understand them\n" +
         "• Remove the OTAs (telescopes, cameras and anything else mounted) before you start, so a pier or tripod-leg strike can't damage them.\n" +
-        "• Stay with the mount and watch it for the whole run. Be ready to stop the run or cut the mount's power if it heads for the pier, a leg or a cable.\n\n" +
-        "By clicking Start you accept responsibility for starting the run and for monitoring the mount.";
-
-    /// <summary>
-    /// The start warning, then the settings on the Server card to check before the run: the Mount (which code paths the
-    /// recommendations name), the flip angle, the timeouts and the source code folder. One that looks wrong is marked ⚠.
-    /// </summary>
-    private string StartMessage(ServerEntry server)
-    {
-        var codebase = server.Target.Codebase;
-        var mount = _mount switch
-        {
-            MountKind.Simulator => "• Mount: Simulator.",
-            MountKind.RealMount => "• Mount: real mount.",
-            _ => "⚠ Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is."
-        };
-        var flip = _motion
-            ? $"• Flip angle: {Math.Clamp(_flipAngle, 0, 90)}° either side of the meridian. It must match the mount's flip zone, or the flip checks will report the wrong thing."
-            : "• Flip angle: not used (Move the mount is off under Options).";
-        var (slew, call) = (Math.Max(10, _slewTimeout), Math.Max(2, _callTimeout));
-        var timeouts = slew < 60 && _motion && _mount != MountKind.Simulator
-            ? $"⚠ Timeouts: slew {slew} s, call {call} s. A long slew or a meridian flip on a real mount can take longer than {slew} s and would count as never finished."
-            : $"• Timeouts: slew {slew} s, call {call} s.";
-        var source = Locator.RootOf(codebase) is { } root
-            ? $"• Source code: {root}"
-            : "⚠ Source code: none set (or not found), so there's no code review and findings won't name the code to check. Set it under the server's Settings.";
-        return SafetyWarning + "\n\nCheck these settings under the server before you start:\n" + string.Join("\n", mount, flip, timeouts, source);
-    }
+        "• Stay with the mount and watch it for the whole run. Be ready to stop the run or cut the mount's power if it heads for the pier, a leg or a cable.";
 
     private RunOptions CurrentOptions() => new()
     {
@@ -544,15 +518,16 @@ else
     private async Task<bool> ConfirmAtHomeAsync(TestTarget target, RunOptions options)
     {
         if (!options.AllowMotion) return true;
-        var status = await Home.CheckAsync(target, options);
+        await using var home = Home.Open(target, options);
+        var status = await home.CheckAsync();
         if (status.Error is null && status.AtHome) return true;
-        return await Dialogs.ShowAsync(new HomeDialogModel(Home, target, options, status));
+        return await Dialogs.ShowAsync(new HomeDialogModel(home, status));
     }
 
     private async Task Start()
     {
         if (Bench.Selected is not { } server) return;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", StartMessage(server), "Start", "Cancel", danger: true))) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
         if (Runs.IsRunning) return;
         var options = CurrentOptions();
         if (!await ConfirmAtHomeAsync(server.RunTarget, options) || Runs.IsRunning) return;
@@ -640,7 +615,7 @@ else
     private async Task StartConformU()
     {
         if (Bench.Selected is not { } server || State.Log is not { } log) return;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", StartMessage(server), "Start", "Cancel", danger: true))) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Watch the mount", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
         if (Runs.IsRunning) return;
         var plan = log.Plan();
         var options = CurrentOptions();
@@ -696,9 +671,7 @@ else
     {
         if (Runs.IsRunning || NeedsLog(next)) return;
         var target = Runs.Target ?? next.From.Target;
-        var server = Bench.Selected;
-        var message = server is not null ? StartMessage(server) : SafetyWarning;
-        if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", message, "Start", "Cancel", danger: true))) return;
+        if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", SafetyWarning, "Start", "Cancel", danger: true, icon: "Alert"))) return;
         if (Runs.IsRunning) return;
         var tierOptions = Tiers.Options(CurrentOptions(), next);
         if (!await ConfirmAtHomeAsync(target, tierOptions) || Runs.IsRunning) return;

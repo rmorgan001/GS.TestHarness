@@ -14,6 +14,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+using ASCOM.Common.DeviceInterfaces;
 using GS.TestHarness.Engine;
 
 namespace GS.TestHarness.Services;
@@ -24,101 +25,143 @@ public sealed record HomeStatus(bool AtHome, bool AtPark, bool CanFindHome, stri
     public static HomeStatus Failed(string error) => new(false, false, false, error);
 }
 
-/// <summary>
-/// Checks, before a run that moves the mount, that it is at the home position, and can send it there (FindHome).
-/// Each call opens its own short session and puts the connection back as it found it, so it works whether or not
-/// the server is connected from the sidebar, and still works after the user has powered the mount off and on.
-/// </summary>
+/// <summary>Makes the <see cref="HomeSession"/> a run's home check works through.</summary>
 public sealed class HomeService(ILogger<HomeService> log)
 {
+    public HomeSession Open(TestTarget target, RunOptions options) => new(log, target, options);
+}
+
+/// <summary>
+/// Checks, before a run that moves the mount, that it is at the home position, and can send it there (FindHome).
+/// One connection is kept for the whole check, the dialog's Check again and Go home included, so the mount isn't
+/// dropped and picked up again at every button. A read that fails (the mount was powered off and on, so the link
+/// the server held is dead) reconnects once and tries again. Disposing disconnects if this connected it, so the run
+/// finds the mount as it was.
+/// </summary>
+public sealed class HomeSession(ILogger log, TestTarget target, RunOptions options) : IAsyncDisposable
+{
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly TimeSpan _timeout = TimeSpan.FromSeconds(Math.Max(2, options.CallTimeoutSeconds));
+    private ITelescopeSession? _session;
+    private bool _connectedHere;
+
     /// <summary>Reads AtHome (and AtPark, CanFindHome).</summary>
-    public Task<HomeStatus> CheckAsync(TestTarget target, RunOptions options)
-        => WithMountAsync(target, options, async (session, timeout) => await ReadAsync(session, timeout));
+    public Task<HomeStatus> CheckAsync() => WithRetryAsync(ReadAsync);
 
     /// <summary>
     /// Sends the mount home: unparks it if parked, calls FindHome and waits (up to the slew timeout) for it to arrive.
     /// Returns the status afterwards.
     /// </summary>
-    public Task<HomeStatus> GoHomeAsync(TestTarget target, RunOptions options)
-        => WithMountAsync(target, options, async (session, timeout) =>
-        {
-            var slew = TimeSpan.FromSeconds(Math.Max(10, options.SlewTimeoutSeconds));
-            var status = await ReadAsync(session, timeout);
-            if (!status.CanFindHome) return status with { Error = "This mount can't find home itself (CanFindHome is false). Put it in the home position by hand." };
-            if (status.AtPark)
-            {
-                await session.RunAsync(t => t.Unpark(), slew);
-                await WaitAsync(session, t => !t.AtPark, slew);
-            }
-            await session.RunAsync(t => t.FindHome(), slew);
-            await WaitAsync(session, t => t.AtHome && !t.Slewing, slew);
-            return await ReadAsync(session, timeout);
-        });
-
-    private static async Task<HomeStatus> ReadAsync(ITelescopeSession session, TimeSpan timeout)
+    public Task<HomeStatus> GoHomeAsync() => WithRetryAsync(async () =>
     {
-        var atHome = await session.RunAsync(t => t.AtHome, timeout);
-        var atPark = await session.RunAsync(t => t.AtPark, timeout);
-        var canFindHome = await session.RunAsync(t => t.CanFindHome, timeout);
+        var slew = TimeSpan.FromSeconds(Math.Max(10, options.SlewTimeoutSeconds));
+        var status = await ReadAsync();
+        if (!status.CanFindHome) return status with { Error = "This mount can't find home itself (CanFindHome is false). Put it in the home position by hand." };
+        if (status.AtPark)
+        {
+            await _session!.RunAsync(t => t.Unpark(), slew);
+            await WaitAsync(t => !t.AtPark, slew);
+        }
+        await _session!.RunAsync(t => t.FindHome(), slew);
+        await WaitAsync(t => t.AtHome && !t.Slewing, slew);
+        return await ReadAsync();
+    });
+
+    private async Task<HomeStatus> ReadAsync()
+    {
+        var session = _session!;
+        var atHome = await session.RunAsync(t => t.AtHome, _timeout);
+        var atPark = await session.RunAsync(t => t.AtPark, _timeout);
+        var canFindHome = await session.RunAsync(t => t.CanFindHome, _timeout);
         return new HomeStatus(atHome, atPark, canFindHome);
     }
 
-    private static async Task WaitAsync(ITelescopeSession session, Func<ASCOM.Common.DeviceInterfaces.ITelescopeV4, bool> done, TimeSpan limit)
+    private async Task WaitAsync(Func<ITelescopeV4, bool> done, TimeSpan limit)
     {
         var watch = System.Diagnostics.Stopwatch.StartNew();
         while (watch.Elapsed < limit)
         {
-            if (await session.RunAsync(done, TimeSpan.FromSeconds(15))) return;
+            if (await _session!.RunAsync(done, TimeSpan.FromSeconds(15))) return;
             await Task.Delay(500);
         }
     }
 
-    private async Task<HomeStatus> WithMountAsync(TestTarget target, RunOptions options,
-        Func<ITelescopeSession, TimeSpan, Task<HomeStatus>> work)
+    /// <summary>Runs <paramref name="work"/>; if it fails, drops the connection, connects again and tries once more.</summary>
+    private async Task<HomeStatus> WithRetryAsync(Func<Task<HomeStatus>> work)
     {
-        var timeout = TimeSpan.FromSeconds(Math.Max(2, options.CallTimeoutSeconds));
-        ITelescopeSession? session = null;
-        var connectedHere = false;
         try
         {
-            session = await TestRunner.OpenAsync(target, options);
-            if (!await session.RunAsync(t => t.Connected, timeout))
+            await EnsureConnectedAsync();
+            return await work();
+        }
+        catch (Exception first)
+        {
+            log.LogInformation("Home check for {Target}: {Error}; connecting again", target.Display, first.Message);
+            try
+            {
+                await DropAsync();
+                await EnsureConnectedAsync();
+                return await work();
+            }
+            catch (Exception ex)
+            {
+                log.LogInformation("Home check for {Target}: {Error}", target.Display, ex.Message);
+                return HomeStatus.Failed($"Couldn't read the mount's position: {AscomError.Describe(ex)}");
+            }
+        }
+    }
+
+    private async Task EnsureConnectedAsync()
+    {
+        if (_session is not null) return;
+        var session = await TestRunner.OpenAsync(target, options);
+        try
+        {
+            if (!await session.RunAsync(t => t.Connected, _timeout))
             {
                 await session.RunAsync(t =>
                 {
                     try { t.Connect(); }
                     catch (ASCOM.NotImplementedException) { t.Connected = true; }
-                }, timeout);
-                connectedHere = true;
+                }, _timeout);
+                _connectedHere = true;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                while (watch.Elapsed < TimeSpan.FromSeconds(30) && await session.RunAsync(t => t.Connecting, timeout)) await Task.Delay(100);
-                if (!await session.RunAsync(t => t.Connected, timeout)) return HomeStatus.Failed("The mount didn't connect.");
+                while (watch.Elapsed < ConnectTimeout && await session.RunAsync(t => t.Connecting, _timeout)) await Task.Delay(100);
+                if (!await session.RunAsync(t => t.Connected, _timeout)) throw new InvalidOperationException("The mount didn't connect.");
             }
-            return await work(session, timeout);
+            _session = session;
         }
-        catch (Exception ex)
+        catch
         {
-            log.LogInformation("Home check for {Target}: {Error}", target.Display, ex.Message);
-            return HomeStatus.Failed($"Couldn't read the mount's position: {AscomError.Describe(ex)}");
-        }
-        finally
-        {
-            if (session is not null)
-            {
-                if (connectedHere)
-                {
-                    try
-                    {
-                        await session.RunAsync(t =>
-                        {
-                            try { t.Disconnect(); }
-                            catch (ASCOM.NotImplementedException) { t.Connected = false; }
-                        }, timeout);
-                    }
-                    catch { /* the run connects for itself */ }
-                }
-                await session.DisposeAsync();
-            }
+            _session = session;
+            await DropAsync();
+            throw;
         }
     }
+
+    /// <summary>Disconnects (only if this connected it) and closes the session; the next call opens a new one.</summary>
+    private async Task DropAsync()
+    {
+        var session = _session;
+        _session = null;
+        if (session is null) return;
+        if (_connectedHere)
+        {
+            try
+            {
+                await session.RunAsync(t =>
+                {
+                    try { t.Disconnect(); }
+                    catch (ASCOM.NotImplementedException) { t.Connected = false; }
+                }, _timeout);
+            }
+            catch { /* the link may already be dead */ }
+            _connectedHere = false;
+        }
+        try { await session.DisposeAsync(); }
+        catch { /* nothing more to do */ }
+    }
+
+    public ValueTask DisposeAsync() => new(DropAsync());
 }

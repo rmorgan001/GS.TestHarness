@@ -67,30 +67,31 @@ public abstract class DialogModel
 }
 
 /// <summary>Asks a yes/no question, or (with no cancel text) just tells the user something.</summary>
-public sealed class ConfirmDialogModel(string title, string message, string acceptText = "Yes", string? cancelText = "No", bool danger = false) : DialogModel
+public sealed class ConfirmDialogModel(string title, string message, string acceptText = "Yes", string? cancelText = "No", bool danger = false, string? icon = null) : DialogModel
 {
     public string Title { get; } = title;
     public string Message { get; } = message;
     public string AcceptText { get; } = acceptText;
     public string? CancelText { get; } = cancelText;
     public bool Danger { get; } = danger;
+    public string? Icon { get; } = icon;
 }
 
 /// <summary>
 /// Asks the user to put the mount in the home position before a run: by hand (power it off and on, then Check again),
 /// or by the Go home button (FindHome). Accepting means the user confirms the mount is at home, so the run can start.
 /// </summary>
-public sealed class HomeDialogModel(HomeService home, TestTarget target, RunOptions options, HomeStatus status) : DialogModel
+public sealed class HomeDialogModel(HomeSession home, HomeStatus status) : DialogModel
 {
     public HomeStatus Status { get; private set; } = status;
     public bool Busy { get; private set; }
     public string? Note { get; private set; }
 
     /// <summary>Reads the mount's position again (after the user moved it, or powered it off and on).</summary>
-    public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", () => home.CheckAsync(target, options), changed);
+    public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", () => home.CheckAsync(), changed);
 
     /// <summary>Sends the mount to the home position and waits for it to get there.</summary>
-    public Task GoHomeAsync(Action changed) => RunAsync("Sending the mount home…", () => home.GoHomeAsync(target, options), changed);
+    public Task GoHomeAsync(Action changed) => RunAsync("Sending the mount home…", () => home.GoHomeAsync(), changed);
 
     private async Task RunAsync(string note, Func<Task<HomeStatus>> work, Action changed)
     {
