@@ -190,13 +190,25 @@ else
         _lastRun = Runs.LastReport?.Id;
         _all = await Store.ListAsync();
         Runs.Changed += OnRunsChanged;
+        Nav.LocationChanged += OnLocationChanged;
     }
 
+    protected override void OnParametersSet() => BuildForAddress();
+
     /// <summary>
-    /// Builds from the address's test's runs, and moves the top tab to that test. Going from one test's
-    /// Recommendations to the other's keeps this page, so it is done here, not only when the page opens.
+    /// Going from one test's Recommendations to the other's keeps this page (the same component at another address,
+    /// with no parameters, so Blazor doesn't set them again): follow the address here, or it stays the other test's.
     /// </summary>
-    protected override void OnParametersSet()
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(() =>
+    {
+        // Only to this page's own addresses: leaving it (to a report, say) must not set the tab.
+        if (Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant() is not ("recommendations" or "conformu/recommendations")) return;
+        BuildForAddress();
+        StateHasChanged();
+    });
+
+    /// <summary>Builds from the address's test's runs, and moves the top tab to that test.</summary>
+    private void BuildForAddress()
     {
         var conformU = ConformUOnly;
         State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
@@ -233,5 +245,6 @@ else
     public void Dispose()
     {
         Runs.Changed -= OnRunsChanged;
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }

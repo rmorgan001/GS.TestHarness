@@ -16,6 +16,7 @@
 
 @page "/reports"
 @page "/conformu/reports"
+@implements IDisposable
 @inject ReportStore Store
 @inject DialogService Dialogs
 @inject RunPageState State
@@ -149,13 +150,27 @@ else
     {
         _all = await Store.ListAsync();
         Index();
+        Nav.LocationChanged += OnLocationChanged;
     }
 
+    protected override void OnParametersSet() => ShowForAddress();
+
     /// <summary>
-    /// Shows the address's test's reports, and moves the top tab to that test. Going from one test's Reports to the
-    /// other's keeps this page, so it is done here, not only when the page opens; ticks are cleared so none is deleted unseen.
+    /// Going from one test's Reports to the other's keeps this page (the same component at another address, with no
+    /// parameters, so Blazor doesn't set them again): follow the address here, or the list stays the other test's.
     /// </summary>
-    protected override void OnParametersSet()
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(() =>
+    {
+        // Only to this page's own addresses: leaving it (to a report, say) must not set the tab.
+        if (Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant() is not ("reports" or "conformu/reports")) return;
+        ShowForAddress();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+
+    /// <summary>Shows the address's test's reports, and moves the top tab to that test; ticks are cleared so none is deleted unseen.</summary>
+    private void ShowForAddress()
     {
         var conformU = ConformUOnly;
         State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
