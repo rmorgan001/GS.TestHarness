@@ -235,6 +235,7 @@ public static class TestCatalog
             E("Motion", "{member}.NotImplemented", "A method a false capability rules out isn't there.", "Calls each slew, sync, PulseGuide, FindHome, Park or Unpark whose capability is false (a harmless target: where the mount already is).", NotImpl + " Anything that moved is stopped and a park undone.", "V4", "ConformU"),
             E("Motion", "MoveAxis.{axis}.NotImplemented", "MoveAxis on an axis that can't move is refused.", "MoveAxis(axis, 0.1) where CanMoveAxis is false.", NotImpl, "V4", "ConformU"),
             E("Motion", "Prepare", "The mount can be moved.", "Unparks a parked mount first.", "Skipped/Error if it can't be unparked.", "Harness"),
+            E("Motion", "StartPosition", "The run starts from the home position.", "Reads AtHome (and AtPark) before the first move.", "Warning if the mount is away from home; Info if it is parked.", "Harness"),
 
             // ---------- Motion: slews ----------
             E("Motion", "SlewToCoordinatesAsync.West", "An asynchronous slew reaches its target.", "Slews 3 h west of the meridian at a declination high at the site.", Position + " Fail on an error or if Slewing never goes false.", "V4", "SlewFaq", "ConformU"),

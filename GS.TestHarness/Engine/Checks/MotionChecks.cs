@@ -40,6 +40,8 @@ public sealed class MotionChecks : ICheckGroup
         var c = ctx.Caps;
         var wasTracking = (await ctx.TryAsync(t => t.Tracking)).Value;
         var wasParked = (await ctx.TryAsync(t => t.AtPark)).Value;
+        // Where the mount was before anything moves (not in a ConformU run, which looks at its problem members only).
+        if (ctx.Options.Members is null) await StartPositionAsync(ctx);
         try
         {
             if (wasParked)
@@ -86,6 +88,35 @@ public sealed class MotionChecks : ICheckGroup
                 await ctx.WaitUntilAsync(t => t.AtPark, ctx.SlewTimeout);
             }
         }
+    }
+
+    /// <summary>
+    /// Notes where the mount was when the run began, before the first move: a run is meant to start from the home
+    /// position, so the first slew begins from a known place clear of the pier and the cables.
+    /// </summary>
+    private static async Task StartPositionAsync(CheckContext ctx)
+    {
+        var atHome = await ctx.TryAsync(t => t.AtHome);
+        if (!atHome.Ok) return;
+        if (atHome.Value)
+        {
+            ctx.Report("StartPosition", "AtHome", Outcome.Pass, "The run started with the mount at the home position (AtHome true).");
+            return;
+        }
+        if ((await ctx.TryAsync(t => t.AtPark)).Value)
+        {
+            ctx.Report("StartPosition", "AtHome", Outcome.Info,
+                "The run started with the mount parked, not at home (AtHome false). The motion checks unpark it first.");
+            return;
+        }
+        var where = new List<string>();
+        if (await PositionAsync(ctx) is { } sky) where.Add($"RA {CheckContext.Hours(sky.Ra)}, Dec {sky.Dec:0.0}°");
+        if (await AltAzPositionAsync(ctx) is { } altaz) where.Add($"Alt {altaz.Alt:0.0}°, Az {altaz.Az:0.0}°");
+        ctx.Report("StartPosition", "AtHome", Outcome.Warning,
+            "The run started with the mount away from the home position (AtHome false)" + (where.Count > 0 ? $": {string.Join("; ", where)}." : "."),
+            expected: "AtHome true at the start of the run", actual: "AtHome false",
+            fix: "Put the mount in the home position (power it off and on there, or use Go home in the start dialog) so the first " +
+                 "slew begins from a known position clear of the pier and the cables.");
     }
 
     // ---------- Members a false capability says aren't there ----------

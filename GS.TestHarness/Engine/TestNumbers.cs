@@ -237,6 +237,7 @@ public static class TestNumbers
         (1200, "Disconnected.WhenDisconnected.{member}"),
         (1201, "Disconnected.Disconnect.WhenDisconnected"),
         (1202, "Motion.MoveAxis.{axis}.SlewingUntilStopped"),
+        (1203, "Motion.StartPosition"),
         (2001, "Diagnose.Readings"),
         (2002, "Diagnose.PulseGuide.{axis}"),
         (2003, "Diagnose.{member}"),
