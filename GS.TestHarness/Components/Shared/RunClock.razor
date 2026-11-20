@@ -32,7 +32,7 @@
         {
             <span class="muted">Last finding: <span class="mono">@TestNumbers.Label(last.Id)</span></span>
         }
-        @if (Runs.PreviousReport is { Finished: { } finished } before)
+        @if (Runs.Options is { Groups: null } && Runs.PreviousReport is { Finished: { } finished } before)
         {
             var took = finished - before.Started;
             <span class="muted">The last run of this device took @Clock(took)@(Runs.Options is { Extended: false } && before.Options.Extended ? " (with the extended checks)" : "")</span>

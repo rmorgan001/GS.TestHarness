@@ -173,7 +173,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         {
             log.LogInformation("Run started: {Target}, tier {Tier}, motion {Motion}", target.Display, options.Tier, options.AllowMotion);
             var previous = await store.LatestForAsync(target);
-            PreviousReport = previous;
+            // What the summary compares with and the clock estimates from: a like-for-like run, not just the newest one.
+            PreviousReport = (await store.ListAsync()).FirstOrDefault(r => ReportStore.Comparable(r, target, options.Tier, conformU is not null));
             Changed?.Invoke();
             await using var session = await TestRunner.OpenAsync(target, options);
             report = await runner.RunAsync(session, target, options,

@@ -20,21 +20,23 @@ namespace GS.TestHarness.Engine;
 public static class RerunPlan
 {
     /// <summary>
-    /// The options for a run of just the problems in <paramref name="results"/>: the groups they came from (with the
-    /// connection and capabilities every group needs) narrowed to their members, as a ConformU log's follow-up is.
-    /// Null when there are no problems.
+    /// The options for a run of the groups that had problems in <paramref name="results"/> (with the connection and capabilities
+    /// every group needs). The groups run whole: narrowing them to the problems' members would leave out the checks that have no
+    /// member (where the mount started, the protocol checks, the pre-motion gate), and a problem whose check never ran again would
+    /// look fixed. Null when there are no problems.
     /// </summary>
     public static RunOptions? For(RunOptions options, IEnumerable<CheckResult> results)
     {
         var problems = results.Where(r => r.IsProblem).ToList();
         if (problems.Count == 0) return null;
         var known = TestRunner.Groups.Select(g => g.Name).ToHashSet();
-        var groups = problems.Select(r => r.Group).Where(known.Contains).ToHashSet();
+        // The diagnoses (tiers 2 and 3) and the ConformU checks aren't a tier 1 run's groups: nothing to re-run for them.
+        var groups = problems.Select(r => r.Group).Where(g => known.Contains(g) && g is not ("Diagnose" or "ConformU")).ToHashSet();
+        if (groups.Count == 0) return null;
         // Every group needs the device connected and its capabilities read.
         groups.Add("Connection");
         groups.Add("Capabilities");
-        var members = problems.Select(r => r.Member).Where(m => m.Length > 0).Distinct().ToList();
-        // A tier 1 run of just these: the tier and what it follows up aren't carried over.
-        return options with { Groups = [.. groups], Members = members, Tier = 1, FollowsUp = null };
+        // A tier 1 run of just these groups: the tier and what it follows up aren't carried over, and no member narrowing.
+        return options with { Groups = [.. groups], Members = null, Tier = 1, FollowsUp = null };
     }
 }

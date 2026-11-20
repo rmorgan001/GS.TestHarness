@@ -62,11 +62,11 @@
             }
         }
 
-        @if (problems > 0 && !Running && Rerun.HasDelegate)
+        @if (problems > 0 && !Running && Rerun.HasDelegate && RerunPlan.For(new RunOptions(), Results) is not null)
         {
             <div class="run-summary-actions">
-                <button type="button" class="btn" title="Run again only the groups and members that had problems, to check a fix" @onclick="Rerun">
-                    <Icon Kind="Play" Size="16" /> Re-run only the @problems problem@(problems == 1 ? "" : "s")
+                <button type="button" class="btn" title="Run again only the groups that had problems, to check a fix without waiting for the whole run" @onclick="Rerun">
+                    <Icon Kind="Play" Size="16" /> Re-run the groups with problems
                 </button>
             </div>
         }

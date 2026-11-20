@@ -765,7 +765,7 @@ else
     private static bool NeedsMotion(NextTier next) => next.Members.Any(MovesMount);
 
     /// <summary>
-    /// Runs again only what the last run had problems with (their groups and members), with the options as ticked now: to
+    /// Runs again only the groups the last run had problems with, with the options as ticked now: to
     /// check a fix without waiting for the whole run. The same warnings come first as for any run.
     /// </summary>
     private async Task RerunProblems()

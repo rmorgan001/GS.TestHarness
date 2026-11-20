@@ -70,6 +70,8 @@
     }
 
     function set(name) {
+        // Custom with no colours to show (the site data was cleared) would leave every colour undefined: use the default look.
+        if (name === 'custom' && !getCustom()) name = 'dark';
         try { localStorage.setItem('gsTheme', name); } catch { /* not remembered */ }
         clearCustom();
         if (name === 'dark') delete root.dataset.theme;

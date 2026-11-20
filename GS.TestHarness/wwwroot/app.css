@@ -783,6 +783,8 @@ body:has(.print-page) { background: #fff; }
 
 /* The user's own theme: seven colours set by wwwroot/theme.js as --c-*; the rest of the palette is worked out from them. */
 :root[data-theme="custom"] {
+    /* Defaults, so a custom theme with nothing saved still has colours (theme.js sets the real ones on the page). */
+    --c-bg: #070b0e; --c-text: #e8e6df; --c-accent: #52b788; --c-warn: #f2c84b; --c-error: #f08a3c; --c-fail: #ef6461; --c-info: #6aa8d8;
     --sky: var(--c-bg);
     --panel: color-mix(in srgb, var(--c-bg) 94%, var(--c-text));
     --panel-raised: color-mix(in srgb, var(--c-bg) 88%, var(--c-text));

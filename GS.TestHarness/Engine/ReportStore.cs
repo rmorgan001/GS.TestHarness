@@ -209,6 +209,15 @@ public sealed class ReportStore(string folder)
     public async Task<RunReport?> LatestForAsync(TestTarget target, string? exceptId = null)
         => (await ListAsync()).FirstOrDefault(r => r.Id != exceptId && TestTarget.SameDevice(r.Target, target));
 
+    /// <summary>
+    /// Whether <paramref name="other"/> is a run worth comparing a run of this target, tier and kind with: the same device, the
+    /// same tier, both ConformU follow-ups or neither, finished (a stopped run didn't make every check), and for a full check a
+    /// whole run, not a re-run of some groups (its few findings would make everything else look new).
+    /// </summary>
+    public static bool Comparable(RunReport other, TestTarget target, int tier, bool conformU)
+        => TestTarget.SameDevice(other.Target, target) && other.Options.Tier == tier && (other.ConformULog is not null) == conformU
+           && !other.Cancelled && !other.CommunicationLost && (tier > 1 || conformU || other.Options.Groups is null);
+
     public void Delete(string id)
     {
         var path = PathOf(id);

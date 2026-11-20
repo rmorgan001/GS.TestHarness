@@ -92,14 +92,15 @@ public class RunToolsTests
         => Assert.Null(RerunPlan.For(EngineTests.Everything, [R("A", Outcome.Pass)]));
 
     [Fact]
-    public void The_rerun_covers_the_problems_groups_and_members_with_the_connection()
+    public void The_rerun_covers_the_problems_groups_whole_with_the_connection()
     {
         var options = RerunPlan.For(EngineTests.Everything, [R("A", Outcome.Fail, "Motion", "SlewToCoordinates"), R("B", Outcome.Pass, "Settings", "X")])!;
         Assert.Contains("Motion", options.Groups!);
         Assert.Contains("Connection", options.Groups!);
         Assert.Contains("Capabilities", options.Groups!);
         Assert.DoesNotContain("Settings", options.Groups!);
-        Assert.Equal(["SlewToCoordinates"], options.Members);
+        // Whole groups: narrowing to members would leave out the checks that have no member and make a problem look fixed.
+        Assert.Null(options.Members);
         Assert.Equal(1, options.Tier);
     }
 
@@ -112,6 +113,53 @@ public class RunToolsTests
         var second = await EngineTests.RunAsync(new FakeTelescope(), again);
         Assert.Contains(second.Results, r => r.Id == "Properties.SiteHemisphere" && r.Outcome == Outcome.Warning);
         Assert.DoesNotContain(second.Results, r => r.Group == "Tracking");
-        Assert.True(second.Results.Count < first.Results.Count / 2, $"{second.Results.Count} findings against {first.Results.Count}");
+        Assert.True(second.Results.Count < first.Results.Count, $"{second.Results.Count} findings against {first.Results.Count}");
+    }
+
+    [Fact]
+    public void A_problem_with_no_member_still_gets_its_group_rerun_whole()
+    {
+        var options = RerunPlan.For(EngineTests.Everything, [R("Motion.StartPosition", Outcome.Warning, "Motion", "")])!;
+        Assert.Contains("Motion", options.Groups!);
+        Assert.Null(options.Members);
+    }
+
+    [Fact]
+    public void Diagnoses_and_ConformU_findings_have_nothing_to_rerun()
+        => Assert.Null(RerunPlan.For(EngineTests.Everything, [R("Diagnose.X.Cause", Outcome.Fail, "Diagnose"), R("ConformU.Y", Outcome.Warning, "ConformU")]));
+
+    // ---------- ReportStore.Comparable ----------
+
+    private static RunReport Report(int tier = 1, bool conformU = false, bool cancelled = false, IReadOnlyList<string>? groups = null)
+        => new()
+        {
+            Target = new TestTarget(), Cancelled = cancelled, ConformULog = conformU ? "log.txt" : null,
+            Options = EngineTests.Everything with { Tier = tier, Groups = groups }
+        };
+
+    [Fact]
+    public void A_finished_whole_run_of_the_same_kind_is_comparable()
+        => Assert.True(ReportStore.Comparable(Report(), new TestTarget(), 1, false));
+
+    [Fact]
+    public void A_run_of_another_tier_or_kind_isnt_comparable()
+    {
+        Assert.False(ReportStore.Comparable(Report(tier: 1), new TestTarget(), 2, false));
+        Assert.False(ReportStore.Comparable(Report(conformU: true), new TestTarget(), 1, false));
+        Assert.False(ReportStore.Comparable(Report(), new TestTarget(), 1, true));
+    }
+
+    [Fact]
+    public void A_stopped_run_or_a_rerun_of_some_groups_isnt_a_baseline_for_a_full_check()
+    {
+        Assert.False(ReportStore.Comparable(Report(cancelled: true), new TestTarget(), 1, false));
+        Assert.False(ReportStore.Comparable(Report(groups: ["Connection", "Motion"]), new TestTarget(), 1, false));
+    }
+
+    [Fact]
+    public void Deeper_tiers_and_ConformU_runs_are_narrowed_by_design_and_stay_comparable()
+    {
+        Assert.True(ReportStore.Comparable(Report(tier: 2, groups: ["Diagnose"]), new TestTarget(), 2, false));
+        Assert.True(ReportStore.Comparable(Report(conformU: true, groups: ["Motion"]), new TestTarget(), 1, true));
     }
 }
