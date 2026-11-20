@@ -46,13 +46,13 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
 
     /// <summary>
     /// Takes over a connection made elsewhere (the start dialog's home check), so the server shows as connected and the
-    /// sidebar's Disconnect closes it. False if the server is already connected here.
+    /// sidebar's Disconnect closes it. False if the server is already connected here, or is being connected or disconnected (the caller then disconnects what it made).
     /// </summary>
     public bool Adopt(string id, ITelescopeSession session)
     {
         lock (_gate)
         {
-            if (_sessions.ContainsKey(id)) return false;
+            if (_sessions.ContainsKey(id) || _busy.Contains(id)) return false;
             _sessions[id] = session;
         }
         Changed?.Invoke();
