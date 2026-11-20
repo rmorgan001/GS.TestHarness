@@ -55,7 +55,7 @@ else
     <div style="margin: 0 0 1rem;">
         @foreach (var line in Model.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--yellow); border-radius: 4px; background: rgba(255, 200, 0, .12); font-weight: 600;">@line</div>
+            <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--yellow); border-radius: 4px; background: color-mix(in srgb, var(--yellow) 12%, transparent); font-weight: 600;">@line</div>
         }
     </div>
 
@@ -65,7 +65,7 @@ else
         <div style="margin: 0 0 1rem;">
             @foreach (var warning in Model.Warnings)
             {
-                <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--fail); border-radius: 4px; background: rgba(220, 70, 70, .12);">@warning</div>
+                <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--fail); border-radius: 4px; background: color-mix(in srgb, var(--red) 12%, transparent);">@warning</div>
             }
         </div>
     }
