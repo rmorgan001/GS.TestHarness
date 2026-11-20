@@ -20,7 +20,7 @@
 @inject DialogService Dialogs
 
 @* Day / Dark / Dusk / Night / Custom: Dark is the default look; Dusk is dim amber and Night is red only, for dark-adapted eyes
-   at the telescope; Custom is the user's own colours (under Options). Remembered by this browser (wwwroot/theme.js, app.css). *@
+   at the telescope; Custom is the user's own colours (a double click opens the editor). Remembered by this browser (wwwroot/theme.js, app.css). *@
 <div class="theme-switch" role="group" aria-label="Colour theme">
     @foreach (var (name, label, title) in Themes)
     {
@@ -56,7 +56,7 @@
     {
         try
         {
-            // The first time Custom is picked it starts as a copy of the dark theme, ready to change under Options.
+            // The first time Custom is picked it starts as a copy of the dark theme, ready to change (double-click it).
             if (name == "custom" && await JS.InvokeAsync<Dictionary<string, string>?>("gsTheme.getCustom") is null)
                 await JS.InvokeVoidAsync("gsTheme.setCustom", ThemeColours.Presets["dark"]);
             await JS.InvokeVoidAsync("gsTheme.set", name);
