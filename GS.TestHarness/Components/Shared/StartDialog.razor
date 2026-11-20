@@ -21,6 +21,11 @@
     <span>@Model.Title</span>
 </h2>
 
+@if (Model.IsAtHome)
+{
+    <p class="dialog-message" style="font-weight: 600; font-size: 1.1rem;">Please verify the mount is in the home position</p>
+}
+
 @if (Model.NotConnected)
 {
     <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">

@@ -96,6 +96,9 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     /// <summary>The mount is connected but isn't reporting that it's at home: the home section is shown.</summary>
     public bool NeedsHome => home is not null && Status is { Error: null, AtHome: false };
 
+    /// <summary>The mount is connected and reports that it is at home.</summary>
+    public bool IsAtHome => home is not null && Status is { Error: null, AtHome: true };
+
     /// <summary>The mount couldn't be connected or read: only Cancel is offered.</summary>
     public bool NotConnected => home is not null && Status?.Error is not null;
 
