@@ -156,6 +156,15 @@ public sealed class GateDialogModel(GateRequest request) : DialogModel
     public GateRequest Request { get; } = request;
     public GateDecision? Decision { get; private set; }
 
+    /// <summary>Closed without an answer (the page was left, or another tab answered): the run keeps waiting.</summary>
+    public bool Abandoned { get; private set; }
+
+    public void Abandon()
+    {
+        Abandoned = true;
+        Close(false);
+    }
+
     public void Choose(GateDecision decision)
     {
         Decision = decision;

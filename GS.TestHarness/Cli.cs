@@ -205,7 +205,7 @@ public static class Cli
                 {
                     if (p.Group != "Done") Console.WriteLine($"[{p.GroupIndex + 1}/{p.GroupCount}] {p.Group}");
                 },
-                cts.Token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => Task.FromResult(GateAnswer(warnings, gatePolicy)));
+                cts.Token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => Task.FromResult(GateAnswer(warnings, gatePolicy)), unattended: true);
         }
         catch (Exception ex) when (report is not null)
         {
@@ -244,6 +244,12 @@ public static class Cli
         if (Tiers.Next(report) is { } next)
             Console.WriteLine($"{Tiers.Name(next.Tier)} can diagnose {string.Join(", ", next.Members)}: run again with --follow {report.Reference}" +
                               (report.ConformULog is null ? "." : " and the same --conformu log."));
+        // A run that was stopped (Ctrl+C, or Stop at the warnings before the mount moves) didn't finish: not a pass.
+        if (report.Cancelled)
+        {
+            Console.Error.WriteLine("The run was stopped before it finished.");
+            return 3;
+        }
         return report.Count(Outcome.Fail) + report.Count(Outcome.Error) > 0 ? 1 : 0;
     }
 

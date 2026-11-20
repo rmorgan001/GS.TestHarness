@@ -777,7 +777,7 @@ else
             _gateModel = model;
             await Dialogs.ShowAsync(model);
             // Closed any other way than a button (Escape): Stop, the safe answer.
-            Runs.ResolveGate(request, model.Decision ?? GateDecision.Stop);
+            if (!model.Abandoned) Runs.ResolveGate(request, model.Decision ?? GateDecision.Stop);
         }
         finally
         {
@@ -789,7 +789,7 @@ else
     private void OnChanged()
     {
         // Answered in another tab: close this one's question.
-        if (_gateModel is { } shown && !ReferenceEquals(Runs.PendingGate, shown.Request)) shown.Close(false);
+        if (_gateModel is { } shown && !ReferenceEquals(Runs.PendingGate, shown.Request)) shown.Abandon();
         MaybeShowGate();
         var now = DateTime.UtcNow;
         if (!Runs.IsRunning || (now - _lastRender).TotalMilliseconds > 250)
@@ -810,6 +810,8 @@ else
 
     public void Dispose()
     {
+        // Leaving the page with the question open closes it without answering: the run waits, and the page asks again when it is back.
+        _gateModel?.Abandon();
         Runs.Changed -= OnChanged;
         Bench.Changed -= OnBenchChanged;
         Servers.Changed -= OnBenchChanged;

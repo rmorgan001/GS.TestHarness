@@ -70,12 +70,13 @@ public sealed class TestRunner(SourceLocator locator)
     /// whether the harness reproduced it. Combine it with <see cref="RunOptions.Groups"/> from its plan.</param>
     /// <param name="onGate">Asked, with the warnings, before the first group that moves the mount, when there are any: Proceed, Skip
     /// (the groups that move the mount) or Stop. Null: nobody is asked and the run goes on (the warnings are recorded).</param>
+    /// <param name="unattended">No start dialog put the mount at home (the command line): a parked or not-at-home mount isn't a gate warning.</param>
     /// <param name="followsUp">For a tier 2 or 3 run (<see cref="RunOptions.Tier"/>), the run it follows up: what it found
     /// is what the diagnoses take apart (see <see cref="Tiers.Options"/>).</param>
     public async Task<RunReport> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options,
         Action<CheckResult>? onResult = null, Action<RunProgress>? onProgress = null, CancellationToken token = default,
         Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null,
-        ConformULog? conformU = null, RunReport? followsUp = null, Func<IReadOnlyList<string>, Task<GateDecision>>? onGate = null)
+        ConformULog? conformU = null, RunReport? followsUp = null, Func<IReadOnlyList<string>, Task<GateDecision>>? onGate = null, bool unattended = false)
     {
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
         if (Tiers.Problem(options, followsUp, conformU is not null) is { } tierProblem)
@@ -97,9 +98,12 @@ public sealed class TestRunner(SourceLocator locator)
         {
             var gateAsked = false;
             var gateDecision = GateDecision.Proceed;
+            var gateStopped = false;
             for (var i = 0; i < Groups.Count; i++)
             {
                 var group = Groups[i];
+                // Stopped at the gate: only the summary of what was found still runs.
+                if (gateStopped && group is not PerformanceChecks) continue;
                 // Groups left out of this run (a ConformU run's plan, or the ConformU checks without a log) aren't mentioned.
                 if (options.Groups is { } only && !only.Contains(group.Name)) continue;
                 if (group is ConformUChecks && conformU is null) continue;
@@ -126,7 +130,7 @@ public sealed class TestRunner(SourceLocator locator)
                         if (!gateAsked)
                         {
                             gateAsked = true;
-                            var warnings = await MotionGate.EvaluateAsync(ctx);
+                            var warnings = await MotionGate.EvaluateAsync(ctx, unattended);
                             if (warnings.Count > 0)
                             {
                                 gateDecision = onGate is null ? GateDecision.Proceed : await onGate(warnings);
@@ -134,7 +138,7 @@ public sealed class TestRunner(SourceLocator locator)
                                 switch (gateDecision)
                                 {
                                     case GateDecision.Proceed:
-                                        ctx.Report("Gate", "Motion", Outcome.Warning,
+                                        ctx.Report("Gate", "Motion", onGate is null ? Outcome.Info : Outcome.Warning,
                                             $"The groups that move the mount ran despite {warnings.Count} warning{(warnings.Count == 1 ? "" : "s")} before them" +
                                             (onGate is null ? " (nobody was asked)." : " (the user chose Proceed)."),
                                             actual: list, fix: "Look at the warnings: each is something the slews' targets or safety depend on.");
@@ -149,7 +153,11 @@ public sealed class TestRunner(SourceLocator locator)
                                         report.Cancelled = true;
                                         break;
                                 }
-                                if (gateDecision == GateDecision.Stop) break;
+                                if (gateDecision == GateDecision.Stop)
+                                {
+                                    gateStopped = true;
+                                    continue;
+                                }
                             }
                         }
                         if (gateDecision == GateDecision.Skip)

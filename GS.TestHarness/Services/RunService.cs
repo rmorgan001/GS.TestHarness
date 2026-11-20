@@ -61,7 +61,10 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         await using var _ = token.Register(() => tcs.TrySetResult(GateDecision.Stop));
         try
         {
-            return await tcs.Task;
+            var decision = await tcs.Task;
+            // Not "Waiting for you" any more: the next progress report replaces this.
+            Status = decision == GateDecision.Stop ? "Stopped before the mount moved; making the summary…" : "Going on…";
+            return decision;
         }
         finally
         {

@@ -24,14 +24,23 @@ public class GateTests
     // The fake mount is at latitude 28.5° (north), so saying it is southern gives a warning to ask about.
     private static readonly RunOptions Unsafe = EngineTests.Everything with { SiteHemisphere = Hemisphere.South };
 
-    private static async Task<(RunReport Report, List<IReadOnlyList<string>> Asked)> RunAsync(RunOptions options, GateDecision? answer)
+    private static async Task<(RunReport Report, List<IReadOnlyList<string>> Asked)> RunAsync(RunOptions options, GateDecision? answer,
+        bool unattended = false, bool leaveHome = false)
     {
         var asked = new List<IReadOnlyList<string>>();
         var fake = new FakeTelescope();
+        if (leaveHome)
+        {
+            // The mount has been used: it is pointing somewhere, not at home.
+            fake.Connect();
+            fake.SlewToCoordinatesAsync(1, 10);
+            await Task.Delay(1500);
+        }
         await using var session = new DirectSession(fake);
         var clients = 0;
         var report = await new TestRunner(SourceLocator.None).RunAsync(session, new TestTarget(), options,
             openSession: () => Task.FromResult<ITelescopeSession>(new DirectSession(fake, Interlocked.Increment(ref clients))),
+            unattended: unattended,
             onGate: answer is null ? null : warnings =>
             {
                 asked.Add(warnings);
@@ -59,6 +68,8 @@ public class GateTests
         Assert.Contains(report.Results, r => r.Id == "Motion.Gate" && r.Outcome == Outcome.Info);
         Assert.DoesNotContain(report.Results, r => r.Id.StartsWith("Motion.Slew"));
         Assert.DoesNotContain(report.Results, r => r.Id.StartsWith("ParkHome."));
+        // Stop ends the run: the groups after the moving ones (the disconnected checks) don't run either.
+        Assert.DoesNotContain(report.Results, r => r.Id.StartsWith("Disconnected."));
     }
 
     [Fact]
@@ -94,11 +105,28 @@ public class GateTests
     }
 
     [Fact]
+    public async Task A_mount_away_from_home_is_a_warning_when_someone_can_be_asked()
+    {
+        var (_, asked) = await RunAsync(EngineTests.Everything, GateDecision.Proceed, leaveHome: true);
+        Assert.Contains(Assert.Single(asked), w => w.Contains("home position"));
+    }
+
+    [Fact]
+    public async Task A_mount_away_from_home_is_only_informational_on_the_command_line()
+    {
+        var (report, asked) = await RunAsync(EngineTests.Everything, GateDecision.Stop, unattended: true, leaveHome: true);
+        Assert.Empty(asked);
+        Assert.False(report.Cancelled);
+        // The start-position finding still records it.
+        Assert.Contains(report.Results, r => r.Id == "Motion.StartPosition" && r.Outcome == Outcome.Warning);
+    }
+
+    [Fact]
     public async Task With_nobody_to_ask_the_run_goes_on_and_says_so()
     {
         var (report, asked) = await RunAsync(Unsafe, null);
         Assert.Empty(asked);
-        Assert.Contains(report.Results, r => r.Id == "Motion.Gate" && r.Outcome == Outcome.Warning && r.Message.Contains("nobody was asked"));
+        Assert.Contains(report.Results, r => r.Id == "Motion.Gate" && r.Outcome == Outcome.Info && r.Message.Contains("nobody was asked"));
         Assert.Contains(report.Results, r => r.Id.StartsWith("Motion.Slew"));
     }
 }

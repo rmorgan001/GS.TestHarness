@@ -53,8 +53,12 @@ public static class MotionGate
 
     private const int MostListed = 8;
 
-    /// <summary>The warnings for the run so far and the mount now; empty when there is nothing to ask.</summary>
-    public static async Task<IReadOnlyList<string>> EvaluateAsync(CheckContext ctx)
+    /// <summary>
+    /// The warnings for the run so far and the mount now; empty when there is nothing to ask. <paramref name="unattended"/>
+    /// (the command line, which has no start dialog to put the mount at home): a mount that is parked or away from home
+    /// is left to the start-position finding, not a warning that stops the run.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> EvaluateAsync(CheckContext ctx, bool unattended = false)
     {
         var warnings = new List<string>();
 
@@ -71,6 +75,7 @@ public static class MotionGate
         if ((await ctx.TryAsync(t => t.Slewing)).Value)
             warnings.Add("The mount is already slewing.");
         var parked = (await ctx.TryAsync(t => t.AtPark)).Value;
+        if (unattended) return warnings;
         if (parked)
             warnings.Add("The mount is parked: the motion checks will unpark it first.");
         else if (await ctx.TryAsync(t => t.AtHome) is { Ok: true, Value: false })
