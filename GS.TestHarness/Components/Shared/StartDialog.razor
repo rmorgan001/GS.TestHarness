@@ -59,7 +59,7 @@ else
 <div class="dialog-buttons" style="justify-content: center;">
     @if (!Model.NotConnected)
     {
-        <button type="button" class="btn danger-btn" disabled="@Model.Busy" @onclick="() => Model.Close(true)">Start run</button>
+        <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
         @if (Model.HasMount)
         {
             <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { Error: null, CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
