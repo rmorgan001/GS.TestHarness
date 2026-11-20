@@ -451,7 +451,6 @@ else
 
     /// <summary>The warning shown before every run: the mount moves on its own, so the user watches it and takes responsibility.</summary>
     private const string SafetyWarning =
-        "By clicking Start you accept responsibility for starting the run and for monitoring the mount.\n\n" +
         "• Check all Settings and make sure you understand them\n" +
         "• Remove the OTAs (telescopes, cameras and anything else mounted) before you start, so a pier or tripod-leg strike can't damage them.\n" +
         "• Stay with the mount and watch it for the whole run. Be ready to stop the run or cut the mount's power if it heads for the pier, a leg or a cable.";
@@ -545,7 +544,7 @@ else
         if (Bench.Selected is not { } server) return;
         if (Runs.IsRunning) return;
         var options = CurrentOptions();
-        if (!await ConfirmStartAsync("Watch the mount", server.RunTarget, options) || Runs.IsRunning) return;
+        if (!await ConfirmStartAsync("Safety Warning!", server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         Runs.Start(server.RunTarget, options);
     }
@@ -633,7 +632,7 @@ else
         if (Runs.IsRunning) return;
         var plan = log.Plan();
         var options = CurrentOptions();
-        if (!await ConfirmStartAsync("Watch the mount", server.RunTarget, options) || Runs.IsRunning) return;
+        if (!await ConfirmStartAsync("Safety Warning!", server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
         // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };

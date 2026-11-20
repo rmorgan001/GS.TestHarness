@@ -26,13 +26,13 @@
     <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
         <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
         <span>
-            <b style="color: var(--fail); font-size: 1.15rem;">Safety Warning: Put the mount in the home position!</b><br /><br />
+            <b style="color: var(--fail); font-size: 1.15rem;">Put the mount in the home position</b><br /><br />
             @if (Model.Status?.Error is { } error)
             {
                 @error<br /><br />
             }
             Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check again.<br /><br />
-            Finally: Click "Start run" when the mount is in the home position.
+            <span style="color: var(--yellow);">Finally: Click "Start run" when the mount is in the home position</span>
         </span>
     </div>
 }
@@ -44,7 +44,9 @@
 
 <p class="dialog-message">@Model.Message</p>
 
-<div class="dialog-buttons">
+<p class="dialog-message" style="color: var(--yellow);">By clicking Start you accept responsibility for monitoring the mount's safety.</p>
+
+<div class="dialog-buttons" style="justify-content: center;">
     <button type="button" class="btn danger-btn" disabled="@Model.Busy" @onclick="() => Model.Close(true)">Start run</button>
     @if (Model.HasMount)
     {
