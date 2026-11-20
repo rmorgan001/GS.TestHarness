@@ -1,0 +1,71 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject RunService Runs
+@inject IJSRuntime JS
+
+@* Stop at hand on every page while a run is going (the mount may be moving): ends the run and aborts any slew.
+   Also tells the user, when they have asked for it under Options, that the run has finished or needs an answer. *@
+@if (Runs.IsRunning)
+{
+    <div class="header-run" role="status">
+        <span class="header-run-step">@Step</span>
+        <button type="button" class="btn stop" title="Stop the run now and abort any slew" @onclick="Runs.Stop">
+            <Icon Kind="Stop" Size="18" /> Stop run
+        </button>
+    </div>
+}
+
+@code {
+    private bool _wasRunning, _askedAboutGate;
+
+    private string Step => Runs.PendingGate is not null ? "Waiting for your answer"
+        : Runs.Progress is { Group: not "Done" } p ? $"Running: {p.Group} ({p.GroupIndex + 1} of {p.GroupCount})"
+        : "Running";
+
+    protected override void OnInitialized()
+    {
+        _wasRunning = Runs.IsRunning;
+        Runs.Changed += OnChanged;
+    }
+
+    private void OnChanged()
+    {
+        // The run needs an answer before the mount moves: say so once.
+        if (Runs.PendingGate is not null && !_askedAboutGate)
+        {
+            _askedAboutGate = true;
+            _ = Notify("Test harness: your answer is needed", "The run is waiting at the warnings before the mount moves.");
+        }
+        else if (Runs.PendingGate is null) _askedAboutGate = false;
+
+        // The run has finished.
+        if (_wasRunning && !Runs.IsRunning)
+            _ = Notify("Test harness: the run has finished", Runs.Status ?? "The run is done.");
+        _wasRunning = Runs.IsRunning;
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task Notify(string title, string body)
+    {
+        try { await InvokeAsync(() => JS.InvokeVoidAsync("gsNotify.show", title, body).AsTask()); }
+        catch (Exception) { /* the browser went away, or won't notify here */ }
+    }
+
+    public void Dispose() => Runs.Changed -= OnChanged;
+}

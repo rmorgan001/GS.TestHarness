@@ -29,15 +29,21 @@
     }
 </div>
 
-<p class="dialog-message" style="color: var(--yellow);">
-    <b>Proceed</b> runs the tests that move the mount anyway. <b>Skip</b> leaves those tests out and runs the rest. <b>Stop</b> ends the run here (the summary of what was found is still made).
-</p>
 
-<div class="dialog-buttons" style="justify-content: center;">
-    <button type="button" class="btn danger-btn" @onclick="() => Model.Choose(GateDecision.Proceed)">Proceed</button>
-    <button type="button" class="btn" @onclick="() => Model.Choose(GateDecision.Skip)">Skip</button>
+<div class="dialog-buttons" style="justify-content: center; align-items: flex-start;">
+    <div class="dialog-choice">
+        <button type="button" class="btn danger-btn" @onclick="() => Model.Choose(GateDecision.Proceed)">Proceed</button>
+        <small>Runs the tests that move the mount anyway.</small>
+    </div>
+    <div class="dialog-choice">
+        <button type="button" class="btn" @onclick="() => Model.Choose(GateDecision.Skip)">Skip</button>
+        <small>Leaves those tests out and runs the rest.</small>
+    </div>
     @* Safest first: Enter alone must not proceed. *@
-    <button type="button" class="btn" autofocus @onclick="() => Model.Choose(GateDecision.Stop)">Stop</button>
+    <div class="dialog-choice">
+        <button type="button" class="btn" autofocus @onclick="() => Model.Choose(GateDecision.Stop)">Stop</button>
+        <small>Ends the run here; the summary is still made.</small>
+    </div>
 </div>
 
 @code {

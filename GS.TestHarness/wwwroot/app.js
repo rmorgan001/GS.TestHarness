@@ -21,3 +21,54 @@ document.addEventListener('click', e => {
     if (!link || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
     if (window.open(link.href, link.target || '_blank', 'popup,' + link.dataset.popup)) e.preventDefault();
 });
+
+// Copy text to the clipboard (the findings' "Copy fix"); falls back to a hidden textarea where the clipboard API is
+// not available (a page that isn't served over https or localhost).
+window.gsCopy = async text => {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        const box = document.createElement('textarea');
+        box.value = text;
+        box.style.position = 'fixed';
+        box.style.opacity = '0';
+        document.body.appendChild(box);
+        box.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { /* nothing more to do */ }
+        document.body.removeChild(box);
+        return ok;
+    }
+};
+
+// A sound and a browser notification when a run finishes or needs an answer, for people who walk away from a long
+// run. Off until the user turns it on under Options (remembered by this browser).
+window.gsNotify = {
+    enabled: () => localStorage.getItem('gsNotify') === '1',
+    // Turning it on asks the browser for permission to notify; the sound works either way.
+    set: async on => {
+        if (on && 'Notification' in window && Notification.permission === 'default') {
+            try { await Notification.requestPermission(); } catch { /* the sound still works */ }
+        }
+        localStorage.setItem('gsNotify', on ? '1' : '0');
+    },
+    show: (title, body) => {
+        if (localStorage.getItem('gsNotify') !== '1') return;
+        try {
+            const audio = new (window.AudioContext || window.webkitAudioContext)();
+            [660, 880].forEach((freq, i) => {
+                const osc = audio.createOscillator();
+                const gain = audio.createGain();
+                osc.frequency.value = freq;
+                gain.gain.value = 0.08;
+                osc.connect(gain).connect(audio.destination);
+                osc.start(audio.currentTime + i * 0.22);
+                osc.stop(audio.currentTime + i * 0.22 + 0.18);
+            });
+        } catch { /* no sound */ }
+        if ('Notification' in window && Notification.permission === 'granted') {
+            try { new Notification(title, { body }); } catch { /* not allowed here */ }
+        }
+    }
+};

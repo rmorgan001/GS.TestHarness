@@ -120,6 +120,7 @@ else if (_report is { } r)
     }
 
     <section class="card">
+        <RunSummary Results="r.Results" Previous="_previous?.Results" PreviousLabel="@(_previous?.Reference)" />
         <ResultsTable Results="r.Results" />
     </section>
 }
@@ -131,6 +132,7 @@ else
 @code {
     [Parameter] public string Id { get; set; } = "";
     private RunReport? _report;
+    private RunReport? _previous; // the run of the same device before this one, to say what changed
     private bool _missing;
     private List<RunReport> _chain = [];
 
@@ -148,7 +150,12 @@ else
             _report = null;
         }
         _missing = _report is null;
-        _chain = _report is null ? [] : Tiers.Chain(_report, await Store.ListAsync());
+        var all = _report is null ? [] : await Store.ListAsync();
+        _chain = _report is null ? [] : Tiers.Chain(_report, all);
+        _previous = _report is null ? null : all
+            .Where(o => o.Id != _report.Id && o.Started < _report.Started && o.Options.Tier == _report.Options.Tier
+                        && (o.ConformULog is null) == (_report.ConformULog is null) && TestTarget.SameDevice(o.Target, _report.Target))
+            .OrderByDescending(o => o.Started).FirstOrDefault();
         // The top tab follows the report, so its Reports sub-tab leads back to the list it is in.
         if (_report is { } shown) State.Tab = RunPageState.IsConformU(shown) ? RunPageTab.ConformU : RunPageTab.Conformance;
     }

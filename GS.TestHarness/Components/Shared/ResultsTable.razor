@@ -66,7 +66,7 @@ else
                                 <dt>Check</dt><dd class="mono"><a href="help#test-@r.Number" @onclick:stopPropagation="true">@r.Number</a> @r.Id</dd>
                                 @if (r.Expected is not null) { <dt>Expected</dt><dd>@r.Expected</dd> }
                                 @if (r.Actual is not null) { <dt>Actual</dt><dd class="pre">@r.Actual</dd> }
-                                @if (r.Fix is not null) { <dt>How to fix</dt><dd class="fix">@r.Fix</dd> }
+                                @if (r.Fix is not null) { <dt>How to fix</dt><dd class="fix">@r.Fix <button type="button" class="link" title="Copy the fix text to the clipboard" @onclick="() => CopyAsync(r)" @onclick:stopPropagation="true">@(_copied == r.Id ? "Copied" : "Copy")</button></dd> }
                                 @if (r.Source is not null) { <dt>Code to check</dt><dd class="mono">@r.Source</dd> }
                                 @if (r.Reference is not null) { <dt>Reference</dt><dd><a href="@r.Reference" target="_blank" rel="noopener">@r.Reference</a></dd> }
                             </dl>
@@ -79,6 +79,22 @@ else
 }
 
 @code {
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private string? _copied;
+
+    /// <summary>Puts the finding's fix, with its check and message, on the clipboard (to paste into a ticket or a message).</summary>
+    private async Task CopyAsync(CheckResult r)
+    {
+        var text = $"{r.Id}: {r.Message}" + (r.Expected is null ? "" : $"\nExpected: {r.Expected}") + (r.Actual is null ? "" : $"\nActual: {r.Actual}")
+                   + $"\nHow to fix: {r.Fix}" + (r.Source is null ? "" : $"\nCode to check: {r.Source}");
+        try
+        {
+            if (await JS.InvokeAsync<bool>("gsCopy", text)) _copied = r.Id;
+        }
+        catch (Exception) { /* no clipboard here */ }
+    }
+
     [Parameter, EditorRequired] public IReadOnlyList<CheckResult> Results { get; set; } = [];
     [Parameter] public string Empty { get; set; } = "No findings yet.";
 

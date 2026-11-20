@@ -38,6 +38,12 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     public RunProgress? Progress { get; private set; }
     public string? Status { get; private set; }
 
+    /// <summary>When the run under way (or the last run) started.</summary>
+    public DateTimeOffset? StartedAt { get; private set; }
+
+    /// <summary>The last saved run of the same device before this one, to compare with and to estimate how long this will take.</summary>
+    public RunReport? PreviousReport { get; private set; }
+
     /// <summary>What the run is waiting on the user for before it moves the mount (null when it isn't waiting).</summary>
     public GateRequest? PendingGate { get; private set; }
 
@@ -117,6 +123,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             Progress = null;
             LastReport = null;
             Status = $"Connecting to {target.Display}…";
+            StartedAt = DateTimeOffset.Now;
+            PreviousReport = null;
             _results.Clear();
             _cts = new CancellationTokenSource();
         }
@@ -165,6 +173,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         {
             log.LogInformation("Run started: {Target}, tier {Tier}, motion {Motion}", target.Display, options.Tier, options.AllowMotion);
             var previous = await store.LatestForAsync(target);
+            PreviousReport = previous;
+            Changed?.Invoke();
             await using var session = await TestRunner.OpenAsync(target, options);
             report = await runner.RunAsync(session, target, options,
                 r =>

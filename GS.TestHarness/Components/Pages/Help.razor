@@ -278,6 +278,42 @@
                 <p class="muted">Every other tier 1 test has no deeper tier yet.</p>
             </section>
 
+            <section id="server-settings">
+                <h2>Server settings</h2>
+                <p>Under the server on the Run page, in <strong>Settings</strong>. Each server keeps its own. The checklist under the server
+                    shows with a check mark, a warning or an information mark what to know before you start.</p>
+                <dl>
+                    <dt>Mount</dt>
+                    <dd>Simulator or real mount. GSServer takes different code paths for each, so the recommendations name the right one.</dd>
+                    <dt>Site hemisphere</dt>
+                    <dd>Northern or southern. The slews' targets follow the mount's SiteLatitude, so a latitude with the wrong sign sends them to the wrong
+                        part of the sky. Set this and the run warns if the sign of SiteLatitude disagrees, or if the mount homes at the other pole.</dd>
+                    <dt>Flip angle</dt>
+                    <dd>Degrees either side of the meridian where the mount can point from either side of the pier, for the flip checks.</dd>
+                    <dt>Timeouts</dt>
+                    <dd>How long a slew (or park, or find home) and an ordinary call may take before they count as never finished.
+                        A real mount's flip can take longer than a minute.</dd>
+                </dl>
+            </section>
+
+            <section id="safety">
+                <h2>Safety warnings</h2>
+                <p>Starting a run that moves the mount asks two things of you first.</p>
+                <ol>
+                    <li><strong>The start dialog.</strong> The app connects to the mount and reads whether it is at the home position. If it isn't,
+                        the dialog asks you to put it there: <strong>Go home</strong>, or move it yourself, power it off and on, and
+                        <strong>Check again</strong>. <strong>Start run</strong> is not available until the mount reports at home. If the mount can't be connected
+                        or read, only <strong>Check again</strong> and <strong>Cancel</strong> are offered. Cancel disconnects the mount; Start run keeps it connected.</li>
+                    <li><strong>The warnings before the mount moves.</strong> Before the first test that moves the mount, the run looks at what it found so far
+                        (the position, time and site) and whether the mount is already slewing, parked or away from home. If anything looks wrong
+                        the run pauses and asks: <strong>Proceed</strong> (run the tests that move the mount anyway), <strong>Skip</strong>
+                        (leave those tests out and run the rest) or <strong>Stop</strong> (end the run; the summary is still made).
+                        Escape counts as Stop. Turn this off under Options with <em>Safety warnings before the mount moves</em>.</li>
+                </ol>
+                <p>From the command line there is nobody to ask: <code>--gate stop|skip|proceed</code> says what to do (stop by default) and
+                    <code>--no-safety-gate</code> turns the warnings off. A run that was stopped exits with code 3.</p>
+            </section>
+
             <section id="options">
                 <h2>Options</h2>
                 <p>On the Run tab's <strong>Options</strong> sub-tab. They apply to both the conformance test and the ConformU Debug Log Test.</p>
@@ -294,11 +330,19 @@
                     <dd>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads and connect cycles.</dd>
                     <dt>Disconnect at the end</dt>
                     <dd>Checks NotConnected errors. Only possible when no other client holds the device.</dd>
+                    <dt>Safety warnings before the mount moves</dt>
+                    <dd>On by default. Asks Proceed, Skip or Stop when something looks unsafe before the tests that move the mount. See <a href="help#safety">Safety warnings</a>.</dd>
+                    <dt>Tell me when the run finishes or needs my answer</dt>
+                    <dd>A short sound, and a browser notification if you allow it, when the run finishes or waits for your answer. This browser remembers the choice.</dd>
                 </dl>
             </section>
 
             <section id="results">
                 <h2>Reading the results</h2>
+                <p>At the top, a summary says in plain words how many things need a look and lists the first few (failures, then errors, then warnings;
+                    anything about the mount's safety first). It also says what is new and what is fixed since the last run of the same device, and
+                    <strong>Re-run only the problems</strong> runs just the groups and members that had problems, to check a fix without waiting for a full run.
+                    In a finding, <strong>Copy</strong> puts its check, message, expected and actual values, fix and code location on the clipboard.</p>
                 <p>Each finding has an outcome:</p>
                 <table>
                     <thead><tr><th>Outcome</th><th>Means</th></tr></thead>
@@ -403,12 +447,13 @@ GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                 <p>Other options: <code>--setpark</code>, <code>--no-writes</code>, <code>--no-protocol</code>,
                     <code>--no-disconnect</code>, <code>--extended</code>, <code>--drift-seconds &lt;s&gt;</code>,
                     <code>--slew-timeout &lt;s&gt;</code>,
-                    <code>--call-timeout &lt;s&gt;</code>, <code>--flip-angle &lt;degrees&gt;</code>, <code>--mount simulator|real</code>
+                    <code>--call-timeout &lt;s&gt;</code>, <code>--flip-angle &lt;degrees&gt;</code>, <code>--mount simulator|real</code>, <code>--hemisphere north|south</code>,
+                    <code>--gate stop|skip|proceed</code>, <code>--no-safety-gate</code>, <code>--dry-run</code> (say what the run would do, without connecting)
                     and <code>--source &lt;folder&gt;</code>.</p>
                 <p><code>--conformu &lt;debug log&gt;</code> runs the ConformU Debug Log Test instead: only the log's problem members,
                     with the verdicts and diagnoses. For example:</p>
                 <pre><code>GS.TestHarness --run COM --motion --mount simulator --conformu ConformU.debug.txt</code></pre>
-                <p>The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.</p>
+                <p>The exit code is 0 when nothing failed, 1 when there were failures or errors, 2 for bad arguments and 3 when the run was stopped before it finished.</p>
             </section>
 
             <section id="files">

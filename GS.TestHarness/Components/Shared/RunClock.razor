@@ -1,0 +1,55 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@implements IDisposable
+@inject RunService Runs
+
+@* Where the run is: the group it is in, the test it last reported, how long it has been going and, if this device has
+   been checked before, how long that took (a full run is about half an hour). Ticks every second. *@
+@if (Runs.IsRunning && Runs.StartedAt is { } started)
+{
+    var elapsed = DateTimeOffset.Now - started;
+    <div class="run-clock">
+        <span>Elapsed <b>@Clock(elapsed)</b></span>
+        @if (Runs.Progress is { Group: not "Done" } p)
+        {
+            <span>Group <b>@(p.GroupIndex + 1) of @p.GroupCount</b>: @p.Group</span>
+        }
+        @if (Runs.Results.LastOrDefault() is { } last)
+        {
+            <span class="muted">Last finding: <span class="mono">@TestNumbers.Label(last.Id)</span></span>
+        }
+        @if (Runs.PreviousReport is { Finished: { } finished } before)
+        {
+            var took = finished - before.Started;
+            <span class="muted">The last run of this device took @Clock(took)@(Runs.Options is { Extended: false } && before.Options.Extended ? " (with the extended checks)" : "")</span>
+        }
+    </div>
+}
+
+@code {
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(_ => _ = InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private static string Clock(TimeSpan t)
+        => t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{t.Minutes}:{t.Seconds:00}";
+
+    public void Dispose() => _timer?.Dispose();
+}

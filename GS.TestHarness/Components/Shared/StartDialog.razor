@@ -78,22 +78,34 @@ else
     <p class="dialog-message" style="color: @(Model.NoteIsProblem ? "var(--fail)" : "var(--green)"); text-align: center; margin-bottom: 0;">@note</p>
 }
 
-<div class="dialog-buttons" style="justify-content: center;">
+<div class="dialog-buttons" style="justify-content: center; align-items: flex-start;">
     @if (!Model.HasError)
     {
-        <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
+        <div class="dialog-choice">
+            <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
+            <small>@(Model.NeedsHome ? "Available once the mount is at home." : "Begins the run. You are responsible for watching the mount.")</small>
+        </div>
         @if (Model.HasMount)
         {
-            <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
+            <div class="dialog-choice">
+                <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
+                <small>Slews the mount to the home position.</small>
+            </div>
         }
     }
     @if (Model.HasMount)
     {
         @* Also after an error: a mount that is still starting up after a power cycle can be tried again without closing the dialog. *@
-        <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+        <div class="dialog-choice">
+            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+            <small>Reads the position again, after you have moved the mount or powered it off and on.</small>
+        </div>
     }
     @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
-    <button type="button" class="btn" autofocus disabled="@Model.Busy" @onclick="() => Model.Close(false)">Cancel</button>
+    <div class="dialog-choice">
+        <button type="button" class="btn" autofocus disabled="@Model.Busy" @onclick="() => Model.Close(false)">Cancel</button>
+        <small>@(Model.HasMount ? "Closes this and disconnects the mount." : "Closes this without starting.")</small>
+    </div>
 </div>
 
 @code {

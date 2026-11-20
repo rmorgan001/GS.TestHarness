@@ -171,6 +171,9 @@ public static class Cli
             _ => GateDecision.Stop
         };
 
+        // --dry-run: say what the run would do and stop, without connecting to the mount or moving anything.
+        if (Flag("--dry-run")) return DryRun(target, options, conformU is not null, gatePolicy);
+
         return await RunOneAsync(target, options, locator, store, Value("--md"), gatePolicy, conformU, followsUp);
     }
 
@@ -268,5 +271,34 @@ public static class Cli
             _ => "Stopping (use --gate skip or --gate proceed to go on)."
         });
         return policy;
+    }
+
+    /// <summary>
+    /// --dry-run: the groups the run would go through, which would be skipped and why, and what the pre-motion warnings
+    /// would do. Nothing is connected or moved.
+    /// </summary>
+    private static int DryRun(TestTarget target, RunOptions options, bool hasConformULog, GateDecision gatePolicy)
+    {
+        Console.WriteLine($"Dry run for {target.Display}, tier {options.Tier}: nothing is connected and the mount is not moved.");
+        Console.WriteLine($"Options: motion {(options.AllowMotion ? "on" : "off")}, settings writes {(options.AllowSettingsWrites ? "on" : "off")}, " +
+                          $"extended {(options.Extended ? "on" : "off")}, protocol {(options.IncludeProtocol ? "on" : "off")}, " +
+                          $"disconnect at the end {(options.IncludeDisconnected ? "on" : "off")}, safety warnings {(options.SafetyWarnings ? "on" : "off")}.");
+        Console.WriteLine();
+        var plan = RunPlan.For(target, options, hasConformULog);
+        foreach (var (group, reason) in plan)
+        {
+            var moves = MotionGate.MovingGroups.Contains(group) ? "  (moves the mount)" : "";
+            Console.WriteLine(reason is null ? $"  run      {group}{moves}" : $"  skipped  {group}: {reason}");
+        }
+        Console.WriteLine();
+        var moving = plan.Any(p => p.SkipReason is null && MotionGate.MovingGroups.Contains(p.Group));
+        if (moving && options.AllowMotion && options.SafetyWarnings)
+            Console.WriteLine("Before the first of the groups that move the mount, the run checks the position, time and site findings made so far " +
+                              $"and whether the mount is slewing; if anything looks wrong it would {gatePolicy.ToString().ToLowerInvariant()} (--gate).");
+        else if (moving && options.AllowMotion)
+            Console.WriteLine("The safety warnings are off (--no-safety-gate): the run goes straight on to the groups that move the mount.");
+        else
+            Console.WriteLine("No group that moves the mount would run.");
+        return 0;
     }
 }

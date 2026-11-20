@@ -680,3 +680,39 @@ body:has(.print-page) { background: #fff; }
 .server-settings-title { font-weight: 600; }
 .server-settings-warn { color: var(--warning); font-size: .85rem; }
 .server-settings[open] > summary { margin-bottom: .25rem; }
+
+/* Stop at hand in the header on every page while a run is going. margin-left:auto pushes it (and the help button after it) right. */
+.header-run { margin-left: auto; display: flex; align-items: center; gap: .75rem; }
+.header-run + .help-button { margin-left: 0; }
+.header-run-step { font-size: .85rem; color: var(--yellow); white-space: nowrap; }
+
+/* The plain-language summary above the findings. */
+.run-summary { margin: 0 0 1rem; padding: .75rem 1rem; border: 1px solid var(--line-strong); border-left-width: 4px; border-radius: 6px; }
+.run-summary.ok { border-left-color: var(--green); background: rgba(82, 183, 136, .08); }
+.run-summary.warn { border-left-color: var(--yellow); background: rgba(242, 200, 75, .07); }
+.run-summary.bad { border-left-color: var(--red); background: rgba(239, 100, 97, .08); }
+.run-summary-first { margin-top: .6rem; font-weight: 600; }
+.run-summary ol { margin: .35rem 0 .35rem 1.2rem; padding: 0; }
+.run-summary li { margin-bottom: .3rem; }
+
+/* The checklist on the Server card: what to know before starting a run. */
+.preflight { list-style: none; margin: .6rem 0 .2rem; padding: 0; display: grid; gap: .2rem; font-size: .88rem; }
+.preflight li > span { display: inline-block; width: 1.2em; font-weight: 700; }
+.preflight li.ok > span { color: var(--green); }
+.preflight li.warn { color: var(--yellow); }
+.preflight li.warn > span { color: var(--yellow); }
+.preflight li.note > span { color: var(--mare); }
+
+/* The run's clock under the progress bar. */
+.run-clock { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin-top: .35rem; font-size: .85rem; }
+
+/* A (?) beside a setting that opens its part of the help. */
+.help-link { display: inline-grid; place-items: center; margin-left: .35rem; vertical-align: middle; color: #4fc0ff; opacity: .8; }
+.help-link:hover { opacity: 1; text-decoration: none; }
+
+/* A short note under a dialog button, saying what it does. */
+.dialog-choice { display: flex; flex-direction: column; align-items: center; gap: .25rem; max-width: 11rem; }
+.dialog-choice small { text-align: center; color: var(--muted, #9aa7b0); font-size: .75rem; line-height: 1.25; }
+.run-summary-actions { margin-top: .75rem; }
+.changes-new { color: #ff8a87; font-weight: 600; }
+.changes-fixed { color: var(--green); font-weight: 600; }

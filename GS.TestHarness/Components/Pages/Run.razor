@@ -22,6 +22,7 @@
 @inject ServerList Servers
 @inject DialogService Dialogs
 @inject HomeService Home
+@inject IJSRuntime JS
 @inject ConnectionService Connections
 @inject RunPageState State
 @inject SourceLocator Locator
@@ -68,7 +69,7 @@
         <h2>Options</h2>
         <label class="check danger">
             <input type="checkbox" @bind="_motion" disabled="@Runs.IsRunning" />
-            <span><b>Move the mount</b>: slew, sync, move axes, pulse guide, park, find home.
+            <span><b>Move the mount</b><HelpLink Anchor="options" />: slew, sync, move axes, pulse guide, park, find home.
                 <small>Use a simulator, or a real mount that's clear to move. The mount is put back (tracking, park) afterwards.</small></span>
         </label>
         <label class="check">
@@ -82,7 +83,7 @@
         </label>
         <label class="check">
             <input type="checkbox" @bind="_safety" disabled="@(Runs.IsRunning || !_motion)" />
-            <span>Safety warnings before the mount moves
+            <span>Safety warnings before the mount moves<HelpLink Anchor="safety" />
                 <small>Asks Proceed, Skip or Stop when the position, time or site look wrong, or the mount is parked, slewing or away from home. On by default.</small></span>
         </label>
         <label class="check">
@@ -97,6 +98,11 @@
         <label class="check">
             <input type="checkbox" @bind="_disconnected" disabled="@Runs.IsRunning" />
             <span>Disconnect at the end <small>Checks NotConnected errors (only possible when no other client holds the device).</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" checked="@_notify" @onchange="SetNotify" />
+            <span>Tell me when the run finishes or needs my answer
+                <small>A short sound, and a browser notification if you allow it. For a long run you walk away from. Remembered by this browser.</small></span>
         </label>
     </section>
 }
@@ -155,6 +161,18 @@ else
                         }
                     </div>
                 </div>
+                @* A checklist of what to know before starting: ✓ fine, ⚠ looks wrong, ℹ for information. *@
+                @if (!Runs.IsRunning)
+                {
+                    <ul class="preflight" aria-label="Before you start">
+                        <li class="@(Connections.IsConnected(server.Id) ? "ok" : "note")"><span aria-hidden="true">@(Connections.IsConnected(server.Id) ? "✓" : "ℹ")</span>
+                            @(Connections.IsConnected(server.Id) ? "Connected." : "Not connected yet: the run connects for itself.")</li>
+                        @foreach (var (state, text) in Preflight(server.RunTarget, CurrentOptions()))
+                        {
+                            <li class="@state.ToString().ToLowerInvariant()"><span aria-hidden="true">@(state == Check.Ok ? "✓" : state == Check.Warn ? "⚠" : "ℹ")</span> @text</li>
+                        }
+                    </ul>
+                }
                 @* The server's settings, folded away: checked before each run (Start lists them, with ⚠ on any that look wrong). *@
                 <details class="server-settings">
                     <summary>
@@ -166,7 +184,7 @@ else
                 <SourceFolderField Codebase="server.Target.Codebase" Disabled="Runs.IsRunning" Changed="SaveOptions" />
                 @* What the server drives: the ConformU diagnoses' recommendations follow GSServer's code path for it. Saved at once. *@
                 <label class="mount-field" title="GSServer takes different code paths for its simulator and a real mount: the ConformU diagnoses and their recommendations follow this.">
-                    <span>Mount <small class="muted">for the recommendations' code paths</small></span>
+                    <span>Mount<HelpLink Anchor="server-settings" /> <small class="muted">for the recommendations' code paths</small></span>
                     <select @bind="_mount" @bind:after="SaveOptions" disabled="@Runs.IsRunning">
                         <option value="@MountKind.Unknown">Not specified</option>
                         <option value="@MountKind.Simulator">Simulator</option>
@@ -175,7 +193,7 @@ else
                 </label>
                 @* Which hemisphere the mount is in: the sign of SiteLatitude is checked against it, since the slews' targets follow the latitude. Saved at once. *@
                 <label class="mount-field" title="The slews' targets (declination, azimuth) follow the mount's SiteLatitude, so a latitude with the wrong sign sends them to the wrong part of the sky. Say which hemisphere the mount is in and the run checks the sign.">
-                    <span>Site hemisphere <small class="muted">checks the sign of SiteLatitude</small></span>
+                    <span>Site hemisphere<HelpLink Anchor="server-settings" /> <small class="muted">checks the sign of SiteLatitude</small></span>
                     <select @bind="_hemisphere" @bind:after="SaveOptions" disabled="@Runs.IsRunning">
                         <option value="@Hemisphere.Unknown">Not specified</option>
                         <option value="@Hemisphere.North">Northern</option>
@@ -184,7 +202,7 @@ else
                 </label>
                 @* The mount's flip zone, for the flip checks (and a ConformU run that has them). Saved at once. *@
                 <label class="mount-field" title="Degrees either side of the meridian where the mount can point from either side of the pier. Inside it the flip checks use the SideOfPier command; a goto past it must flip the mount.">
-                    <span>Flip angle (°) <small class="muted">@(_motion ? "either side of the meridian, for the flip checks" : "needs Move the mount under Options")</small></span>
+                    <span>Flip angle (°)<HelpLink Anchor="server-settings" /> <small class="muted">@(_motion ? "either side of the meridian, for the flip checks" : "needs Move the mount under Options")</small></span>
                     <input type="number" min="0" max="90" step="1" class="narrow-input" @bind="_flipAngle" @bind:after="SaveOptions"
                            disabled="@(Runs.IsRunning || !_motion)" />
                 </label>
@@ -350,6 +368,7 @@ else
         {
             <div class="progress"><div style="width:@(100.0 * p.GroupIndex / Math.Max(1, p.GroupCount))%"></div></div>
         }
+        <RunClock />
     </div>
     @if (!runsHere)
     {
@@ -430,12 +449,15 @@ else
                 </button>
             </div>
         }
+        <RunSummary Results="Runs.Results" Running="Runs.IsRunning" Previous="Runs.PreviousReport?.Results"
+                    PreviousLabel="@(Runs.PreviousReport?.Reference)" Rerun="RerunProblems" />
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }
 
 @code {
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended, _safety = true;
+    private bool _notify;
     private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 0;
     private MountKind _mount = MountKind.Unknown;
     private Hemisphere _hemisphere = Hemisphere.Unknown;
@@ -458,6 +480,7 @@ else
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
         State.Changed += OnBenchChanged;
+        Connections.Changed += OnBenchChanged; // the checklist shows whether the server is connected
     }
 
     private void Drop()
@@ -536,21 +559,41 @@ else
     /// section when it isn't home. Start keeps the mount connected (as if connected from the sidebar); Cancel
     /// disconnects it. Returns whether the user went on.
     /// </summary>
+    private enum Check { Ok, Warn, Note }
+
     /// <summary>
-    /// The settings on the Server card that look wrong for this run, for the start dialog: the Mount (which code paths the
-    /// recommendations name), a slew timeout too short for a real mount's flip, and no source code folder. Each is a ⚠ line.
+    /// What to know before starting, for the Server card's checklist (and the start dialog's ⚠ lines): the Mount (which code
+    /// paths the recommendations name), the Site hemisphere, the source code folder, the timeouts, Move the mount and the
+    /// safety warnings. Warn is something that looks wrong; Note is for information.
     /// </summary>
-    private List<string> SettingsWarnings(TestTarget target, RunOptions options)
+    private List<(Check State, string Text)> Preflight(TestTarget target, RunOptions options)
     {
-        var warnings = new List<string>();
-        if (options.Mount == MountKind.Unknown)
-            warnings.Add("⚠ Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is.");
-        if (options.SlewTimeoutSeconds < 60 && options.AllowMotion && options.Mount != MountKind.Simulator)
-            warnings.Add($"⚠ Timeouts: slew {options.SlewTimeoutSeconds} s, call {options.CallTimeoutSeconds} s. A long slew or a meridian flip on a real mount can take longer than {options.SlewTimeoutSeconds} s and would count as never finished.");
-        if (Locator.RootOf(target.Codebase) is null)
-            warnings.Add("⚠ Source code: none set (or not found), so there's no code review and findings won't name the code to check. Set it under the server's Settings.");
-        return warnings;
+        var items = new List<(Check, string)>();
+        items.Add(options.Mount == MountKind.Unknown
+            ? (Check.Warn, "Mount: not specified. The recommendations will list both the simulator's and the real mount's code. Set it if you know which this is.")
+            : (Check.Ok, $"Mount: {(options.Mount == MountKind.Simulator ? "Simulator" : "real mount")}."));
+        items.Add(options.SiteHemisphere == Hemisphere.Unknown
+            ? (Check.Note, "Site hemisphere: not set, so the sign of SiteLatitude isn't checked.")
+            : (Check.Ok, $"Site hemisphere: {(options.SiteHemisphere == Hemisphere.North ? "northern" : "southern")}."));
+        items.Add(Locator.RootOf(target.Codebase) is { } root
+            ? (Check.Ok, $"Source code: {root}")
+            : (Check.Warn, "Source code: none set (or not found), so there's no code review and findings won't name the code to check. Set it under the server's Settings."));
+        items.Add(options.SlewTimeoutSeconds < 60 && options.AllowMotion && options.Mount != MountKind.Simulator
+            ? (Check.Warn, $"Timeouts: slew {options.SlewTimeoutSeconds} s, call {options.CallTimeoutSeconds} s. A long slew or a meridian flip on a real mount can take longer than {options.SlewTimeoutSeconds} s and would count as never finished.")
+            : (Check.Ok, $"Timeouts: slew {options.SlewTimeoutSeconds} s, call {options.CallTimeoutSeconds} s."));
+        items.Add(options.AllowMotion
+            ? (Check.Note, "Move the mount is on: the run will slew, flip, park and home the mount. Remove the OTAs first.")
+            : (Check.Note, "Move the mount is off: no slews, no park or home tests."));
+        if (options.AllowMotion)
+            items.Add(options.SafetyWarnings
+                ? (Check.Ok, "Safety warnings before the mount moves: on.")
+                : (Check.Note, "Safety warnings before the mount moves: off, so the run won't ask first."));
+        return items;
     }
+
+    /// <summary>The settings that look wrong for this run, for the start dialog: each a ⚠ line.</summary>
+    private List<string> SettingsWarnings(TestTarget target, RunOptions options)
+        => [.. Preflight(target, options).Where(i => i.State == Check.Warn).Select(i => "⚠ " + i.Text)];
 
     private bool _starting;
 
@@ -721,6 +764,18 @@ else
 
     private static bool NeedsMotion(NextTier next) => next.Members.Any(MovesMount);
 
+    /// <summary>
+    /// Runs again only what the last run had problems with (their groups and members), with the options as ticked now: to
+    /// check a fix without waiting for the whole run. The same warnings come first as for any run.
+    /// </summary>
+    private async Task RerunProblems()
+    {
+        if (Runs.IsRunning || Runs.LastReport is not { } last || Runs.Target is not { } target) return;
+        if (RerunPlan.For(CurrentOptions(), [.. last.Results]) is not { } narrowed) return;
+        if (!await ConfirmStartAsync("Safety Warning!", target, narrowed) || Runs.IsRunning) return;
+        Runs.Start(target, narrowed);
+    }
+
     private async Task StartNextTier(NextTier next)
     {
         if (Runs.IsRunning || NeedsLog(next)) return;
@@ -786,6 +841,29 @@ else
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            // This browser's choice about sounds and notifications.
+            var on = await JS.InvokeAsync<bool>("gsNotify.enabled");
+            if (on != _notify)
+            {
+                _notify = on;
+                StateHasChanged();
+            }
+        }
+        catch (Exception) { /* no browser to ask */ }
+    }
+
+    private async Task SetNotify(ChangeEventArgs e)
+    {
+        _notify = e.Value is true;
+        try { await JS.InvokeVoidAsync("gsNotify.set", _notify); }
+        catch (Exception) { /* no browser to ask */ }
+    }
+
     private void OnChanged()
     {
         // Answered in another tab: close this one's question.
@@ -816,5 +894,6 @@ else
         Bench.Changed -= OnBenchChanged;
         Servers.Changed -= OnBenchChanged;
         State.Changed -= OnBenchChanged;
+        Connections.Changed -= OnBenchChanged;
     }
 }
