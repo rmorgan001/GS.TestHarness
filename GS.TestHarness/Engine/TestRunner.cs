@@ -68,12 +68,14 @@ public sealed class TestRunner(SourceLocator locator)
     /// <param name="previous">The last saved run of the same device, if any.</param>
     /// <param name="conformU">A ConformU log to follow up: the ConformU checks run, and say for each of its problems
     /// whether the harness reproduced it. Combine it with <see cref="RunOptions.Groups"/> from its plan.</param>
+    /// <param name="onGate">Asked, with the warnings, before the first group that moves the mount, when there are any: Proceed, Skip
+    /// (the groups that move the mount) or Stop. Null: nobody is asked and the run goes on (the warnings are recorded).</param>
     /// <param name="followsUp">For a tier 2 or 3 run (<see cref="RunOptions.Tier"/>), the run it follows up: what it found
     /// is what the diagnoses take apart (see <see cref="Tiers.Options"/>).</param>
     public async Task<RunReport> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options,
         Action<CheckResult>? onResult = null, Action<RunProgress>? onProgress = null, CancellationToken token = default,
         Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null,
-        ConformULog? conformU = null, RunReport? followsUp = null)
+        ConformULog? conformU = null, RunReport? followsUp = null, Func<IReadOnlyList<string>, Task<GateDecision>>? onGate = null)
     {
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
         if (Tiers.Problem(options, followsUp, conformU is not null) is { } tierProblem)
@@ -93,6 +95,8 @@ public sealed class TestRunner(SourceLocator locator)
 
         try
         {
+            var gateAsked = false;
+            var gateDecision = GateDecision.Proceed;
             for (var i = 0; i < Groups.Count; i++)
             {
                 var group = Groups[i];
@@ -116,6 +120,44 @@ public sealed class TestRunner(SourceLocator locator)
                 }
                 try
                 {
+                    // Before the first group that moves the mount: what looks unsafe is put to the user (or just recorded).
+                    if (options.AllowMotion && options.SafetyWarnings && MotionGate.MovingGroups.Contains(group.Name))
+                    {
+                        if (!gateAsked)
+                        {
+                            gateAsked = true;
+                            var warnings = await MotionGate.EvaluateAsync(ctx);
+                            if (warnings.Count > 0)
+                            {
+                                gateDecision = onGate is null ? GateDecision.Proceed : await onGate(warnings);
+                                var list = string.Join("\n", warnings.Select(w => "• " + w));
+                                switch (gateDecision)
+                                {
+                                    case GateDecision.Proceed:
+                                        ctx.Report("Gate", "Motion", Outcome.Warning,
+                                            $"The groups that move the mount ran despite {warnings.Count} warning{(warnings.Count == 1 ? "" : "s")} before them" +
+                                            (onGate is null ? " (nobody was asked)." : " (the user chose Proceed)."),
+                                            actual: list, fix: "Look at the warnings: each is something the slews' targets or safety depend on.");
+                                        break;
+                                    case GateDecision.Skip:
+                                        ctx.Report("Gate", "Motion", Outcome.Info,
+                                            "The groups that move the mount were skipped: the user chose Skip at the warnings before them.", actual: list);
+                                        break;
+                                    default:
+                                        ctx.Report("Gate", "Motion", Outcome.Info,
+                                            "The run was stopped before the groups that move the mount: the user chose Stop at the warnings before them.", actual: list);
+                                        report.Cancelled = true;
+                                        break;
+                                }
+                                if (gateDecision == GateDecision.Stop) break;
+                            }
+                        }
+                        if (gateDecision == GateDecision.Skip)
+                        {
+                            ctx.Report("Group", group.Name, Outcome.Skipped, $"{group.Name} not run: skipped at the warnings before the groups that move the mount.");
+                            continue;
+                        }
+                    }
                     await group.RunAsync(ctx);
                     // Connected: from now on a device that stops answering stops the run.
                     if (group is ConnectionChecks) ctx.WatchForLostConnection = true;

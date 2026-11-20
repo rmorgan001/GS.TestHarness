@@ -81,6 +81,11 @@
             <span>Call SetPark <small>Moves the saved park position to wherever the mount is pointing.</small></span>
         </label>
         <label class="check">
+            <input type="checkbox" @bind="_safety" disabled="@(Runs.IsRunning || !_motion)" />
+            <span>Safety warnings before the mount moves
+                <small>Asks Proceed, Skip or Stop when the position, time or site look wrong, or the mount is parked, slewing or away from home. On by default.</small></span>
+        </label>
+        <label class="check">
             <input type="checkbox" @bind="_protocol" disabled="@(Runs.IsRunning || server?.Target.Kind == TargetKind.Com)" />
             <span>Alpaca protocol checks <small>Alpaca Server only. Management API, transaction IDs, error replies, HTTP 400, discovery.</small></span>
         </label>
@@ -430,7 +435,7 @@ else
 }
 
 @code {
-    private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
+    private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended, _safety = true;
     private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 0;
     private MountKind _mount = MountKind.Unknown;
     private Hemisphere _hemisphere = Hemisphere.Unknown;
@@ -443,11 +448,13 @@ else
             (options.AllowMotion, options.AllowSettingsWrites, options.AllowSetPark, options.IncludeProtocol, options.IncludeDisconnected,
              options.SlewTimeoutSeconds, options.CallTimeoutSeconds);
         _extended = options.Extended;
+        _safety = options.SafetyWarnings;
         _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
         _mount = options.Mount;
         _hemisphere = options.SiteHemisphere;
         RecallSettings();
         Runs.Changed += OnChanged;
+        MaybeShowGate(); // a run already waiting for an answer when the page opens
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
         State.Changed += OnBenchChanged;
@@ -469,7 +476,7 @@ else
     private RunOptions CurrentOptions() => new()
     {
         AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
-        IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
+        IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended, SafetyWarnings = _safety,
         SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
         FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount, SiteHemisphere = _hemisphere
     };
@@ -750,8 +757,40 @@ else
     private DateTime _lastRender;
     private bool _pending;
 
+    // The run asks before it moves the mount when something looks unsafe: Proceed, Skip or Stop (see MotionGate).
+    private bool _gateShowing;
+    private GateDialogModel? _gateModel;
+
+    private void MaybeShowGate()
+    {
+        if (Runs.PendingGate is null || _gateShowing) return;
+        _gateShowing = true;
+        _ = InvokeAsync(ShowGateAsync);
+    }
+
+    private async Task ShowGateAsync()
+    {
+        try
+        {
+            if (Runs.PendingGate is not { } request) return;
+            var model = new GateDialogModel(request);
+            _gateModel = model;
+            await Dialogs.ShowAsync(model);
+            // Closed any other way than a button (Escape): Stop, the safe answer.
+            Runs.ResolveGate(request, model.Decision ?? GateDecision.Stop);
+        }
+        finally
+        {
+            _gateModel = null;
+            _gateShowing = false;
+        }
+    }
+
     private void OnChanged()
     {
+        // Answered in another tab: close this one's question.
+        if (_gateModel is { } shown && !ReferenceEquals(Runs.PendingGate, shown.Request)) shown.Close(false);
+        MaybeShowGate();
         var now = DateTime.UtcNow;
         if (!Runs.IsRunning || (now - _lastRender).TotalMilliseconds > 250)
         {

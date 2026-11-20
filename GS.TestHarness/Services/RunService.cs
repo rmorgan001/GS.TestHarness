@@ -38,6 +38,50 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     public RunProgress? Progress { get; private set; }
     public string? Status { get; private set; }
 
+    /// <summary>What the run is waiting on the user for before it moves the mount (null when it isn't waiting).</summary>
+    public GateRequest? PendingGate { get; private set; }
+
+    private TaskCompletionSource<GateDecision>? _gateTcs;
+
+    /// <summary>
+    /// Called from the run before the first group that moves the mount: shows the warnings to whoever has the page open
+    /// and waits for Proceed, Skip or Stop. Stopping the run answers Stop.
+    /// </summary>
+    private async Task<GateDecision> AskGateAsync(IReadOnlyList<string> warnings, CancellationToken token)
+    {
+        var tcs = new TaskCompletionSource<GateDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var request = new GateRequest(warnings);
+        lock (_gate)
+        {
+            _gateTcs = tcs;
+            PendingGate = request;
+            Status = "Waiting for you: Proceed, Skip or Stop before the mount moves.";
+        }
+        Changed?.Invoke();
+        await using var _ = token.Register(() => tcs.TrySetResult(GateDecision.Stop));
+        try
+        {
+            return await tcs.Task;
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _gateTcs = null;
+                PendingGate = null;
+            }
+            Changed?.Invoke();
+        }
+    }
+
+    /// <summary>The user's answer to <paramref name="request"/> (ignored if it has already been answered).</summary>
+    public void ResolveGate(GateRequest request, GateDecision decision)
+    {
+        TaskCompletionSource<GateDecision>? tcs;
+        lock (_gate) tcs = ReferenceEquals(PendingGate, request) ? _gateTcs : null;
+        tcs?.TrySetResult(decision);
+    }
+
     /// <summary>The last run's report, once it has finished.</summary>
     public RunReport? LastReport { get; private set; }
 
@@ -131,7 +175,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                     Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})");
                     Changed?.Invoke();
                 },
-                token, previous: previous, conformU: conformU, followsUp: followsUp);
+                token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => AskGateAsync(warnings, token));
         }
         catch (Exception ex) when (report is not null)
         {
@@ -173,3 +217,6 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         return report;
     }
 }
+
+/// <summary>The warnings a run is asking the user about before it moves the mount.</summary>
+public sealed record GateRequest(IReadOnlyList<string> Warnings);

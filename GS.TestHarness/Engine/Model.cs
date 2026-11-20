@@ -120,6 +120,12 @@ public sealed record RunOptions
     public bool IncludeDisconnected { get; init; } = true;
 
     /// <summary>
+    /// Ask (Proceed, Skip or Stop) before the mount moves when something looks unsafe (<see cref="MotionGate"/>). On by
+    /// default; off, the run goes straight on to the groups that move the mount. Only matters with <see cref="AllowMotion"/>.
+    /// </summary>
+    public bool SafetyWarnings { get; init; } = true;
+
+    /// <summary>
     /// The longer checks: tracking drift (tracking on, off, rate offsets), several clients at once, parallel reads
     /// and connect cycles. They take a few minutes; off by default.
     /// </summary>

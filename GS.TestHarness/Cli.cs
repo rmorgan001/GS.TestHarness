@@ -81,6 +81,7 @@ public static class Cli
             AllowSettingsWrites = !Flag("--no-writes"),
             IncludeProtocol = !Flag("--no-protocol"),
             IncludeDisconnected = !Flag("--no-disconnect"),
+            SafetyWarnings = !Flag("--no-safety-gate"), // --no-safety-gate: don't ask before the mount moves when something looks unsafe
             Extended = Flag("--extended"),
             DriftSeconds = int.TryParse(Value("--drift-seconds"), out var ds) ? Math.Max(5, ds) : 20,
             SlewTimeoutSeconds = int.TryParse(Value("--slew-timeout"), out var st) ? st : 120,
@@ -161,11 +162,20 @@ public static class Cli
             Console.WriteLine($"{Tiers.Name(next.Tier)}, following up {followsUp.Reference}: {string.Join(", ", next.Members)}.");
         }
 
-        return await RunOneAsync(target, options, locator, store, Value("--md"), conformU, followsUp);
+        // --gate stop|skip|proceed: what to do when something looks unsafe before the mount moves (nobody can be asked here).
+        // Stop is the default.
+        var gatePolicy = Value("--gate")?.ToLowerInvariant() switch
+        {
+            "proceed" => GateDecision.Proceed,
+            "skip" => GateDecision.Skip,
+            _ => GateDecision.Stop
+        };
+
+        return await RunOneAsync(target, options, locator, store, Value("--md"), gatePolicy, conformU, followsUp);
     }
 
     private static async Task<int> RunOneAsync(TestTarget target, RunOptions options, SourceLocator locator,
-        ReportStore store, string? markdownPath, ConformULog? conformU = null, RunReport? followsUp = null)
+        ReportStore store, string? markdownPath, GateDecision gatePolicy, ConformULog? conformU = null, RunReport? followsUp = null)
     {
         Console.WriteLine($"Checking {target.Display}, tier {options.Tier} (motion {(options.AllowMotion ? "on" : "off")})…");
         using var cts = new CancellationTokenSource();
@@ -195,7 +205,7 @@ public static class Cli
                 {
                     if (p.Group != "Done") Console.WriteLine($"[{p.GroupIndex + 1}/{p.GroupCount}] {p.Group}");
                 },
-                cts.Token, previous: previous, conformU: conformU, followsUp: followsUp);
+                cts.Token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => Task.FromResult(GateAnswer(warnings, gatePolicy)));
         }
         catch (Exception ex) when (report is not null)
         {
@@ -235,5 +245,22 @@ public static class Cli
             Console.WriteLine($"{Tiers.Name(next.Tier)} can diagnose {string.Join(", ", next.Members)}: run again with --follow {report.Reference}" +
                               (report.ConformULog is null ? "." : " and the same --conformu log."));
         return report.Count(Outcome.Fail) + report.Count(Outcome.Error) > 0 ? 1 : 0;
+    }
+
+    /// <summary>
+    /// The answer to the warnings before the mount moves, with no one to ask: the --gate policy (Stop by default). They are
+    /// printed first so the log says why.
+    /// </summary>
+    private static GateDecision GateAnswer(IReadOnlyList<string> warnings, GateDecision policy)
+    {
+        Console.WriteLine("Warnings before the mount moves:");
+        foreach (var w in warnings) Console.WriteLine($"  • {w}");
+        Console.WriteLine(policy switch
+        {
+            GateDecision.Proceed => "Proceeding (--gate proceed).",
+            GateDecision.Skip => "Skipping the tests that move the mount (--gate skip).",
+            _ => "Stopping (use --gate skip or --gate proceed to go on)."
+        });
+        return policy;
     }
 }

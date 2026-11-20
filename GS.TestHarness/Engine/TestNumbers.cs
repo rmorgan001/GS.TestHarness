@@ -240,6 +240,7 @@ public static class TestNumbers
         (1203, "Motion.StartPosition"),
         (1204, "Properties.SiteHemisphere"),
         (1205, "ParkHome.HomePole"),
+        (1206, "{group}.Gate"),
         (2001, "Diagnose.Readings"),
         (2002, "Diagnose.PulseGuide.{axis}"),
         (2003, "Diagnose.{member}"),

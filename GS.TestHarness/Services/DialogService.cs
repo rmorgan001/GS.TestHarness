@@ -146,6 +146,23 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     }
 }
 
+/// <summary>
+/// The warnings before the mount moves: Proceed, Skip (the groups that move the mount) or Stop. Closing it any other way
+/// (Escape) is Stop.
+/// </summary>
+public sealed class GateDialogModel(GateRequest request) : DialogModel
+{
+    public IReadOnlyList<string> Warnings { get; } = request.Warnings;
+    public GateRequest Request { get; } = request;
+    public GateDecision? Decision { get; private set; }
+
+    public void Choose(GateDecision decision)
+    {
+        Decision = decision;
+        Close(true);
+    }
+}
+
 /// <summary>Picks an ASCOM telescope driver registered on this computer (as GS.Point3DWeb's ASCOM Drivers dialog).</summary>
 public sealed class ComDriversDialogModel : DialogModel
 {

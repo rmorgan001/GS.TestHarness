@@ -1,0 +1,45 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* The warnings before the mount moves: the user chooses Proceed, Skip or Stop. *@
+<h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem; color: var(--fail);">
+    <Icon Kind="Alert" Size="52" />
+    <span>Check before the mount moves</span>
+</h2>
+
+<p class="dialog-message">The run is about to move the mount, and these look wrong or unsafe:</p>
+
+<div style="margin: 0 0 1rem;">
+    @foreach (var warning in Model.Warnings)
+    {
+        <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--fail); border-radius: 4px; background: rgba(220, 70, 70, .12);">@warning</div>
+    }
+</div>
+
+<p class="dialog-message" style="color: var(--yellow);">
+    <b>Proceed</b> runs the tests that move the mount anyway. <b>Skip</b> leaves those tests out and runs the rest. <b>Stop</b> ends the run here.
+</p>
+
+<div class="dialog-buttons" style="justify-content: center;">
+    <button type="button" class="btn danger-btn" @onclick="() => Model.Choose(GateDecision.Proceed)">Proceed</button>
+    <button type="button" class="btn" @onclick="() => Model.Choose(GateDecision.Skip)">Skip</button>
+    @* Safest first: Enter alone must not proceed. *@
+    <button type="button" class="btn" autofocus @onclick="() => Model.Choose(GateDecision.Stop)">Stop</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GateDialogModel Model { get; set; } = default!;
+}
