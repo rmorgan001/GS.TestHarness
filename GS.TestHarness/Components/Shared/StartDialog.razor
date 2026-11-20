@@ -26,14 +26,14 @@
     <p class="dialog-message" style="font-weight: 600; font-size: 1.1rem; color: var(--yellow);">Please verify the mount is in the home position</p>
 }
 
-@if (Model.NotConnected)
+@if (Model.HasError)
 {
     <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
         <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
         <span style="white-space: normal;">
-            <b style="color: var(--fail); font-size: 1.15rem;">The mount is not connected</b><br /><br />
+            <b style="color: var(--fail); font-size: 1.15rem;">@(Model.NotConnected ? "The mount is not connected" : "The mount's position couldn't be read")</b><br /><br />
             <span style="color: var(--fail);">@Model.Status?.Error</span><br /><br />
-            The run can't start until the mount is connected. Click Cancel, check the mount and its connection, then start again.
+            The run can't start until the mount is connected and reports where it is. If you've just powered it off and on, give it a moment, then click Check again. Otherwise click Cancel, check the mount and its connection, and start again.
         </span>
     </div>
 }
@@ -64,21 +64,25 @@ else
 
 @if (Model.Note is { } note)
 {
-    <p class="dialog-message" style="color: var(--green); text-align: center; margin-bottom: 0;">@note</p>
+    <p class="dialog-message" style="color: @(Model.NoteIsProblem ? "var(--fail)" : "var(--green)"); text-align: center; margin-bottom: 0;">@note</p>
 }
 
 <div class="dialog-buttons" style="justify-content: center;">
-    @if (!Model.NotConnected)
+    @if (!Model.HasError)
     {
         <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
         @if (Model.HasMount)
         {
-            <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { Error: null, CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
-            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+            <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
         }
     }
+    @if (Model.HasMount)
+    {
+        @* Also after an error: a mount that is still starting up after a power cycle can be tried again without closing the dialog. *@
+        <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+    }
     @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
-    <button type="button" class="btn" autofocus @onclick="() => Model.Close(false)">Cancel</button>
+    <button type="button" class="btn" autofocus disabled="@Model.Busy" @onclick="() => Model.Close(false)">Cancel</button>
 </div>
 
 @code {

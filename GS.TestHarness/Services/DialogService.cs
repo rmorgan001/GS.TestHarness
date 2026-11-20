@@ -63,7 +63,7 @@ public abstract class DialogModel
 
     public Task<bool> Result => _result.Task;
 
-    public void Close(bool accepted) => _result.TrySetResult(accepted);
+    public virtual void Close(bool accepted) => _result.TrySetResult(accepted);
 }
 
 /// <summary>Asks a yes/no question, or (with no cancel text) just tells the user something.</summary>
@@ -93,14 +93,27 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     public bool Busy { get; private set; }
     public string? Note { get; private set; }
 
+    /// <summary>The note says something went wrong (a Go home that failed), not progress.</summary>
+    public bool NoteIsProblem { get; private set; }
+
+    /// <summary>A Go home or check under way can't be cancelled: the mount may be moving, and closing would pull the connection from under it.</summary>
+    public override void Close(bool accepted)
+    {
+        if (Busy) return;
+        base.Close(accepted);
+    }
+
     /// <summary>The mount is connected but isn't reporting that it's at home: the home section is shown.</summary>
     public bool NeedsHome => home is not null && Status is { Error: null, AtHome: false };
 
     /// <summary>The mount is connected and reports that it is at home.</summary>
     public bool IsAtHome => home is not null && Status is { Error: null, AtHome: true };
 
-    /// <summary>The mount couldn't be connected or read: only Cancel is offered.</summary>
-    public bool NotConnected => home is not null && Status?.Error is not null;
+    /// <summary>The mount couldn't be connected or read: only Check again and Cancel are offered.</summary>
+    public bool HasError => home is not null && Status?.Error is not null;
+
+    /// <summary>The mount couldn't be connected (as opposed to connected but not readable).</summary>
+    public bool NotConnected => HasError && Status is { NotConnected: true };
 
     /// <summary>Reads the mount's position again (after the user moved it, or powered it off and on).</summary>
     public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", h => h.CheckAsync(), changed);
@@ -112,13 +125,15 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     {
         if (Busy || home is null) return;
         Busy = true;
-        Note = note;
+        (Note, NoteIsProblem) = (note, false);
         changed();
         try
         {
             Status = await work(home);
-            Note = IsAtHome ? "The mount is at the home position. It's okay to click \"Start run\"."
-                : NeedsHome ? "The mount still isn't reporting that it's at home." : null;
+            NoteIsProblem = Status?.Problem is not null;
+            Note = Status?.Problem
+                ?? (IsAtHome ? "The mount is at the home position. It's okay to click \"Start run\"."
+                : NeedsHome ? "The mount still isn't reporting that it's at home." : null);
         }
         finally
         {

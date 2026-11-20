@@ -135,14 +135,14 @@ else
                             @if (conformU)
                             {
                                 var ready = log is { Areas.Count: > 0 };
-                                <button class="btn primary" disabled="@(!ready)"
+                                <button class="btn primary" disabled="@(!ready || _starting)"
                                         title="@(!ready ? "Drop a ConformU log with problems first" : $"Check {log!.Areas.Count} problem areas on {server.Name}")"
                                         @onclick="StartConformU"><Icon Kind="Play" Size="18" /> Run ConformU checks</button>
                             }
                             else
                             {
-                                <button class="btn primary" title="@($"Test {server.Name}")"
-                                        @onclick="Start"><Icon Kind="Play" Size="18" /> Start run</button>
+                                <button class="btn primary" disabled="@_starting" title="@($"Test {server.Name}")"
+                                        @onclick="Start"><Icon Kind="Play" Size="18" /> @(_starting ? "Checking the mount…" : "Start run")</button>
                             }
                             <button type="button" class="icon-btn" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
                                 <Icon Kind="Close" Size="18" />
@@ -411,7 +411,7 @@ else
                     }
                     else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
                 </div>
-                <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next))" @onclick="() => StartNextTier(next)">
+                <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next) || _starting)" @onclick="() => StartNextTier(next)">
                     <Icon Kind="Play" Size="18" /> Run tier @next.Tier
                 </button>
             </div>
@@ -517,17 +517,22 @@ else
     /// section when it isn't home. Start keeps the mount connected (as if connected from the sidebar); Cancel
     /// disconnects it. Returns whether the user went on.
     /// </summary>
+    private bool _starting;
+
     private async Task<bool> ConfirmStartAsync(string title, TestTarget target, RunOptions options)
     {
+        // A second click while the mount is being connected and read (it can take a while) would connect it twice.
+        if (_starting) return false;
+        _starting = true;
         HomeSession? home = null;
-        HomeStatus? status = null;
-        if (options.AllowMotion)
-        {
-            home = Home.Open(target, options);
-            status = await home.CheckAsync();
-        }
         try
         {
+            HomeStatus? status = null;
+            if (options.AllowMotion)
+            {
+                home = Home.Open(target, options);
+                status = await home.CheckAsync();
+            }
             var accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status));
             if (accepted && home is not null && Servers.FindDevice(target)?.Id is { } id)
                 home.TryHandOver(session => Connections.Adopt(id, session));
@@ -536,6 +541,7 @@ else
         finally
         {
             if (home is not null) await home.DisposeAsync();
+            _starting = false;
         }
     }
 
