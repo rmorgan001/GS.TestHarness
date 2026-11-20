@@ -93,8 +93,11 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     public bool Busy { get; private set; }
     public string? Note { get; private set; }
 
-    /// <summary>The mount isn't reporting that it's at home (or couldn't be read): the home section is shown.</summary>
-    public bool NeedsHome => home is not null && Status is { } s && (s.Error is not null || !s.AtHome);
+    /// <summary>The mount is connected but isn't reporting that it's at home: the home section is shown.</summary>
+    public bool NeedsHome => home is not null && Status is { Error: null, AtHome: false };
+
+    /// <summary>The mount couldn't be connected or read: only Cancel is offered.</summary>
+    public bool NotConnected => home is not null && Status?.Error is not null;
 
     /// <summary>Reads the mount's position again (after the user moved it, or powered it off and on).</summary>
     public Task CheckAsync(Action changed) => RunAsync("Checking the mount…", h => h.CheckAsync(), changed);
@@ -111,7 +114,7 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
         try
         {
             Status = await work(home);
-            Note = NeedsHome && Status?.Error is null ? "The mount still isn't reporting that it's at home." : null;
+            Note = NeedsHome ? "The mount still isn't reporting that it's at home." : null;
         }
         finally
         {
