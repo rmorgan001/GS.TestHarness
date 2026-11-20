@@ -45,70 +45,6 @@ public sealed class TestRunner(SourceLocator locator)
         new DisconnectedChecks()
     ];
 
-    /// <summary>
-    /// Tells the mount it is at <paramref name="site"/> (elevation, latitude, longitude) and checks it took. Returns the
-    /// server's own site, to put back afterwards. Stops the run if the site can't be read or set.
-    /// </summary>
-    private static async Task<(double, double, double)> ApplySiteAsync(CheckContext ctx, SiteLocation site)
-    {
-        ctx.Group = "Site";
-        var own = await ctx.TryAsync(t => (t.SiteLatitude, t.SiteLongitude, t.SiteElevation));
-        if (!own.Ok)
-        {
-            ctx.Report("Apply", "SiteLatitude", Outcome.Error, $"The server's own site can't be read, so the run can't move it to {site.Label}.",
-                actual: own.ErrorText);
-            throw new StopRunException($"the site can't be read: {own.ErrorText}");
-        }
-        var set = await ctx.TryAsync(t =>
-        {
-            t.SiteElevation = site.Elevation;
-            t.SiteLatitude = site.Latitude;
-            t.SiteLongitude = site.Longitude;
-        });
-        var back = set.Ok ? await ctx.TryAsync(t => (t.SiteLatitude, t.SiteLongitude, t.SiteElevation)) : null;
-        var took = back is { Ok: true } && Math.Abs(back.Value.SiteLatitude - site.Latitude) < 1e-4
-                   && Math.Abs(back.Value.SiteLongitude - site.Longitude) < 1e-4 && Math.Abs(back.Value.SiteElevation - site.Elevation) < 0.5;
-        if (!took)
-        {
-            ctx.Report("Apply", "SiteLatitude", Outcome.Error, $"The mount couldn't be set to {site.Label}.",
-                expected: site.Coordinates,
-                actual: !set.Ok ? set.ErrorText : back is { Ok: true } ? FormattableString.Invariant($"{back.Value.SiteLatitude:0.####}°, {back.Value.SiteLongitude:0.####}°, {back.Value.SiteElevation:0} m") : back?.ErrorText,
-                fix: "Running at another site needs SiteLatitude, SiteLongitude and SiteElevation to be writable.");
-            await RestoreSiteAsync(ctx, own.Value);
-            throw new StopRunException($"the mount couldn't be set to {site.Label}");
-        }
-        ctx.Report("Apply", "SiteLatitude", Outcome.Info, $"Site set to {site.Label} ({site.Coordinates}) for this run.",
-            actual: FormattableString.Invariant($"was {own.Value.SiteLatitude:0.####}°, {own.Value.SiteLongitude:0.####}°, {own.Value.SiteElevation:0} m"));
-        // Later groups read the site from the mount (the capability checks keep latitude and longitude).
-        return own.Value;
-    }
-
-    /// <summary>Puts the server's own site back.</summary>
-    private static async Task RestoreSiteAsync(CheckContext ctx, (double Latitude, double Longitude, double Elevation) own)
-    {
-        var group = ctx.Group;
-        ctx.Group = "Site";
-        if (ctx.Lost is not null)
-        {
-            ctx.Report("Restore", "SiteLatitude", Outcome.Error, "The server's own site couldn't be put back: communication with the device was lost.",
-                fix: FormattableString.Invariant($"Set the site back to latitude {own.Latitude:0.####}, longitude {own.Longitude:0.####}, elevation {own.Elevation:0} m in the server's settings."));
-            ctx.Group = group;
-            return;
-        }
-        var r = await ctx.TryAsync(t =>
-        {
-            t.SiteElevation = own.Elevation;
-            t.SiteLatitude = own.Latitude;
-            t.SiteLongitude = own.Longitude;
-        });
-        ctx.Report("Restore", "SiteLatitude", r.Ok ? Outcome.Info : Outcome.Error,
-            r.Ok ? FormattableString.Invariant($"The server's own site was put back ({own.Latitude:0.####}°, {own.Longitude:0.####}°, {own.Elevation:0} m).")
-                : "The server's own site couldn't be put back: set it by hand.",
-            actual: r.ErrorText,
-            fix: FormattableString.Invariant($"Set the site back to latitude {own.Latitude:0.####}, longitude {own.Longitude:0.####}, elevation {own.Elevation:0} m in the server's settings."));
-        ctx.Group = group;
-    }
-
     /// <summary>Opens the session for a target (starting a COM driver, or creating the Alpaca client).</summary>
     public static async Task<ITelescopeSession> OpenAsync(TestTarget target, RunOptions options)
     {
@@ -133,7 +69,7 @@ public sealed class TestRunner(SourceLocator locator)
     /// is what the diagnoses take apart (see <see cref="Tiers.Options"/>).</param>
     public async Task<RunReport> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options,
         Action<CheckResult>? onResult = null, Action<RunProgress>? onProgress = null, CancellationToken token = default,
-        Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null, SiteLocation? site = null,
+        Func<Task<ITelescopeSession>>? openSession = null, RunReport? previous = null,
         ConformULog? conformU = null, RunReport? followsUp = null)
     {
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
@@ -141,7 +77,7 @@ public sealed class TestRunner(SourceLocator locator)
             throw new InvalidOperationException($"Can't run tier {options.Tier}: {tierProblem}");
         var report = new RunReport
         {
-            Target = target, Options = options, Site = site, ConformULog = conformU?.FileName,
+            Target = target, Options = options, ConformULog = conformU?.FileName,
             FollowsUpNumber = followsUp is { Number: > 0 } up ? up.Number : null
         };
         void Add(CheckResult r)
@@ -151,7 +87,6 @@ public sealed class TestRunner(SourceLocator locator)
         }
         var ctx = new CheckContext(session, target, options, locator, Add, token, report.Results,
             openSession ?? (() => OpenAsync(target, options)), previous) { ConformU = conformU, FollowsUp = followsUp };
-        (double Latitude, double Longitude, double Elevation)? original = null;
 
         try
         {
@@ -163,12 +98,6 @@ public sealed class TestRunner(SourceLocator locator)
                 if (group is ConformUChecks && conformU is null) continue;
                 // The diagnoses are tiers 2 and 3 only, and a ConformU run's are made in the ConformU group (its verdicts follow them).
                 if (group is DiagnoseChecks && (options.Tier < 2 || conformU is not null)) continue;
-                // The site goes back before the disconnected checks: a disconnected mount can't be written to.
-                if (group is DisconnectedChecks && original is { } back)
-                {
-                    original = null;
-                    await RestoreSiteAsync(ctx, back);
-                }
                 ctx.Group = group.Name;
                 onProgress?.Invoke(new RunProgress(i, Groups.Count, group.Name, report.Results.Count));
                 // Once the device has gone, only the summary of what was found can still run.
@@ -185,12 +114,8 @@ public sealed class TestRunner(SourceLocator locator)
                 try
                 {
                     await group.RunAsync(ctx);
-                    if (group is ConnectionChecks)
-                    {
-                        // Connected: from now on a device that stops answering stops the run.
-                        ctx.WatchForLostConnection = true;
-                        if (site is not null) original = await ApplySiteAsync(ctx, site);
-                    }
+                    // Connected: from now on a device that stops answering stops the run.
+                    if (group is ConnectionChecks) ctx.WatchForLostConnection = true;
                 }
                 catch (CommunicationLostException ex)
                 {
@@ -222,12 +147,6 @@ public sealed class TestRunner(SourceLocator locator)
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             report.Cancelled = true;
-            if (original is { } back)
-            {
-                original = null;
-                try { await RestoreSiteAsync(new CheckContext(session, target, options, locator, Add, CancellationToken.None), back); }
-                catch { /* reported by RestoreSiteAsync where it can be */ }
-            }
             // Don't leave the mount moving.
             if (options.AllowMotion)
             {
@@ -235,7 +154,6 @@ public sealed class TestRunner(SourceLocator locator)
                 catch { /* nothing more to do */ }
             }
         }
-        if (original is { } stillSet) await RestoreSiteAsync(ctx, stillSet);
         // ConformU's problems against everything the run found, the disconnected checks included.
         ConformUChecks.Summarise(ctx);
         report.Identity = ctx.Identity;

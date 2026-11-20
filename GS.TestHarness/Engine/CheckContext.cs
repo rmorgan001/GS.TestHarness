@@ -156,7 +156,7 @@ public sealed class CheckContext(
     /// </summary>
     public async Task<Call<T>> TryAsync<T>(Func<ITelescopeV4, T> call, TimeSpan? timeout = null)
     {
-        Token.ThrowIfCancellationRequested();
+        if (_restoring == 0) Token.ThrowIfCancellationRequested();
         if (Lost is not null) throw Lost;
         var watch = Stopwatch.StartNew();
         try
@@ -183,6 +183,33 @@ public sealed class CheckContext(
             return result;
         }
     }
+
+    private int _restoring;
+
+    /// <summary>
+    /// Puts the mount back as a group found it, even after Stop: while the returned scope is open, calls and waits
+    /// ignore the run's token, so a group's <c>finally</c> still zeroes rate offsets, restores settings and parks.
+    /// Use it as the first line of every <c>finally</c> that tidies up the mount.
+    /// </summary>
+    public IDisposable Restoring()
+    {
+        _restoring++;
+        return new RestoreScope(this);
+    }
+
+    private sealed class RestoreScope(CheckContext ctx) : IDisposable
+    {
+        private bool _done;
+        public void Dispose()
+        {
+            if (_done) return;
+            _done = true;
+            ctx._restoring--;
+        }
+    }
+
+    /// <summary>The token waits honour: none while restoring (<see cref="Restoring"/>).</summary>
+    private CancellationToken WaitToken => _restoring == 0 ? Token : CancellationToken.None;
 
     /// <summary>Reads Connected with a short timeout: null if the device answered (whatever the value), else the error.</summary>
     private async Task<Exception?> ProbeAsync()
@@ -453,7 +480,7 @@ public sealed class CheckContext(
         {
             var call = await TryAsync(done);
             if (call is { Ok: true, Value: true }) return true;
-            await Task.Delay(pollMs, Token);
+            await Task.Delay(pollMs, WaitToken);
         }
         return false;
     }

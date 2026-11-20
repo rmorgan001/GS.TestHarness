@@ -17,25 +17,17 @@
 @page "/compare"
 @implements IDisposable
 @inject ReportStore Store
-@inject SiteStore Sites
 @inject Workbench Bench
 @inject ServerList Servers
 @inject RunService Runs
 
 <PageTitle>Compare · GS Test Harness</PageTitle>
 
-@* Sites: the server on the Run tab, and its latest run at each site ticked there, side by side.
-   Versions: two runs of that server (by default its newest and the newest earlier one with another DriverVersion),
+@* Two runs of the server on the Run tab (by default its newest and the newest earlier one with another DriverVersion),
    check by check, for regressions across driver versions. *@
 <header class="page-head">
     <h1>Compare</h1>
-    <p class="muted">@(_mode == Mode.Sites
-        ? "How the server on the Run tab does at each site ticked there (server's own, north, south): its latest run at each, side by side."
-        : "Two runs of the server on the Run tab, check by check: what a new driver version fixed, broke or changed.")</p>
-    <div class="seg compare-mode" role="group" aria-label="Compare">
-        <button class="@(_mode == Mode.Sites ? "on" : null)" @onclick="() => _mode = Mode.Sites">Sites</button>
-        <button class="@(_mode == Mode.Versions ? "on" : null)" @onclick="() => _mode = Mode.Versions">Versions</button>
-    </div>
+    <p class="muted">Two runs of the server on the Run tab, check by check: what a new driver version fixed, broke or changed.</p>
 </header>
 
 @if (_all is null)
@@ -46,7 +38,7 @@ else if (Bench.Selected is not { } server)
 {
     <p class="muted">Drag a server onto the Server box on the <a href="">Run</a> tab first.</p>
 }
-else if (_mode == Mode.Versions)
+else
 {
     var device = _all.Where(r => TestTarget.SameDevice(r.Target, server.Target)).ToList();
     if (Pair(device) is not { } pair)
@@ -95,7 +87,7 @@ else if (_mode == Mode.Versions)
                 <table class="results">
                     <thead>
                         <tr>
-                            <th class="col-sites">Change</th><th class="col-check">Check</th>
+                            <th class="col-change">Change</th><th class="col-check">Check</th>
                             <th>Before · @before.Identity.DriverVersion</th><th>After · @after.Identity.DriverVersion</th>
                         </tr>
                     </thead>
@@ -119,96 +111,12 @@ else if (_mode == Mode.Versions)
         }
     }
 }
-else
-{
-    var columns = Columns(server);
-    <section class="card">
-        <div class="picked">
-            <img class="kind-lg" src="@server.Image" alt="" />
-            <div>
-                <div class="picked-name">@server.Name</div>
-                <div class="muted">@server.KindText</div>
-                <div class="mono small">@server.Address</div>
-            </div>
-        </div>
-        @if (columns.Count == 0)
-        {
-            <p class="muted">No site is ticked on the <a href="">Run</a> tab.</p>
-        }
-        else
-        {
-            <ul class="site-runs">
-                @foreach (var (site, run) in columns)
-                {
-                    <li>
-                        <b>@SiteName(site)</b>
-                        @if (run is null) { <span class="muted">no run yet</span> }
-                        else
-                        {
-                            <a href="reports/@run.Id">@run.Started.ToString("yyyy-MM-dd HH:mm")</a>
-                            <span class="muted">@run.Identity.DriverVersion · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail</span>
-                        }
-                    </li>
-                }
-            </ul>
-        }
-    </section>
-
-    var runs = columns.Where(c => c.Run is not null).ToList();
-    if (runs.Count < 2)
-    {
-        <p class="muted">Runs at two or more of the ticked sites are needed to compare. Start them on the <a href="">Run</a> tab.</p>
-    }
-    else
-    {
-        var rows = ReportComparer.CompareSites([.. runs.Select(c => c.Run!)]);
-        <div class="summary">
-            @foreach (var c in Shown)
-            {
-                <button class="chip @Css(c) @(_filter == c ? "on" : "")" @onclick="() => _filter = _filter == c ? null : c">
-                    <span class="chip-count">@rows.Count(d => d.Change == c)</span> @Label(c)
-                </button>
-            }
-        </div>
-        <section class="card table-scroll">
-            <table class="results">
-                <thead>
-                    <tr>
-                        <th class="col-sites">Sites</th><th class="col-check">Check</th>
-                        @foreach (var (site, _) in runs) { <th>@SiteName(site)</th> }
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var d in rows.Where(d => _filter is null ? d.Change != SiteChange.Same : d.Change == _filter))
-                    {
-                        <tr class="row">
-                            <td><span class="badge @Css(d.Change)">@Label(d.Change)</span></td>
-                            @* The fix once, under the check: the same advice at every site. *@
-                            <td><span class="mono">@TestNumbers.Label(d.Id)</span>
-                                @if (d.Results.FirstOrDefault(r => r is { Outcome: not Outcome.Pass, Fix: not null }) is { } bad) { <div class="fix small">@bad.Fix</div> }</td>
-                            @foreach (var r in d.Results)
-                            {
-                                <td>@if (r is null) { <span class="muted">not checked</span> }
-                                    else { <span class="badge @ResultsTable.Css(r.Outcome)">@r.Outcome</span> @r.Message }</td>
-                            }
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
-    }
-}
-
 @code {
     private List<RunReport>? _all;  // every saved ASCOM Conformance Check run, newest first (no ConformU runs)
 
     /// <summary>Compare sits under the ASCOM Conformance Check tab: full runs only, never a ConformU follow-up.</summary>
     // Tier 1 conformance runs only: a tier 2 or 3 run diagnoses a few members, so it has nothing to compare check by check.
     private async Task<List<RunReport>> FullRunsAsync() => [.. (await Store.ListAsync()).Where(r => !RunPageState.IsConformU(r) && r.Options.Tier <= 1)];
-    private SiteChange? _filter;
-
-    private enum Mode { Sites, Versions }
-    private Mode _mode = Mode.Sites;
     private string? _beforeId, _afterId; // the runs picked (null: the default pair)
     private Change? _versionFilter;
 
@@ -225,7 +133,7 @@ else
     }
 
     private static string RunText(RunReport r)
-        => $"{r.Reference} · {r.Started:yyyy-MM-dd HH:mm} · {r.Identity.DriverVersion ?? "?"} · {r.SiteLabel}" +
+        => $"{r.Reference} · {r.Started:yyyy-MM-dd HH:mm} · {r.Identity.DriverVersion ?? "?"}" +
            (r.Cancelled || r.CommunicationLost ? " · stopped" : "") + $" · {r.Count(Outcome.Fail) + r.Count(Outcome.Error)} fail";
 
     private static string Css(Change c) => c switch
@@ -249,26 +157,14 @@ else
     };
     private string? _lastRun;
 
-    private static readonly SiteChange[] Shown = [SiteChange.Differs, SiteChange.FailsEverywhere, SiteChange.NotEverywhere, SiteChange.Same];
-
     protected override async Task OnInitializedAsync()
     {
         _lastRun = Runs.LastReport?.Id;
         _all = await FullRunsAsync();
-        Sites.Changed += OnChanged;
         Bench.Changed += OnChanged;
         Servers.Changed += OnChanged;
         Runs.Changed += OnRunsChanged;
     }
-
-    /// <summary>
-    /// Each ticked site (null: the server's own) and the server's run there, if any: the same run the
-    /// Recommendations tab uses (<see cref="ReportStore.LatestAt"/>).
-    /// </summary>
-    private List<(SiteLocation? Site, RunReport? Run)> Columns(ServerEntry server)
-        => [.. Sites.Selected().Select(site => (site, ReportStore.LatestAt(_all!, server.Target, site?.Hemisphere)))];
-
-    private static string SiteName(SiteLocation? site) => site?.Label ?? "Server's own site";
 
     private void OnChanged() => InvokeAsync(StateHasChanged);
 
@@ -281,25 +177,8 @@ else
         StateHasChanged();
     });
 
-    private static string Css(SiteChange c) => c switch
-    {
-        SiteChange.Differs => "fail",
-        SiteChange.FailsEverywhere => "warning",
-        SiteChange.Same => "pass",
-        _ => "skipped"
-    };
-
-    private static string Label(SiteChange c) => c switch
-    {
-        SiteChange.Differs => "Differs",
-        SiteChange.FailsEverywhere => "Fails at every site",
-        SiteChange.NotEverywhere => "Not checked everywhere",
-        _ => "Same, no problem"
-    };
-
     public void Dispose()
     {
-        Sites.Changed -= OnChanged;
         Bench.Changed -= OnChanged;
         Servers.Changed -= OnChanged;
         Runs.Changed -= OnRunsChanged;

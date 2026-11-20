@@ -74,6 +74,7 @@ public sealed class MotionChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             // Leave the mount as it was found: stopped, tracking as before, parked if it was.
             await ctx.TryAsync(t => { if (t.Slewing) t.AbortSlew(); });
             for (var axis = 0; axis < 3; axis++)
@@ -384,6 +385,7 @@ public sealed class MotionChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => t.SlewSettleTime = original.Value);
         }
     }
@@ -722,6 +724,7 @@ public sealed class MotionChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             if (c.CanSetTracking) await ctx.TryAsync(t => t.Tracking = true);
         }
     }
@@ -764,10 +767,15 @@ public sealed class MotionChecks : ICheckGroup
         {
             if (!ctx.Caps.CanMoveAxis[i]) continue;
             var axis = (TelescopeAxis)i;
-            var rates = ctx.Facts.GetValueOrDefault($"AxisRates.{axis}") as List<(double Minimum, double Maximum)>;
-            if (rates is not { Count: > 0 }) continue;
+            // Only ranges that make sense: the method checks report the others, and they'd stop the group here.
+            var rates = ValidRates(ctx.Facts.GetValueOrDefault($"AxisRates.{axis}"));
+            if (rates.FirstOrDefault(r => r.Maximum > 0) is not { Maximum: > 0 } range)
+            {
+                ctx.Report($"MoveAxis.{axis}", "MoveAxis", Outcome.Skipped,
+                    $"MoveAxis({axis}) not tried: AxisRates({axis}) lists no usable rate range.");
+                continue;
+            }
             var max = rates.Max(r => r.Maximum);
-            var range = rates.OrderBy(r => r.Maximum).First(r => r.Maximum > 0 || r.Minimum > 0);
             var rate = Math.Clamp(1.0, range.Minimum, range.Maximum);
             if (rate == 0) rate = range.Maximum;
             var id = $"MoveAxis.{axis}";
@@ -852,8 +860,8 @@ public sealed class MotionChecks : ICheckGroup
 
         // Both axes at once.
         if (ctx.Caps.CanMoveAxis[0] && ctx.Caps.CanMoveAxis[1]
-            && ctx.Facts.GetValueOrDefault("AxisRates.Primary") is List<(double Minimum, double Maximum)> { Count: > 0 } p
-            && ctx.Facts.GetValueOrDefault("AxisRates.Secondary") is List<(double Minimum, double Maximum)> { Count: > 0 } s)
+            && ValidRates(ctx.Facts.GetValueOrDefault("AxisRates.Primary")) is { Count: > 0 } p && p.Max(r => r.Maximum) > 0
+            && ValidRates(ctx.Facts.GetValueOrDefault("AxisRates.Secondary")) is { Count: > 0 } s && s.Max(r => r.Maximum) > 0)
         {
             var rp = Math.Clamp(1.0, p.Min(r => r.Minimum), p.Max(r => r.Maximum));
             var rs = Math.Clamp(1.0, s.Min(r => r.Minimum), s.Max(r => r.Maximum));
@@ -1011,6 +1019,7 @@ public sealed class MotionChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             foreach (var o in Offsets(c)) await ctx.TryAsync(t => o.Set(t, 0));
             if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
         }
@@ -1025,6 +1034,7 @@ public sealed class MotionChecks : ICheckGroup
             }
             finally
             {
+                using var restoring = ctx.Restoring();
                 await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
                 foreach (var o in Offsets(c)) await ctx.TryAsync(t => o.Set(t, 0));
                 if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
@@ -1397,6 +1407,13 @@ public sealed class MotionChecks : ICheckGroup
     }
 
     /// <summary>Stops any movement a faulty call started and waits for it to end.</summary>
+    /// <summary>The AxisRates ranges (a fact the method checks keep) that can be moved at: finite, not negative, Minimum ≤ Maximum; smallest first.</summary>
+    private static List<(double Minimum, double Maximum)> ValidRates(object? fact)
+        => fact is List<(double Minimum, double Maximum)> rates
+            ? [.. rates.Where(r => double.IsFinite(r.Minimum) && double.IsFinite(r.Maximum) && r.Minimum >= 0 && r.Minimum <= r.Maximum)
+                .OrderBy(r => r.Maximum)]
+            : [];
+
     public static async Task StopAsync(CheckContext ctx)
     {
         await ctx.TryAsync(t => t.AbortSlew());

@@ -28,6 +28,15 @@ namespace GS.TestHarness.Engine.Checks;
 /// </summary>
 public sealed class ProtocolChecks : ICheckGroup
 {
+    /// <summary>
+    /// A whole number from a reply, or null when it isn't one (a string, 4242.0, too big): a check then fails on the
+    /// value instead of the group stopping on a FormatException.
+    /// </summary>
+    private static long? Int(JsonElement e) => e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out var v) ? v : null;
+
+    /// <summary>A string from a reply, or null when it's another JSON type (GetString would throw).</summary>
+    private static string? Str(JsonElement e) => e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+
     public const string ApiReference = "https://ascom-standards.org/api/";
 
     public string Name => "Protocol";
@@ -112,7 +121,7 @@ public sealed class ProtocolChecks : ICheckGroup
     private static async Task ManagementAsync(CheckContext ctx, HttpClient http)
     {
         var versions = await GetAsync(ctx, http, "management/apiversions?ClientID=1&ClientTransactionID=1");
-        var hasV1 = versions.Field("Value") is { ValueKind: JsonValueKind.Array } arr && arr.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Number && v.GetInt32() == 1);
+        var hasV1 = versions.Field("Value") is { ValueKind: JsonValueKind.Array } arr && arr.EnumerateArray().Any(v => v.ValueKind == JsonValueKind.Number && Int(v) == 1);
         ctx.Report("Management.ApiVersions", "/management/apiversions", hasV1 ? Outcome.Pass : Outcome.Fail,
             hasV1 ? "apiversions lists version 1." : "apiversions doesn't list version 1.",
             expected: "{\"Value\":[1], ...}", actual: versions.Shown, ms: versions.Ms, reference: ApiReference,
@@ -137,11 +146,13 @@ public sealed class ProtocolChecks : ICheckGroup
         var devices = await GetAsync(ctx, http, "management/v1/configureddevices?ClientID=1&ClientTransactionID=3");
         var list = devices.Field("Value") is { ValueKind: JsonValueKind.Array } a ? a.EnumerateArray().ToList() : null;
         var ours = list?.FirstOrDefault(e => e.ValueKind == JsonValueKind.Object
-                                             && e.TryGetProperty("DeviceType", out var t) && string.Equals(t.GetString(), "Telescope", StringComparison.OrdinalIgnoreCase)
-                                             && e.TryGetProperty("DeviceNumber", out var n) && n.ValueKind == JsonValueKind.Number && n.GetInt32() == ctx.Target.DeviceNumber);
+                                             && e.TryGetProperty("DeviceType", out var t) && string.Equals(Str(t), "Telescope", StringComparison.OrdinalIgnoreCase)
+                                             && e.TryGetProperty("DeviceNumber", out var n) && n.ValueKind == JsonValueKind.Number && Int(n) == ctx.Target.DeviceNumber);
         string? problem = list is null ? "Value isn't an array"
             : ours is not { ValueKind: JsonValueKind.Object } o ? $"telescope {ctx.Target.DeviceNumber} isn't listed"
             : new[] { "DeviceName", "DeviceType", "DeviceNumber", "UniqueID" }.FirstOrDefault(f => !o.TryGetProperty(f, out _)) is { } f ? $"its entry has no {f}"
+            : o.GetProperty("UniqueID").ValueKind != JsonValueKind.String ? "its UniqueID isn't a string"
+            : o.GetProperty("UniqueID").ValueKind != JsonValueKind.String ? "its UniqueID isn't a string"
             : string.IsNullOrWhiteSpace(o.GetProperty("UniqueID").GetString()) ? "its UniqueID is empty" : null;
         ctx.Report("Management.ConfiguredDevices", "/management/v1/configureddevices", problem is null ? Outcome.Pass : Outcome.Fail,
             problem is null ? $"configureddevices lists telescope {ctx.Target.DeviceNumber}." : $"configureddevices: {problem}.",
@@ -151,7 +162,7 @@ public sealed class ProtocolChecks : ICheckGroup
             sourcePatterns: ["configureddevices", "UniqueID"]);
 
         // The UniqueID must never change: compare with the last saved run of this device.
-        if (ours is { ValueKind: JsonValueKind.Object } me && me.TryGetProperty("UniqueID", out var uid) && uid.GetString() is { Length: > 0 } uniqueId)
+        if (ours is { ValueKind: JsonValueKind.Object } me && me.TryGetProperty("UniqueID", out var uid) && Str(uid) is { Length: > 0 } uniqueId)
         {
             ctx.Identity = ctx.Identity with { UniqueId = uniqueId };
             if (ctx.Previous?.Identity.UniqueId is { Length: > 0 } before)
@@ -170,7 +181,7 @@ public sealed class ProtocolChecks : ICheckGroup
         }
         if (list is not null)
         {
-            var ids = list.Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("UniqueID", out _)).Select(e => e.GetProperty("UniqueID").GetString()).ToList();
+            var ids = list.Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("UniqueID", out _)).Select(e => Str(e.GetProperty("UniqueID"))).ToList();
             if (ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() != ids.Count)
                 ctx.Report("Management.UniqueIds", "/management/v1/configureddevices", Outcome.Fail, "Two devices share a UniqueID.",
                     actual: string.Join(", ", ids), reference: ApiReference,
@@ -191,8 +202,8 @@ public sealed class ProtocolChecks : ICheckGroup
         }
         var echoed = first.Field("ClientTransactionID");
         ctx.Report("ClientTransactionID.Echo", "ClientTransactionID",
-            echoed is { ValueKind: JsonValueKind.Number } e && e.GetInt64() == 4242 ? Outcome.Pass : Outcome.Fail,
-            "The reply's ClientTransactionID " + (echoed is { ValueKind: JsonValueKind.Number } e2 && e2.GetInt64() == 4242 ? "matches the request's." : "doesn't match the request's."),
+            echoed is { ValueKind: JsonValueKind.Number } e && Int(e) == 4242 ? Outcome.Pass : Outcome.Fail,
+            "The reply's ClientTransactionID " + (echoed is { ValueKind: JsonValueKind.Number } e2 && Int(e2) == 4242 ? "matches the request's." : "doesn't match the request's."),
             expected: "4242", actual: echoed?.ToString() ?? "(missing)", ms: first.Ms, reference: ApiReference,
             fix: "Return the request's ClientTransactionID unchanged in every reply, so clients can match replies to requests.",
             sourcePatterns: ["ClientTransactionID"]);
@@ -200,7 +211,7 @@ public sealed class ProtocolChecks : ICheckGroup
         var second = await GetAsync(ctx, http, $"{device}/name?ClientID=7&ClientTransactionID=4243");
         var s1 = first.Field("ServerTransactionID");
         var s2 = second.Field("ServerTransactionID");
-        var ok = s1 is { ValueKind: JsonValueKind.Number } a && s2 is { ValueKind: JsonValueKind.Number } b && a.GetInt64() > 0 && b.GetInt64() > a.GetInt64();
+        var ok = s1 is { ValueKind: JsonValueKind.Number } a && s2 is { ValueKind: JsonValueKind.Number } b && Int(a) > 0 && Int(b) > Int(a);
         ctx.Report("ServerTransactionID.Increases", "ServerTransactionID", ok ? Outcome.Pass : Outcome.Fail,
             ok ? "ServerTransactionID is positive and increases." : "ServerTransactionID is missing, zero or doesn't increase.",
             expected: "a positive number that increases with each reply", actual: $"{s1?.ToString() ?? "(missing)"}, then {s2?.ToString() ?? "(missing)"}",
@@ -209,7 +220,7 @@ public sealed class ProtocolChecks : ICheckGroup
 
         // Query parameter names are case-insensitive.
         var lower = await GetAsync(ctx, http, $"{device}/name?clientid=7&clienttransactionid=4244");
-        var lowerOk = lower.Status == HttpStatusCode.OK && lower.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } l && l.GetInt64() == 4244;
+        var lowerOk = lower.Status == HttpStatusCode.OK && lower.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } l && Int(l) == 4244;
         ctx.Report("Query.CaseInsensitive", "query parameters", lowerOk ? Outcome.Pass : Outcome.Fail,
             lowerOk ? "Lower-case query parameter names (clienttransactionid) are accepted." : "Lower-case query parameter names aren't recognised.",
             expected: "ClientTransactionID 4244", actual: lower.Shown, reference: ApiReference,
@@ -218,14 +229,14 @@ public sealed class ProtocolChecks : ICheckGroup
 
         // A missing or malformed ClientTransactionID is not an error.
         var none = await GetAsync(ctx, http, $"{device}/name");
-        var noneOk = none.Status == HttpStatusCode.OK && none.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } n && n.GetInt64() == 0;
+        var noneOk = none.Status == HttpStatusCode.OK && none.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } n && Int(n) == 0;
         ctx.Report("ClientTransactionID.Missing", "ClientTransactionID", noneOk ? Outcome.Pass : Outcome.Warning,
             noneOk ? "Without a ClientTransactionID the reply has 0." : "Without a ClientTransactionID the reply doesn't have 0.",
             expected: "HTTP 200 with ClientTransactionID 0", actual: none.Shown, reference: ApiReference,
             fix: "When the request has no ClientTransactionID, reply normally with ClientTransactionID 0.", sourcePatterns: ["ClientTransactionID"]);
 
         var bad = await GetAsync(ctx, http, $"{device}/name?ClientID=7&ClientTransactionID=abc");
-        var badOk = bad.Status == HttpStatusCode.OK && bad.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } z && z.GetInt64() == 0;
+        var badOk = bad.Status == HttpStatusCode.OK && bad.Field("ClientTransactionID") is { ValueKind: JsonValueKind.Number } z && Int(z) == 0;
         ctx.Report("ClientTransactionID.Invalid", "ClientTransactionID", badOk ? Outcome.Pass : Outcome.Warning,
             badOk ? "A non-numeric ClientTransactionID is answered with 0." : "A non-numeric ClientTransactionID isn't answered with 0.",
             expected: "HTTP 200 with ClientTransactionID 0", actual: bad.Shown, reference: ApiReference,
@@ -245,7 +256,7 @@ public sealed class ProtocolChecks : ICheckGroup
             if (reply.Field(field) is not null) continue;
             problems.Add(reply.FieldNameIgnoringCase(field) is { Length: > 0 } wrong ? $"{field} is spelled \"{wrong}\"" : $"{field} is missing");
         }
-        if (reply.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } en && en.GetInt32() == 0
+        if (reply.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } en && Int(en) == 0
             && reply.Field("ErrorMessage") is { } em && em.ToString().Length > 0)
             problems.Add("ErrorMessage isn't empty although ErrorNumber is 0");
         if (reply.Field("Value") is { } v && v.ValueKind != JsonValueKind.Number)
@@ -263,7 +274,7 @@ public sealed class ProtocolChecks : ICheckGroup
         foreach (var (path, member) in new[] { ($"{device}/devicestate", "devicestate"), ($"{device}/connecting", "connecting") })
         {
             var r = await GetAsync(ctx, http, $"{path}?ClientID=7&ClientTransactionID=6");
-            var ok = r.Status == HttpStatusCode.OK && r.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } n && n.GetInt32() == 0;
+            var ok = r.Status == HttpStatusCode.OK && r.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } n && Int(n) == 0;
             ctx.Report($"Endpoint.{member}", $"GET {member}", ok ? Outcome.Pass : Outcome.Fail,
                 ok ? $"GET {member} answers." : $"GET {member} doesn't answer as ITelescopeV4 requires.",
                 actual: r.Shown, reference: ApiReference,
@@ -277,7 +288,7 @@ public sealed class ProtocolChecks : ICheckGroup
     private static async Task ErrorsAsync(CheckContext ctx, HttpClient http, string device)
     {
         var r = await GetAsync(ctx, http, $"{device}/canmoveaxis?Axis=9&ClientID=7&ClientTransactionID=7");
-        var number = r.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } n ? n.GetInt32() : (int?)null;
+        var number = r.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } n ? (int?)Int(n) : null;
         var ok = r.Status == HttpStatusCode.OK && number == 0x401;
         ctx.Report("Errors.InvalidValue", "ErrorNumber", ok ? Outcome.Pass : Outcome.Fail,
             ok ? "An invalid value is answered with HTTP 200 and ErrorNumber 0x401." : "An invalid value isn't answered with HTTP 200 and ErrorNumber 0x401.",
@@ -288,7 +299,7 @@ public sealed class ProtocolChecks : ICheckGroup
                   "exception and turn it into ErrorNumber/ErrorMessage."
                 : "Map InvalidValueException to ErrorNumber 0x401 (1025).",
             sourcePatterns: r.Status == HttpStatusCode.BadRequest ? ["data validation error", "InvalidModelStateResponseFactory"] : ["InvalidValueException", "ErrorNumber"]);
-        if (ok && r.Field("ErrorMessage") is { } m && string.IsNullOrWhiteSpace(m.GetString()))
+        if (ok && r.Field("ErrorMessage") is { } m && string.IsNullOrWhiteSpace(Str(m)))
             ctx.Report("Errors.Message", "ErrorMessage", Outcome.Warning, "An error reply has an empty ErrorMessage.",
                 reference: ApiReference, fix: "Put a description of the error in ErrorMessage whenever ErrorNumber isn't 0.",
                 sourcePatterns: ["ErrorMessage"]);
@@ -359,7 +370,7 @@ public sealed class ProtocolChecks : ICheckGroup
         // Numbers are invariant culture: a decimal comma is not a number.
         var comma = await PutAsync(ctx, http, $"{device}/targetrightascension", ("TargetRightAscension", "12,5"), ("ClientID", "7"), ("ClientTransactionID", "21"));
         var commaOk = comma.Status == HttpStatusCode.BadRequest
-                      || comma.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } en && en.GetInt32() == 0x401;
+                      || comma.Field("ErrorNumber") is { ValueKind: JsonValueKind.Number } en && Int(en) == 0x401;
         ctx.Report("BadRequest.DecimalComma", "PUT parameters", commaOk ? Outcome.Pass : Outcome.Fail,
             commaOk ? "\"12,5\" (a decimal comma) is refused." : "\"12,5\" (a decimal comma) was accepted as a number.",
             expected: "HTTP 400 (or ErrorNumber 0x401)", actual: comma.Shown, reference: ApiReference,
@@ -477,7 +488,7 @@ public sealed class ProtocolChecks : ICheckGroup
         try
         {
             using var doc = JsonDocument.Parse(reply);
-            if (doc.RootElement.TryGetProperty("AlpacaPort", out var p) && p.ValueKind == JsonValueKind.Number) port = p.GetInt32();
+            if (doc.RootElement.TryGetProperty("AlpacaPort", out var p) && p.ValueKind == JsonValueKind.Number) port = Int(p) is { } ap and >= 0 and <= 65535 ? (int)ap : null;
         }
         catch (JsonException) { }
         ctx.Report("Discovery", "UDP discovery", port == ctx.Target.Port ? Outcome.Pass : port is null ? Outcome.Fail : Outcome.Warning,

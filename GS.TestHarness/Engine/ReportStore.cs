@@ -26,7 +26,15 @@ public sealed class ReportStore(string folder)
 {
     public static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
-    public string Folder { get; } = folder;
+    /// <summary>The reports folder, as a full path (a relative ReportsFolder is taken from the current folder).</summary>
+    public string Folder { get; } = Path.GetFullPath(folder);
+
+    /// <summary>
+    /// Where the app's settings files (servers.json, last-run.json...) sit: beside the reports folder, or in it when it is a
+    /// drive's root.
+    /// </summary>
+    public string SettingsFolder => Path.GetDirectoryName(Folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) is { Length: > 0 } parent
+        ? parent : Folder;
 
     public static string DefaultFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments, Environment.SpecialFolderOption.Create) is { Length: > 0 } docs
@@ -180,17 +188,13 @@ public sealed class ReportStore(string folder)
     }
 
     /// <summary>
-    /// The run that stands for one device at one site: its newest finished run, or its newest stopped one when
+    /// The run that stands for one device: its newest finished run, or its newest stopped one when
     /// none finished (a stopped run didn't make every check, so it would hide what a finished one found).
     /// </summary>
     /// A tier 2 or 3 run only diagnoses a few members, so it stands for the device only when there is no tier 1 run.
-    public static RunReport? Representative(IEnumerable<RunReport> runsOfOneDeviceAtOneSite)
-        => runsOfOneDeviceAtOneSite.OrderBy(r => r.Options.Tier > 1).ThenBy(r => r.Cancelled || r.CommunicationLost)
+    public static RunReport? Representative(IEnumerable<RunReport> runsOfOneDevice)
+        => runsOfOneDevice.OrderBy(r => r.Options.Tier > 1).ThenBy(r => r.Cancelled || r.CommunicationLost)
             .ThenByDescending(r => r.Started).FirstOrDefault();
-
-    /// <summary>The run that stands for <paramref name="target"/> at the site with this hemisphere (null: the server's own site).</summary>
-    public static RunReport? LatestAt(IEnumerable<RunReport> runs, TestTarget target, string? hemisphere)
-        => Representative(runs.Where(r => TestTarget.SameDevice(r.Target, target) && r.Site?.Hemisphere == hemisphere));
 
     /// <summary>The newest saved run of the same device (by target), other than <paramref name="exceptId"/>.</summary>
     public async Task<RunReport?> LatestForAsync(TestTarget target, string? exceptId = null)
@@ -213,7 +217,6 @@ public sealed class ReportStore(string folder)
         sb.AppendLine();
         sb.AppendLine($"- Report: {r.Reference} ({r.Id})");
         sb.AppendLine($"- Target: {r.Target.Display}");
-        sb.AppendLine($"- Site: {r.SiteLabel}{(r.Site is { } site ? $" ({site.Coordinates})" : "")}");
         sb.AppendLine($"- Device: {r.Identity.Name} — {r.Identity.Description}");
         sb.AppendLine($"- DriverInfo: {r.Identity.DriverInfo}");
         sb.AppendLine($"- DriverVersion: {r.Identity.DriverVersion}, InterfaceVersion: {r.Identity.InterfaceVersion}");
@@ -274,24 +277,6 @@ public enum Change
     Same
 }
 
-/// <summary>How a check came out across the sites, worst first.</summary>
-public enum SiteChange
-{
-    /// <summary>Another outcome (or, for a problem, another message) at some site.</summary>
-    Differs,
-
-    /// <summary>The same problem at every site.</summary>
-    FailsEverywhere,
-
-    /// <summary>The same result wherever it was made, but some site's run didn't make it.</summary>
-    NotEverywhere,
-
-    /// <summary>No problem, at every site.</summary>
-    Same
-}
-
-public sealed record SiteComparedCheck(string Id, string Group, string Member, CheckResult?[] Results, SiteChange Change);
-
 public sealed record ComparedCheck(string Id, string Group, string Member, CheckResult? Before, CheckResult? After, Change Change);
 
 /// <summary>
@@ -329,33 +314,6 @@ public static class ReportComparer
     }
 
     /// <summary>
-    /// Compares runs of one device at several sites (server's own, north, south) check by check. Each row holds
-    /// the check's result in each run, in the runs' order (null: that run didn't make it).
-    /// </summary>
-    public static List<SiteComparedCheck> CompareSites(IReadOnlyList<RunReport> runs)
-    {
-        static Dictionary<string, CheckResult> Index(RunReport r) => r.Results
-            .GroupBy(x => x.Id)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => Severity(x.Outcome)).First());
-        var indexes = runs.Select(Index).ToList();
-        var list = new List<SiteComparedCheck>();
-        foreach (var id in indexes.SelectMany(i => i.Keys).Distinct())
-        {
-            var results = indexes.Select(i => i.GetValueOrDefault(id)).ToArray();
-            var made = results.OfType<CheckResult>().ToList();
-            var any = made[0];
-            SiteChange change;
-            if (made.Select(r => Severity(r.Outcome)).Distinct().Count() > 1
-                || (Severity(any.Outcome) > 0 && made.Select(r => r.Message).Distinct().Count() > 1))
-                change = SiteChange.Differs;
-            else if (made.Count < results.Length) change = SiteChange.NotEverywhere;
-            else change = Severity(any.Outcome) > 0 ? SiteChange.FailsEverywhere : SiteChange.Same;
-            list.Add(new SiteComparedCheck(id, any.Group, any.Member, results, change));
-        }
-        return [.. list.OrderBy(c => c.Change).ThenBy(c => c.Id, StringComparer.Ordinal)];
-    }
-
-    /// <summary>
     /// Whether two runs are of different programs (another server, or another device on it) rather than two
     /// versions of the same one.
     /// </summary>
@@ -365,8 +323,8 @@ public static class ReportComparer
 
     /// <summary>
     /// The two runs of one device to compare by default, for a regression check across driver versions: its newest
-    /// run (after), and the newest earlier run at the same site with another DriverVersion (before); failing that,
-    /// the newest earlier run at the same site, then at any site. Null with fewer than two runs.
+    /// run (after), and the newest earlier run with another DriverVersion (before); failing that, the newest earlier
+    /// run. Null with fewer than two runs.
     /// </summary>
     public static (RunReport Before, RunReport After)? DefaultVersionPair(IEnumerable<RunReport> runsOfOneDevice)
     {
@@ -374,22 +332,19 @@ public static class ReportComparer
         if (runs.Count < 2) return null;
         var after = runs[0];
         var earlier = runs.Skip(1).ToList();
-        var sameSite = earlier.Where(r => r.Site?.Hemisphere == after.Site?.Hemisphere).ToList();
-        var before = sameSite.FirstOrDefault(r => !string.Equals(r.Identity.DriverVersion, after.Identity.DriverVersion, StringComparison.OrdinalIgnoreCase))
-                     ?? sameSite.FirstOrDefault()
+        var before = earlier.FirstOrDefault(r => !string.Equals(r.Identity.DriverVersion, after.Identity.DriverVersion, StringComparison.OrdinalIgnoreCase))
                      ?? earlier[0];
         return (before, after);
     }
 
     /// <summary>
-    /// What makes two runs not like for like (another site, other options, another program), for a warning above
+    /// What makes two runs not like for like (other options, another program), for a warning above
     /// the comparison: such differences show up as checks gone or added rather than as regressions.
     /// </summary>
     public static List<string> Differences(RunReport before, RunReport after)
     {
         var list = new List<string>();
         if (AreDifferentPrograms(before, after)) list.Add("they are runs of different programs");
-        if (before.Site?.Hemisphere != after.Site?.Hemisphere) list.Add($"they were made at different sites ({before.SiteLabel}, {after.SiteLabel})");
         void Option(string name, bool a, bool b) { if (a != b) list.Add($"{name} was {(a ? "on" : "off")} before and {(b ? "on" : "off")} after"); }
         Option("motion", before.Options.AllowMotion, after.Options.AllowMotion);
         Option("settings writes", before.Options.AllowSettingsWrites, after.Options.AllowSettingsWrites);
@@ -444,8 +399,10 @@ public static class ReportCsv
     {
         value ??= "";
         // A spreadsheet runs a cell that starts like a formula: device messages are untrusted, so make it text.
+        // A leading '-' is only safe on a plain number: "-2+3+cmd|..." starts with a digit too.
         if (value.Length > 0 && (value[0] is '=' or '+' or '@' or '\t' or '\r'
-                                 || (value[0] == '-' && (value.Length == 1 || !(char.IsDigit(value[1]) || value[1] is '.' or ' ')))))
+                                 || (value[0] == '-' && !double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture, out _))))
             value = "'" + value;
         return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
     }

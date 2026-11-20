@@ -440,6 +440,7 @@ public static partial class AreaDiagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => t.TrackingRate = DriveRate.Sidereal);
             await SetOffsetsAsync(ctx, probes, 0);
             if (originalRate.Ok) await ctx.TryAsync(t => t.TrackingRate = originalRate.Value);
@@ -644,6 +645,7 @@ public static partial class AreaDiagnostics
             }
             finally
             {
+                using var restoring = ctx.Restoring();
                 await MotionChecks.StopAsync(ctx);
                 await ctx.TryAsync(t => t.Tracking = wasTracking);
             }
@@ -801,6 +803,7 @@ public static partial class AreaDiagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => t.Connect(), TimeSpan.FromSeconds(30));
             await ctx.WaitUntilAsync(t => !t.Connecting, TimeSpan.FromSeconds(30), 100);
         }
@@ -872,6 +875,7 @@ public static partial class AreaDiagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             if (original.Ok) await ctx.TryAsync(t => t.SlewSettleTime = original.Value);
         }
 
@@ -1109,6 +1113,7 @@ public static partial class AreaDiagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             if (original.Ok) await ctx.TryAsync(t => t.SlewSettleTime = original.Value);
             await ctx.WaitForSlewEndAsync();
         }

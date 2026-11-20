@@ -54,7 +54,7 @@ else
         <table class="results reports">
             <thead>
                 <tr><th class="col-check-box"><input type="checkbox" checked="@all" title="Select all" aria-label="Select all reports"
-                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>Ref</th><th>When</th><th>Tier</th><th>Device</th>@if (SiteStore.HemisphereSites) { <th>Site</th> }<th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
+                                                     @onchange="e => SelectAll((bool)e.Value!)" /></th><th>Ref</th><th>When</th><th>Tier</th><th>Device</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
             </thead>
             <tbody>
                 @foreach (var r in _reports)
@@ -103,11 +103,6 @@ else
                                 @if (r.CommunicationLost) { <span class="tag">connection lost</span> }
                             </div>
                         </td>
-                        @* Only the server's own site is offered while the hemisphere sites are off: the column would always say so. *@
-                        @if (SiteStore.HemisphereSites)
-                        {
-                            <td>@r.SiteLabel</td>
-                        }
                         <td><span class="via"><img src="@(r.Target.Kind == TargetKind.Com ? "com.svg" : "alpaca.png")" alt="" />@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca")</span></td>
                         @* Fail, warning and pass as one bar: how the run went at a glance. *@
                         <td class="col-bar">

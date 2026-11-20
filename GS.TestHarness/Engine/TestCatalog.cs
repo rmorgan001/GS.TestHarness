@@ -96,8 +96,7 @@ public static class TestCatalog
 
     public static readonly IReadOnlyList<CatalogGroup> Groups =
     [
-        new("Run", "Run-level findings: the site the run used, groups skipped and runs stopped.", "Always"),
-        new("Site", "Moving the mount to the run's site and back.", "A run at a saved northern or southern site"),
+        new("Run", "Run-level findings: groups skipped and runs stopped.", "Always"),
         new("Connection", "Connecting, and what the device says it is.", "Always"),
         new("Protocol", "The Alpaca HTTP protocol under the interface.", "Alpaca servers, unless turned off"),
         new("Common", "Members every ASCOM device has.", "Always"),
@@ -138,8 +137,6 @@ public static class TestCatalog
             E("{group}", "Stopped", "Record a run that couldn't go on.", "A group raises a stop (e.g. the device can't be reached or won't connect).", "Error: the rest of the run is abandoned and the reason given.", "Harness"),
             E("{group}", "CommunicationLost", "Stop cleanly when the device goes away, instead of failing every remaining check.", "After connecting, a call that fails with a lost-connection error (COM RPC server unavailable or disconnected, Alpaca connection refused or reset), or three timeouts in a row, is followed by a short Connected read to confirm the device has gone.", "Error, with the last call's error and the confirming read's error. The groups that need the device are skipped; Performance still summarises the run; the findings so far are kept.", "Harness"),
             E("{group}", "Unexpected", "Record a check that crashed.", "Any unexpected exception inside a group is caught.", "Error, with the exception; the remaining groups still run.", "Harness"),
-            E("Site", "Apply", "Run the checks at a chosen site.", "Reads the server's own SiteLatitude/Longitude/Elevation, then writes the site's values after connecting.", "Info when set; Error if the server's site can't be read or the new site isn't accepted.", "V4", "Harness"),
-            E("Site", "Restore", "Leave the server as it was found.", "Writes the server's own site back at the end of the run.", "Info when restored; Error if it couldn't be put back.", "Harness"),
 
             // ---------- Connection ----------
             E("Connection", "Connected.Read", "Connected must always be readable.", "Reads Connected before connecting.", "Pass if it reads; Fail on an error (Error and the run stops if the device can't be reached).", "V4"),

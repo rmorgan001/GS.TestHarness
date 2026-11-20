@@ -25,7 +25,7 @@ public sealed class TargetStore(ReportStore reports, ILogger<TargetStore> log)
     public sealed record Saved(string? ServerId, RunOptions Options);
 
     private readonly object _gate = new();
-    private string PathOf => Path.Combine(Path.GetDirectoryName(reports.Folder)!, "last-run.json");
+    private string PathOf => Path.Combine(reports.SettingsFolder, "last-run.json");
 
     public Saved Load()
     {

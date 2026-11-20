@@ -60,13 +60,16 @@ public sealed class ClientsChecks : ICheckGroup
     private static async Task TwoClientsAsync(CheckContext ctx)
     {
         ITelescopeSession? b = null, c = null;
+        var bConnected = false; // B is still connected (to disconnect in the finally): a client left behind fails the Disconnected checks
         try
         {
             b = await ctx.OpenSession!();
             c = await ctx.OpenSession!();
+            bConnected = true;
             await ConnectAsync(b);
             await ConnectAsync(c);
             await DisconnectAsync(b);
+            bConnected = false;
             // B has disconnected while C still holds the device. Connected reports the hardware state: in a hub it stays
             // true until every client has disconnected, and the ASCOM notes say a client that set it false and still reads
             // true is "not an error". So true is allowed here, and false (B's own state) is fine too. ConformU still reports
@@ -103,7 +106,11 @@ public sealed class ClientsChecks : ICheckGroup
         finally
         {
             if (c is not null) { await Quietly(() => DisconnectAsync(c)); await c.DisposeAsync(); }
-            if (b is not null) await b.DisposeAsync();
+            if (b is not null)
+            {
+                if (bConnected) await Quietly(() => DisconnectAsync(b));
+                await b.DisposeAsync();
+            }
         }
     }
 

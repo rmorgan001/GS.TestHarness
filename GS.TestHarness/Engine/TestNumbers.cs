@@ -39,8 +39,8 @@ public static class TestNumbers
         (1002, "{group}.Stopped"),
         (1003, "{group}.CommunicationLost"),
         (1004, "{group}.Unexpected"),
-        (1005, "Site.Apply"),
-        (1006, "Site.Restore"),
+        (1005, "retired:Site.Apply"), // northern/southern site runs removed
+        (1006, "retired:Site.Restore"),
         (1007, "Connection.Connected.Read"),
         (1008, "Connection.Connect"),
         (1009, "Connection.Connect.ConnectingOnReturn"),

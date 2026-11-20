@@ -130,6 +130,7 @@ internal static class Diagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             if (c.CanSetRightAscensionRate) await ctx.TryAsync(t => t.RightAscensionRate = 0);
             if (c.CanSetDeclinationRate) await ctx.TryAsync(t => t.DeclinationRate = 0);
             await ctx.WaitUntilAsync(t => !t.IsPulseGuiding, TimeSpan.FromSeconds(10), 100);
@@ -362,6 +363,7 @@ internal static class Diagnostics
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => { if (ra) t.RightAscensionRate = 0; else t.DeclinationRate = 0; });
         }
     }

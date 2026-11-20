@@ -55,7 +55,6 @@ builder.Services.AddSingleton<RunService>();
 builder.Services.AddSingleton<TargetStore>();
 // Each person's own source folders (the Options tab), applied to the SourceLocator when created.
 builder.Services.AddSingleton<SourceStore>();
-builder.Services.AddSingleton<SiteStore>();
 // Data Protection encrypts the saved server passwords; a fixed name keeps its keys usable wherever the app runs from.
 builder.Services.AddDataProtection().SetApplicationName("GS.TestHarness");
 builder.Services.AddSingleton<ServerList>();
@@ -73,8 +72,7 @@ app.Services.GetRequiredService<SourceStore>();
 
 // --run: check one device from the command line and exit (see Cli).
 if (Cli.IsCli(args))
-    return await Cli.RunAsync(args, app.Services.GetRequiredService<SourceLocator>(), app.Services.GetRequiredService<ReportStore>(),
-        app.Services.GetRequiredService<SiteStore>());
+    return await Cli.RunAsync(args, app.Services.GetRequiredService<SourceLocator>(), app.Services.GetRequiredService<ReportStore>());
 
 if (!app.Environment.IsDevelopment())
 {
@@ -91,7 +89,7 @@ app.MapGet("/download/recommendations.md", async (ReportStore store) =>
 
 // Report downloads: Markdown (to paste into an issue) and the raw JSON.
 app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
-    await store.LoadAsync(id) is { } report
+    await TryLoadAsync(store, id) is { } report
         ? Results.File(System.Text.Encoding.UTF8.GetBytes(ReportStore.ToMarkdown(report)), "text/markdown; charset=utf-8", $"{id}.md")
         : Results.NotFound());
 app.MapGet("/download/{id}.csv", async (string id, ReportStore store) =>
@@ -104,7 +102,7 @@ app.MapGet("/download/compare/{before}/{after}.csv", async (string before, strin
             $"{ReportCsv.FileName($"{a.Label}_vs_{b.Identity.DriverVersion}")}.csv")
         : Results.NotFound());
 app.MapGet("/download/{id}.json", async (string id, ReportStore store) =>
-    await store.LoadAsync(id) is { } report
+    await TryLoadAsync(store, id) is { } report
         ? Results.File(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(report, ReportStore.Json), "application/json", $"{id}.json")
         : Results.NotFound());
 

@@ -39,7 +39,7 @@ public class EngineTests(ITestOutputHelper output)
     internal static readonly RunOptions WithExtended = Everything with { Extended = true };
 
     internal static async Task<RunReport> RunAsync(FakeTelescope fake, RunOptions? options = null, TestTarget? target = null,
-        SiteLocation? site = null, ConformULog? conformU = null, RunReport? followsUp = null)
+        ConformULog? conformU = null, RunReport? followsUp = null)
     {
         var runner = new TestRunner(SourceLocator.None);
         await using var session = new DirectSession(fake);
@@ -47,30 +47,11 @@ public class EngineTests(ITestOutputHelper output)
         var clients = 0;
         var report = await runner.RunAsync(session, target ?? new TestTarget(), options ?? Everything,
             openSession: () => Task.FromResult<ITelescopeSession>(new DirectSession(fake, Interlocked.Increment(ref clients))),
-            site: site, conformU: conformU, followsUp: followsUp);
+            conformU: conformU, followsUp: followsUp);
         // The Tests page must describe every finding a run can make.
         var uncatalogued = report.Results.Select(r => r.Id).Where(id => TestCatalog.For(id) is null).Distinct().ToList();
         Assert.True(uncatalogued.Count == 0, "Not in Engine/TestCatalog.cs: " + string.Join(", ", uncatalogued));
         return report;
-    }
-
-    [Fact]
-    public async Task A_run_at_another_site_sets_it_and_puts_the_servers_own_back()
-    {
-        var fake = new FakeTelescope();
-        var report = await RunAsync(fake, Everything, site: SiteLocation.DefaultNorth);
-        Dump(report);
-        Assert.DoesNotContain(report.Results, r => r.IsProblem);
-        Assert.Equal(Outcome.Info, Assert.Single(report.Results, r => r.Id == "Site.Apply").Outcome);
-        Assert.Equal(Outcome.Info, Assert.Single(report.Results, r => r.Id == "Site.Restore").Outcome);
-        Assert.Contains("@ Mauna Kea", report.Label);
-        // The capability checks saw the new site.
-        Assert.Contains(report.Results, r => r.Id == "Properties.SiteLatitude.Read" && r.Message.Contains("19.8207"));
-
-        // Afterwards the mount is back at its own site.
-        await using var reader = new DirectSession(fake, 99);
-        var (lat, lon, elev) = await reader.RunAsync(t => { t.Connect(); return (t.SiteLatitude, t.SiteLongitude, t.SiteElevation); }, TimeSpan.FromSeconds(5));
-        Assert.Equal((28.5, -81.4, 30.0), (lat, lon, elev));
     }
 
     private void Dump(RunReport report, Func<CheckResult, bool>? which = null)

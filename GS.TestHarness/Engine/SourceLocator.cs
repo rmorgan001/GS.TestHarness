@@ -47,7 +47,8 @@ public sealed class CodebaseOptions
 public sealed class SourceLocator
 {
     private readonly ConcurrentDictionary<Codebase, (string Root, string[] TelescopeFiles)> _codebases = new();
-    private readonly ConcurrentDictionary<string, string[]> _lines = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Each file's lines, with the write time and size they were read at: an edited or re-downloaded file is read again.</summary>
+    private readonly ConcurrentDictionary<string, (DateTime Written, long Size, string[] Lines)> _lines = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<Codebase, string[]> _allFiles = new();
     private readonly IReadOnlyDictionary<Codebase, CodebaseOptions> _options;
     private readonly string _searchFrom;
@@ -280,12 +281,21 @@ public sealed class SourceLocator
         return i < 0 ? line : line[..i];
     }
 
-    private string[] Lines(string file) => _lines.GetOrAdd(file, f =>
+    private string[] Lines(string file)
     {
-        try { return File.ReadAllLines(f); }
+        try
+        {
+            var info = new FileInfo(file);
+            if (!info.Exists) return [];
+            var (written, size) = (info.LastWriteTimeUtc, info.Length);
+            if (_lines.TryGetValue(file, out var cached) && cached.Written == written && cached.Size == size) return cached.Lines;
+            var lines = File.ReadAllLines(file);
+            _lines[file] = (written, size, lines);
+            return lines;
+        }
         catch (IOException) { return []; }
         catch (UnauthorizedAccessException) { return []; }
-    });
+    }
 
     private static string Relative(string root, string file) => Path.GetRelativePath(root, file).Replace('\\', '/');
 
@@ -304,12 +314,7 @@ public sealed class SourceLocator
 
     private string? FindIn(string root, string file, Regex regex)
     {
-        var lines = _lines.GetOrAdd(file, f =>
-        {
-            try { return File.ReadAllLines(f); }
-            catch (IOException) { return []; }
-            catch (UnauthorizedAccessException) { return []; }
-        });
+        var lines = Lines(file);
         for (var i = 0; i < lines.Length; i++)
             if (regex.IsMatch(lines[i]))
                 return $"{Path.GetRelativePath(root, file).Replace('\\', '/')}:{i + 1}";

@@ -54,6 +54,7 @@ public sealed class ParkHomeChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => { if (t.Slewing) t.AbortSlew(); });
             var parked = (await ctx.TryAsync(t => t.AtPark)).Value;
             if (wasParked && !parked && c.CanPark)

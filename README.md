@@ -9,9 +9,8 @@ A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server i
 - An **Alpaca Server**, over Alpaca. This also checks the Alpaca HTTP protocol itself: the management API,
   transaction IDs, the JSON reply shape, error numbers versus HTTP 400, parameter casing and UDP discovery.
 
-Every run is saved. The Compare tab shows a server's latest run at each site side by side, check by check: what
-differs between sites, what fails at every site, and what some sites didn't check. Its Versions view compares two runs
-of the same server, by default the newest against the last different DriverVersion: what was fixed, what regressed.
+Every run is saved. The Compare tab compares two runs of the same server, check by check, by default the newest
+against the last different DriverVersion: what was fixed, what regressed.
 
 ## What gets checked
 
@@ -40,9 +39,6 @@ under it), **ConformU Debug Log Test** (following up a ConformU log, with Run, R
 its runs) and **Options** (what a run may do). Under the server on each test: its source code folder, the **Mount**
 (simulator or real mount), the flip angle and the timeouts. Pressing Start lists those settings to check, with
 a warning on any that look wrong.
-
-**Sites.** A run is made at the server's own site. (Northern and southern sites, where SiteLatitude, SiteLongitude and
-SiteElevation are set for the run and put back afterwards, are turned off for now: `SiteStore.HemisphereSites`.)
 
 **Motion is off by default.** Turn it on only for a simulator, or for a real mount that is clear to move.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
@@ -105,7 +101,7 @@ GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] 
 GS.TestHarness --run COM
 ```
 
-Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--sites server,north,south`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 0: not known, so the SideOfPier flip isn't checked), `--mount simulator|real`, `--source <folder or GitHub URL>` (the server's source code for this run; a GitHub repository is downloaded first). `--conformu <debug log>` runs the ConformU Debug Log Test instead (only the log's problem members, with the verdicts). `--follow <report id>` runs the next tier for what that saved run found (with the same `--conformu` log for a ConformU run); there is no other way to run tier 2 or 3, and a finished run prints the `--follow` command when a deeper tier is available.
+Other options: `--setpark`, `--no-writes`, `--no-protocol`, `--no-disconnect`, `--extended`, `--drift-seconds <s>`, `--slew-timeout <s>`, `--call-timeout <s>`, `--flip-angle <degrees>` (0 to 90, default 0: not known, so the SideOfPier flip isn't checked), `--mount simulator|real`, `--source <folder or GitHub URL>` (the server's source code for this run; a GitHub repository is downloaded first). `--conformu <debug log>` runs the ConformU Debug Log Test instead (only the log's problem members, with the verdicts). `--follow <report id>` runs the next tier for what that saved run found (with the same `--conformu` log for a ConformU run); there is no other way to run tier 2 or 3, and a finished run prints the `--follow` command when a deeper tier is available.
 
 The exit code is 0 when nothing failed, 1 when there were failures or errors, and 2 for bad arguments.
 

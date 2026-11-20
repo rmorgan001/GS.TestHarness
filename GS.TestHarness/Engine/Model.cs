@@ -68,7 +68,7 @@ public sealed record TestTarget
     public string Host { get; init; } = "localhost";
 
     /// <summary>Alpaca: the server's port.</summary>
-    public int Port { get; init; } = 31426;
+    public int Port { get; init; } = 31416;
 
     /// <summary>Alpaca: the telescope's device number.</summary>
     public int DeviceNumber { get; init; }
@@ -93,44 +93,6 @@ public sealed record TestTarget
     public string Display => Kind == TargetKind.Com
         ? $"COM driver {ProgId}"
         : $"Alpaca server {BaseUrl} telescope {DeviceNumber}";
-}
-
-/// <summary>
-/// A place on Earth the mount is told it is at for a run (SiteLatitude, SiteLongitude, SiteElevation), so the same
-/// server can be checked from the northern and the southern hemisphere.
-/// </summary>
-public sealed record SiteLocation
-{
-    /// <summary>"North" or "South": which of the two saved sites this is.</summary>
-    public string Hemisphere { get; init; } = "North";
-
-    public string Name { get; init; } = "";
-
-    /// <summary>Degrees, north positive.</summary>
-    public double Latitude { get; init; }
-
-    /// <summary>Degrees, east positive.</summary>
-    public double Longitude { get; init; }
-
-    /// <summary>Metres above mean sea level.</summary>
-    public double Elevation { get; init; }
-
-    [JsonIgnore]
-    public string Label => $"{Hemisphere}: {Name}";
-
-    [JsonIgnore]
-    public string Coordinates => FormattableString.Invariant($"{Latitude:0.####}°, {Longitude:0.####}°, {Elevation:0} m");
-
-    /// <summary>What's wrong with the values, or null.</summary>
-    public string? Problem()
-        => string.IsNullOrWhiteSpace(Name) ? "a name is needed"
-            : Hemisphere == "North" && Latitude is <= 0 or > 90 ? "a northern latitude is above 0 and at most 90"
-            : Hemisphere == "South" && Latitude is >= 0 or < -90 ? "a southern latitude is below 0 and at least -90"
-            : Longitude is < -180 or > 180 ? "longitude is -180 to 180 (east positive)"
-            : Elevation is < -300 or > 10000 ? "elevation is -300 to 10000 m" : null;
-
-    public static SiteLocation DefaultNorth => new() { Hemisphere = "North", Name = "Mauna Kea", Latitude = 19.8207, Longitude = -155.4681, Elevation = 4205 };
-    public static SiteLocation DefaultSouth => new() { Hemisphere = "South", Name = "Cerro Paranal", Latitude = -24.6272, Longitude = -70.4042, Elevation = 2635 };
 }
 
 /// <summary>What a run may do to the mount, and how long it waits.</summary>
@@ -349,20 +311,14 @@ public sealed record RunReport
     public bool CommunicationLost { get; set; }
     public string HarnessVersion { get; init; } = typeof(RunReport).Assembly.GetName().Version?.ToString(3) ?? "";
 
-    /// <summary>The site the mount was set to for the run; null when it ran at the server's own site.</summary>
-    public SiteLocation? Site { get; init; }
-
     /// <summary>The ConformU log the run followed up (its file name); null for an ordinary run.</summary>
     public string? ConformULog { get; init; }
 
-    /// <summary>Where the run was: the site's label, or the server's own site.</summary>
-    [JsonIgnore]
-    public string SiteLabel => Site?.Label ?? "Server's site";
     public List<CheckResult> Results { get; init; } = [];
 
     /// <summary>A short label for the run: device name and version.</summary>
     [JsonIgnore]
-    public string Label => $"{Identity.Name ?? Target.Display} {Identity.DriverVersion}".Trim() + (Site is null ? "" : $" @ {Site.Name}")
+    public string Label => $"{Identity.Name ?? Target.Display} {Identity.DriverVersion}".Trim()
                            + (Options.Tier > 1 ? $" (tier {Options.Tier})" : "");
 
     public int Count(Outcome outcome) => Results.Count(r => r.Outcome == outcome);

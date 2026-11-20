@@ -44,57 +44,34 @@ public class ReportTests
     }
 
     [Fact]
-    public void Comparing_sites_finds_what_differs_what_fails_everywhere_and_what_some_sites_skipped()
-    {
-        var server = Report(Result("A.Diff", Outcome.Pass), Result("A.Msg", Outcome.Fail, "one"), Result("A.Bad", Outcome.Fail),
-            Result("A.Some", Outcome.Pass), Result("A.Ok", Outcome.Pass));
-        var north = Report(Result("A.Diff", Outcome.Fail), Result("A.Msg", Outcome.Fail, "two"), Result("A.Bad", Outcome.Fail),
-            Result("A.Ok", Outcome.Pass));
-        var south = Report(Result("A.Diff", Outcome.Pass), Result("A.Msg", Outcome.Fail, "one"), Result("A.Bad", Outcome.Fail),
-            Result("A.Some", Outcome.Pass), Result("A.Ok", Outcome.Pass));
-        var rows = ReportComparer.CompareSites([server, north, south]).ToDictionary(d => d.Id);
-        Assert.Equal(SiteChange.Differs, rows["A.Diff"].Change);
-        Assert.Equal(SiteChange.Differs, rows["A.Msg"].Change);
-        Assert.Equal(SiteChange.FailsEverywhere, rows["A.Bad"].Change);
-        Assert.Equal(SiteChange.NotEverywhere, rows["A.Some"].Change);
-        Assert.Null(rows["A.Some"].Results[1]);
-        Assert.Equal(SiteChange.Same, rows["A.Ok"].Change);
-        Assert.Equal(Outcome.Fail, rows["A.Diff"].Results[1]!.Outcome);
-    }
-
-    [Fact]
     public void Runs_of_another_device_codebase_or_transport_are_different_programs()
     {
         var gss = Report() with { Target = new TestTarget { Codebase = Codebase.GSServer }, Identity = new DeviceIdentity { Name = "GSServer", DriverVersion = "1.2.3.3" } };
         var gss2 = gss with { Identity = new DeviceIdentity { Name = "GSServer", DriverVersion = "1.2.3.4" } };
         var gsa = Report() with { Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca }, Identity = new DeviceIdentity { Name = "GS Simulator (GEM)" } };
         Assert.False(ReportComparer.AreDifferentPrograms(gss, gss2));
-        // The same server at another site is still the same program: those runs compare too.
-        Assert.False(ReportComparer.AreDifferentPrograms(gss, gss with { Site = SiteLocation.DefaultSouth }));
         Assert.True(ReportComparer.AreDifferentPrograms(gss, gsa));
     }
 
-    private static RunReport Run(string version, int minutesAgo, SiteLocation? site = null)
+    private static RunReport Run(string version, int minutesAgo)
         => Report() with
         {
             Identity = new DeviceIdentity { Name = "Dev", DriverVersion = version },
-            Started = DateTimeOffset.Now.AddMinutes(-minutesAgo),
-            Site = site
+            Started = DateTimeOffset.Now.AddMinutes(-minutesAgo)
         };
 
     [Fact]
-    public void Versions_compare_the_newest_run_with_the_newest_earlier_version_at_the_same_site()
+    public void Versions_compare_the_newest_run_with_the_newest_earlier_version()
     {
         var newest = Run("1.3", 1);
         var sameVersion = Run("1.3", 10);
-        var elsewhere = Run("1.2", 20, SiteLocation.DefaultSouth);
         var older = Run("1.2", 30);
-        var pair = ReportComparer.DefaultVersionPair([sameVersion, older, newest, elsewhere]);
+        var pair = ReportComparer.DefaultVersionPair([sameVersion, older, newest]);
         Assert.Equal(newest.Id, pair!.Value.After.Id);
         Assert.Equal(older.Id, pair.Value.Before.Id);
 
-        // No other version at the site: the newest earlier run there.
-        Assert.Equal(sameVersion.Id, ReportComparer.DefaultVersionPair([newest, sameVersion, elsewhere])!.Value.Before.Id);
+        // No other version: the newest earlier run.
+        Assert.Equal(sameVersion.Id, ReportComparer.DefaultVersionPair([newest, sameVersion])!.Value.Before.Id);
         Assert.Null(ReportComparer.DefaultVersionPair([newest]));
     }
 
@@ -102,10 +79,9 @@ public class ReportTests
     public void Runs_that_arent_like_for_like_are_called_out()
     {
         var before = Run("1.2", 30);
-        var after = Run("1.3", 1) with { Options = new RunOptions { AllowMotion = true }, Site = SiteLocation.DefaultNorth };
+        var after = Run("1.3", 1) with { Options = new RunOptions { AllowMotion = true } };
         var differences = ReportComparer.Differences(before, after);
         Assert.Contains(differences, d => d.StartsWith("motion was off"));
-        Assert.Contains(differences, d => d.Contains("different sites"));
         Assert.Empty(ReportComparer.Differences(before, Run("1.3", 1)));
     }
 

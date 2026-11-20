@@ -41,33 +41,18 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     /// <summary>The last run's report, once it has finished.</summary>
     public RunReport? LastReport { get; private set; }
 
-    /// <summary>Every report of the last batch (one per site).</summary>
-    public IReadOnlyList<RunReport> LastReports { get; private set; } = [];
-
-    /// <summary>The site of the run under way (null: the server's own), and its place in the batch.</summary>
-    public SiteLocation? Site { get; private set; }
-
     /// <summary>The ConformU log the run under way (or the last run) follows up; null for an ordinary run.</summary>
     public ConformULog? ConformU { get; private set; }
-    public int SiteIndex { get; private set; }
-    public int SiteCount { get; private set; } = 1;
 
     public IReadOnlyList<CheckResult> Results
     {
         get { lock (_gate) return [.. _results]; }
     }
 
-    /// <summary>Starts a run at the server's own site; false if one is already running.</summary>
-    public bool Start(TestTarget target, RunOptions options) => Start(target, options, [null]);
-
-    /// <summary>
-    /// Starts one run per site, in turn (null: the server's own site); false if a run is already under way.
-    /// </summary>
+    /// <summary>Starts a run; false if one is already under way.</summary>
     /// <param name="followsUp">For a tier 2 or 3 run, the run it follows up (<see cref="Tiers.Options"/> made the options from it).</param>
-    public bool Start(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU = null,
-        RunReport? followsUp = null)
+    public bool Start(TestTarget target, RunOptions options, ConformULog? conformU = null, RunReport? followsUp = null)
     {
-        if (sites.Count == 0) return false;
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
         if (Tiers.Problem(options, followsUp, conformU is not null) is { } problem)
         {
@@ -84,16 +69,12 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             ConformU = conformU;
             Progress = null;
             LastReport = null;
-            LastReports = [];
-            SiteCount = sites.Count;
-            SiteIndex = 0;
-            Site = sites[0];
-            Status = $"Connecting to {target.Display}…" + SiteSuffix(sites[0]);
+            Status = $"Connecting to {target.Display}…";
             _results.Clear();
             _cts = new CancellationTokenSource();
         }
         Changed?.Invoke();
-        _ = Task.Run(() => RunAllAsync(target, options, sites, conformU, followsUp, _cts.Token));
+        _ = Task.Run(() => RunOneAsync(target, options, conformU, followsUp, _cts.Token));
         return true;
     }
 
@@ -108,36 +89,19 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         Changed?.Invoke();
     }
 
-    private async Task RunAllAsync(TestTarget target, RunOptions options, IReadOnlyList<SiteLocation?> sites, ConformULog? conformU,
-        RunReport? followsUp, CancellationToken token)
+    private async Task RunOneAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
+        CancellationToken token)
     {
-        var reports = new List<RunReport>();
+        RunReport? report = null;
         try
         {
-            for (var i = 0; i < sites.Count && !token.IsCancellationRequested; i++)
-            {
-                lock (_gate)
-                {
-                    Site = sites[i];
-                    SiteIndex = i;
-                    if (i > 0) _results.Clear();
-                }
-                if (await RunAsync(target, options, sites[i], conformU, followsUp, token) is { } report)
-                {
-                    reports.Add(report);
-                    lock (_gate) LastReports = [.. reports];
-                }
-            }
-            if (sites.Count > 1)
-                Status = token.IsCancellationRequested ? $"Stopped after {reports.Count} of {sites.Count} sites; the reports so far are saved."
-                    : $"Finished all {sites.Count} sites; each report is saved.";
+            report = await RunAsync(target, options, conformU, followsUp, token);
         }
         finally
         {
             lock (_gate)
             {
-                LastReport = reports.LastOrDefault();
-                LastReports = [.. reports];
+                LastReport = report;
                 IsRunning = false;
                 _cts?.Dispose();
                 _cts = null;
@@ -146,19 +110,10 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         }
     }
 
-    /// <summary>" · North: Mauna Kea · site 2 of 3" for the status line: where the run is, and how far through the sites.</summary>
-    private string SiteSuffix(SiteLocation? site)
-    {
-        if (SiteCount <= 1 && site is null) return "";
-        var text = $" · {site?.Label ?? "Server's site"}";
-        return SiteCount > 1 ? $"{text} · site {SiteIndex + 1} of {SiteCount}" : text;
-    }
-
-    private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, SiteLocation? site, ConformULog? conformU,
-        RunReport? followsUp, CancellationToken token)
+    private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
+        CancellationToken token)
     {
         RunReport? report = null;
-        var where = site is null ? "" : $" at {site.Label}";
         try
         {
             log.LogInformation("Run started: {Target}, tier {Tier}, motion {Motion}", target.Display, options.Tier, options.AllowMotion);
@@ -173,13 +128,15 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                 p =>
                 {
                     Progress = p;
-                    Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})") + SiteSuffix(site);
+                    Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})");
                     Changed?.Invoke();
                 },
-                token, previous: previous, site: site, conformU: conformU, followsUp: followsUp);
-            await store.SaveAsync(report);
-            Status = report.Cancelled ? $"Stopped{where}; the findings so far are saved." : $"Finished{where} and saved.";
-            log.LogInformation("Run finished: {Label}: {Fail} failed, {Warn} warnings", report.Label, report.Count(Outcome.Fail), report.Count(Outcome.Warning));
+                token, previous: previous, conformU: conformU, followsUp: followsUp);
+        }
+        catch (Exception ex) when (report is not null)
+        {
+            // The run finished; only closing the session failed. Keep the report.
+            log.LogWarning(ex, "Closing the session failed: {Error}", ex.Message);
         }
         catch (Exception ex)
         {
@@ -196,6 +153,21 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
                         : "Check that the Alpaca server is running and the host, port and device number are right."
                 });
             }
+        }
+        if (report is not null)
+        {
+            // Saved apart from the run: a failed save keeps the findings on screen and says so, not "couldn't open".
+            try
+            {
+                await store.SaveAsync(report);
+                Status = report.Cancelled ? $"Stopped; the findings so far are saved." : $"Finished and saved.";
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Run report not saved: {Error}", ex.Message);
+                Status = $"{(report.Cancelled ? "Stopped" : "Finished")}, but the report couldn't be saved to {store.Folder}: {ex.Message}";
+            }
+            log.LogInformation("Run finished: {Label}: {Fail} failed, {Warn} warnings", report.Label, report.Count(Outcome.Fail), report.Count(Outcome.Warning));
         }
         Changed?.Invoke();
         return report;

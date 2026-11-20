@@ -245,8 +245,6 @@ button.link.danger, .danger { color: var(--fail); }
 /* The run's progress text. Not ".status": that is the sidebar's connection dot (a fixed .6rem circle). */
 .run-status { margin-bottom: .3rem; line-height: 1.4; overflow-wrap: anywhere; }
 .run-status-step { color: var(--text); font-weight: 600; }
-.run-status-sep { color: var(--muted); margin: 0 .4rem; }
-.run-status-where { color: var(--muted); }
 .progress { height: 6px; background: var(--well); border-radius: 3px; overflow: hidden; }
 .progress div { height: 100%; background: linear-gradient(90deg, var(--green), var(--green-hover)); border-radius: 3px; transition: width .3s; }
 
@@ -547,23 +545,14 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 .found-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .25rem; }
 .found-list small { color: var(--muted); margin-left: .4rem; }
 
-/* ---- Sites card ---- */
-/* Inside the Server card, under the server. */
-.sites { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--line); }
-.sites h3 small { font-family: var(--font); font-weight: 400; font-size: .8rem; margin-left: .4rem; }
-.site-row { border-top: 1px solid var(--line); padding: .5rem 0; }
-.site-row > .check { padding-bottom: .2rem; }
-/* Name, latitude, longitude and elevation on one line: the name takes what the numbers leave. */
-.site-fields { display: grid; grid-template-columns: minmax(6rem, 1fr) repeat(3, minmax(4.5rem, 6.25rem)); gap: .5rem; margin-left: 1.7rem; }
-.site-fields label { display: flex; flex-direction: column; gap: .2rem; min-width: 0; color: var(--muted); font-size: .78rem; white-space: nowrap; }
-.site-fields input { width: 100%; padding: .35rem .5rem; font-size: .9rem; font-variant-numeric: tabular-nums; }
+/* ---- Recommendations: the runs they come from ---- */
+.run-list { list-style: none; margin: .9rem 0 0; padding: .75rem 0 0; border-top: 1px solid var(--line); display: grid; gap: .3rem; }
+.run-list li { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
+.run-list b { min-width: 12rem; }
 
-/* ---- Compare: the server's latest run at each ticked site ---- */
-.site-runs { list-style: none; margin: .9rem 0 0; padding: .75rem 0 0; border-top: 1px solid var(--line); display: grid; gap: .3rem; }
-.site-runs li { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: baseline; }
-.site-runs b { min-width: 12rem; }
+/* ---- Compare: results table ---- */
 .table-scroll { overflow-x: auto; }
-.results .col-sites { width: 1%; }
+.results .col-change { width: 1%; }
 .results td .badge { white-space: nowrap; }
 .results .col-check { width: 34%; }
 
@@ -613,12 +602,6 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
     border: 2px dashed var(--line); border-radius: var(--radius);
 }
 .empty-state p { margin: 0; }
-.site-fields input[type=number] { -moz-appearance: textfield; appearance: textfield; }
-.site-fields input[type=number]::-webkit-inner-spin-button,
-.site-fields input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-@media (max-width: 520px) {
-    .site-fields { grid-template-columns: 1fr 1fr; margin-left: 0; }
-}
 
 /* ---- Reports: tick and delete together ---- */
 .bulk-bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
@@ -665,7 +648,6 @@ html[data-sidebar="collapsed"] .donate { margin: .75rem 0 0; padding: .5rem 0; }
 }
 
 /* ---- Compare: versions ---- */
-.compare-mode { margin-top: .75rem; }
 .versions-pick { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; margin-bottom: .75rem; }
 .versions-pick .field { flex: 1 1 18rem; }
 .versions-pick select { width: 100%; }

@@ -121,6 +121,7 @@ public sealed class SettingsChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             foreach (var (what, undo) in restore)
             {
                 var call = await ctx.TryAsync(undo);
@@ -252,6 +253,7 @@ public sealed class SettingsChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             await ctx.TryAsync(t => t.UTCDate = DateTime.UtcNow);
         }
     }

@@ -33,7 +33,7 @@ public sealed class SourceStore
     private Dictionary<Codebase, string> _folders;
 
     public SourceStore(SourceLocator locator, ReportStore reports, ILogger<SourceStore> log)
-        : this(locator, Path.Combine(Path.GetDirectoryName(reports.Folder)!, "source-folders.json"), log)
+        : this(locator, Path.Combine(reports.SettingsFolder, "source-folders.json"), log)
     {
     }
 
@@ -50,7 +50,9 @@ public sealed class SourceStore
                 _ = Task.Run(async () =>
                 {
                     if (await repo.DownloadAsync() is { } problem) _log?.LogWarning("{Repo}: {Problem}", repo.Display, problem);
-                    else _locator.SetFolder(codebase, folder);
+                    // Only if nothing has set another folder meanwhile (CLI --source, or the person on the Run page).
+                    else if (string.Equals(_locator.FolderSetFor(codebase), folder.Trim(), StringComparison.OrdinalIgnoreCase))
+                        _locator.SetFolder(codebase, folder);
                 });
     }
 

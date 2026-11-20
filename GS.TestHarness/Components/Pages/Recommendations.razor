@@ -23,11 +23,11 @@
 <PageTitle>Recommendations · GS Test Harness</PageTitle>
 
 @* Every problem the latest runs found, once per check and server, with what to change and where. Older runs of a
-   device at a site are left out, so a problem fixed since doesn't come back. *@
+   device are left out, so a problem fixed since doesn't come back. *@
 <header class="page-head">
     <h1>Recommendations</h1>
     <p class="muted">Every check that found a problem in the latest @(ConformUOnly ? "ConformU Debug Log Test run" : "ASCOM Conformance Check run") of each
-        device at each site, with the recommended fix and where the code probably is. Each server is listed apart: the
+        device, with the recommended fix and where the code probably is. Each server is listed apart: the
         fix is in its own code.</p>
 </header>
 
@@ -51,14 +51,14 @@ else
             <span class="muted">From @_set.Runs.Count latest run@(_set.Runs.Count == 1 ? "" : "s")</span>
             <a class="btn" href="download/recommendations.md" download><Icon Kind="Download" Size="16" /> Download Markdown</a>
         </div>
-        <ul class="site-runs">
+        <ul class="run-list">
             @foreach (var run in _set.Runs)
             {
                 <li>
-                    <b>@run.Target.Codebase · @run.SiteLabel</b>
+                    <b>@run.Target.Codebase</b>
                     <a href="reports/@run.Id">@run.Reference</a> <span class="muted">@run.Started.ToString("yyyy-MM-dd HH:mm")</span>
                     <span class="muted">@run.Label · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail · @run.Count(Outcome.Warning) warning</span>
-                    @if (run.Cancelled) { <span class="tag" title="No finished run of this device at this site">stopped</span> }
+                    @if (run.Cancelled) { <span class="tag" title="No finished run of this device">stopped</span> }
                 </li>
             }
         </ul>
@@ -135,7 +135,7 @@ else
                             {
                                 <li>
                                     <span class="badge @ResultsTable.Css(hit.Result.Outcome)">@ResultsTable.Label(hit.Result.Outcome)</span>
-                                    <a href="reports/@hit.Run.Id">@hit.Run.Reference</a> <span class="muted small">@hit.Run.SiteLabel · @hit.Run.Label</span>
+                                    <a href="reports/@hit.Run.Id">@hit.Run.Reference</a> <span class="muted small">@hit.Run.Label</span>
                                     <span>@hit.Result.Message</span>
                                     @if (hit.Result.Expected is not null) { <div class="small muted">Expected: @hit.Result.Expected</div> }
                                     @if (hit.Result.Actual is not null) { <div class="small muted pre">Actual: @hit.Result.Actual</div> }

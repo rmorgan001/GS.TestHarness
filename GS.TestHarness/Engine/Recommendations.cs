@@ -46,7 +46,7 @@ public sealed record RecommendationSet(
     IReadOnlyList<CleanCheck> Clean);
 
 /// <summary>
-/// Turns the saved runs into a list of recommendations. Only the newest run of each device at each site counts,
+/// Turns the saved runs into a list of recommendations. Only the newest run of each device counts,
 /// so a problem fixed since an older run doesn't come back.
 /// </summary>
 public static class RecommendationBuilder
@@ -58,26 +58,30 @@ public static class RecommendationBuilder
     private static (int, bool) Rank(Outcome o) => (o.Severity(), o == Outcome.Fail);
 
     /// <summary>
-    /// The newest run of each device at each site (server's own, north, south), newest first; see
+    /// The newest run of each device, newest first; see
     /// <see cref="ReportStore.Representative"/> for how a run stopped early counts. A device's run of an older
-    /// build of the server is left out too: when the newest run of that server at that site reports a different
+    /// build of the server is left out too: when the newest run of that server reports a different
     /// version, the older one tested code that has since changed (for example a port tested once and not since).
     /// </summary>
     public static List<RunReport> LatestRuns(IEnumerable<RunReport> runs)
     {
         var all = runs.ToList();
         var latest = all
-            .GroupBy(r => (r.Target.DeviceKey, r.Site?.Hemisphere))
+            .GroupBy(r => r.Target.DeviceKey)
             .Select(g => ReportStore.Representative(g)!)
             .ToList();
 
-        // The version of each server at each site now: the one its newest run reported.
+        // The version of each server now: the one its newest run reported. A server is its codebase and
+        // the device's Name: every Alpaca server counts as one codebase, and so does every COM driver added from the
+        // ASCOM drivers list, so the codebase alone would set one product's version against another's.
+        static (Codebase, string) Server(RunReport r)
+            => (r.Target.Codebase, r.Identity.Name?.Trim().ToUpperInvariant() ?? "");
         var current = all
             .Where(r => !string.IsNullOrWhiteSpace(r.Identity.DriverVersion))
-            .GroupBy(r => (r.Target.Codebase, r.Site?.Hemisphere))
+            .GroupBy(Server)
             .ToDictionary(g => g.Key, g => g.MaxBy(r => r.Started)!.Identity.DriverVersion!.Trim());
         latest.RemoveAll(run => !string.IsNullOrWhiteSpace(run.Identity.DriverVersion)
-                                && current.TryGetValue((run.Target.Codebase, run.Site?.Hemisphere), out var now)
+                                && current.TryGetValue(Server(run), out var now)
                                 && !string.Equals(run.Identity.DriverVersion.Trim(), now, StringComparison.OrdinalIgnoreCase));
         return [.. latest.OrderByDescending(r => r.Started)];
     }
@@ -158,10 +162,10 @@ public static class RecommendationBuilder
         var sb = new StringBuilder();
         sb.AppendLine("# ASCOM compliance: recommendations");
         sb.AppendLine();
-        sb.AppendLine($"From the latest run of each device at each site ({set.Runs.Count} run{(set.Runs.Count == 1 ? "" : "s")}):");
+        sb.AppendLine($"From the latest run of each device ({set.Runs.Count} run{(set.Runs.Count == 1 ? "" : "s")}):");
         sb.AppendLine();
         foreach (var run in set.Runs)
-            sb.AppendLine($"- {run.Reference} · {run.Label} · {run.SiteLabel} · {run.Started:yyyy-MM-dd HH:mm} · {run.Target.Display}{(run.Cancelled ? " · stopped early" : "")}");
+            sb.AppendLine($"- {run.Reference} · {run.Label} · {run.Started:yyyy-MM-dd HH:mm} · {run.Target.Display}{(run.Cancelled ? " · stopped early" : "")}");
 
         if (set.Recommendations.Count == 0)
         {
@@ -184,7 +188,7 @@ public static class RecommendationBuilder
                 if (r.Reference is not null) sb.AppendLine($"- Reference: {Inline(r.Reference)}");
                 foreach (var hit in r.Hits)
                 {
-                    sb.AppendLine($"- {hit.Result.Outcome} at {hit.Run.SiteLabel} ({hit.Run.Reference}, {hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {Inline(hit.Result.Message)}");
+                    sb.AppendLine($"- {hit.Result.Outcome} ({hit.Run.Reference}, {hit.Run.Label}, {hit.Run.Started:yyyy-MM-dd HH:mm}): {Inline(hit.Result.Message)}");
                     if (hit.Result.Expected is not null) sb.AppendLine($"  - Expected: {Inline(hit.Result.Expected)}");
                     if (hit.Result.Actual is not null) AppendActual(sb, hit.Result.Actual);
                 }
@@ -213,22 +217,26 @@ public static class RecommendationBuilder
     }
 
     /// <summary>The actual value: on the line itself when it's one line, otherwise all of it in a code block under it.</summary>
-    private static void AppendActual(StringBuilder sb, string actual)
+    /// <summary>
+    /// "Actual" as a Markdown list item, at <paramref name="indent"/>: one line inline, more as a fenced code block
+    /// inside the item (tier 2/3 diagnoses, ConformU verdicts and probe errors run to many lines).
+    /// </summary>
+    internal static void AppendActual(StringBuilder sb, string actual, string indent = "  ")
     {
         var lines = Lines(actual.TrimEnd());
         if (lines.Length == 1)
         {
-            sb.AppendLine($"  - Actual: {lines[0]}");
+            sb.AppendLine($"{indent}- Actual: {lines[0]}");
             return;
         }
         var longest = 0;
         foreach (var line in lines)
             if (line.TrimStart().StartsWith("```")) longest = Math.Max(longest, line.TrimStart().TakeWhile(c => c == '`').Count());
         var fence = new string('`', Math.Max(3, longest + 1));
-        sb.AppendLine("  - Actual:");
+        sb.AppendLine($"{indent}- Actual:");
         sb.AppendLine();
-        sb.AppendLine($"    {fence}");
-        foreach (var line in lines) sb.AppendLine($"    {line}");
-        sb.AppendLine($"    {fence}");
+        sb.AppendLine($"{indent}  {fence}");
+        foreach (var line in lines) sb.AppendLine($"{indent}  {line}");
+        sb.AppendLine($"{indent}  {fence}");
     }
 }

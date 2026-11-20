@@ -101,7 +101,7 @@ public sealed class ServerList
     private readonly IDataProtector? _protector;
 
     public ServerList(ReportStore reports, IDataProtectionProvider protection, ILogger<ServerList> log)
-        : this(Path.Combine(Path.GetDirectoryName(reports.Folder)!, "servers.json"), protection.CreateProtector("GS.TestHarness.ServerPasswords"), log)
+        : this(Path.Combine(reports.SettingsFolder, "servers.json"), protection.CreateProtector("GS.TestHarness.ServerPasswords"), log)
     {
     }
 

@@ -24,7 +24,7 @@ namespace GS.TestHarness;
 /// <code>
 /// GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
-///                [--sites server,north,south] [--mount simulator|real]
+///                [--mount simulator|real]
 ///                [--source C:\src\GSServer | https://github.com/owner/repo] [--conformu ConformU-debug-log.txt] [--follow R0012] [--md report.md]
 /// GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
@@ -34,7 +34,7 @@ public static class Cli
 {
     public static bool IsCli(string[] args) => args.Contains("--run", StringComparer.OrdinalIgnoreCase);
 
-    public static async Task<int> RunAsync(string[] args, SourceLocator locator, ReportStore store, SiteStore sites)
+    public static async Task<int> RunAsync(string[] args, SourceLocator locator, ReportStore store)
     {
         string? Value(string name)
         {
@@ -69,7 +69,7 @@ public static class Cli
         var target = new TestTarget
         {
             Host = Value("--host") ?? "localhost",
-            Port = int.TryParse(Value("--port"), out var port) ? port : 31426,
+            Port = int.TryParse(Value("--port"), out var port) ? port : 31416,
             DeviceNumber = int.TryParse(Value("--device"), out var device) ? device : 0,
             ProgId = Value("--progid") ?? "ASCOM.GS.Sky.Telescope",
             Codebase = server
@@ -96,7 +96,7 @@ public static class Cli
         };
 
         // --conformu <log>: follow up a ConformU debug log (as the ConformU Debug Log Test): only its problem members,
-        // with the ConformU verdicts and diagnoses, at the server's own site.
+        // with the ConformU verdicts and diagnoses.
         ConformULog? conformU = null;
         if (Value("--conformu") is { Length: > 0 } logFile)
         {
@@ -123,11 +123,12 @@ public static class Cli
         }
 
         // --follow <report id>: the next tier for what that saved run found (tier 1 always first: there is no other way
-        // to start tier 2 or 3). Same device, same site; a ConformU run's needs the same --conformu log.
+        // to start tier 2 or 3). Same device; a ConformU run's needs the same --conformu log.
         RunReport? followsUp = null;
         if (Value("--follow") is { Length: > 0 } followId)
         {
-            followsUp = await store.LoadAsync(followId);
+            try { followsUp = await store.LoadAsync(followId); }
+            catch (ArgumentException) { followsUp = null; } // not a report reference or id
             if (followsUp is null)
             {
                 Console.Error.WriteLine($"--follow {followId}: no saved report with that reference or id in {store.Folder}.");
@@ -149,43 +150,21 @@ public static class Cli
             Console.WriteLine($"{Tiers.Name(next.Tier)}, following up {followsUp.Reference}: {string.Join(", ", next.Members)}.");
         }
 
-        // --sites server,north,south (any of them, in that order): one run each; the north and south sites are the
-        // ones saved on the Run page (sites.json). A deeper tier runs where the run it follows up ran.
-        var siteList = new List<SiteLocation?>();
-        if (followsUp is not null) siteList.Add(followsUp.Site);
-        else foreach (var name in (conformU is null ? Value("--sites") ?? "server" : "server").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            switch (name.ToLowerInvariant())
-            {
-                case "server": siteList.Add(null); break;
-                case "north": siteList.Add(sites.Current.North); break;
-                case "south": siteList.Add(sites.Current.South); break;
-                default:
-                    Console.Error.WriteLine("--sites takes server, north and/or south, separated by commas.");
-                    return 2;
-            }
-        }
-
-        var worst = 0;
-        foreach (var site in siteList)
-        {
-            var code = await RunOneAsync(target, options, site, locator, store, Value("--md") is { } md && siteList.Count > 1
-                ? Path.ChangeExtension(md, null) + "-" + (site?.Hemisphere.ToLowerInvariant() ?? "server") + ".md" : Value("--md"), conformU, followsUp);
-            worst = Math.Max(worst, code);
-        }
-        return worst;
+        return await RunOneAsync(target, options, locator, store, Value("--md"), conformU, followsUp);
     }
 
-    private static async Task<int> RunOneAsync(TestTarget target, RunOptions options, SiteLocation? site, SourceLocator locator,
+    private static async Task<int> RunOneAsync(TestTarget target, RunOptions options, SourceLocator locator,
         ReportStore store, string? markdownPath, ConformULog? conformU = null, RunReport? followsUp = null)
     {
-        Console.WriteLine($"Checking {target.Display} at {site?.Label ?? "the server's own site"}, tier {options.Tier} (motion {(options.AllowMotion ? "on" : "off")})…");
+        Console.WriteLine($"Checking {target.Display}, tier {options.Tier} (motion {(options.AllowMotion ? "on" : "off")})…");
         using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
+        ConsoleCancelEventHandler onCancel = (_, e) =>
         {
             e.Cancel = true;
             cts.Cancel();
         };
+        // Taken off when the run ends: a handler left behind would cancel a disposed source.
+        Console.CancelKeyPress += onCancel;
 
         RunReport report;
         try
@@ -202,12 +181,16 @@ public static class Cli
                 {
                     if (p.Group != "Done") Console.WriteLine($"[{p.GroupIndex + 1}/{p.GroupCount}] {p.Group}");
                 },
-                cts.Token, previous: previous, site: site, conformU: conformU, followsUp: followsUp);
+                cts.Token, previous: previous, conformU: conformU, followsUp: followsUp);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Couldn't open {target.Display}: {AscomError.Describe(ex)}");
             return 1;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= onCancel;
         }
 
         await store.SaveAsync(report);

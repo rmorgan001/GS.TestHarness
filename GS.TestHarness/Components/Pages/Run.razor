@@ -20,7 +20,6 @@
 @inject TargetStore Saved
 @inject Workbench Bench
 @inject ServerList Servers
-@inject SiteStore Sites
 @inject DialogService Dialogs
 @inject RunPageState State
 @inject SourceLocator Locator
@@ -105,7 +104,7 @@ else
                  @ondragover:preventDefault
                  @ondrop="Drop"
                  @ondrop:preventDefault>
-            <h2>@(conformU ? "Server" : "Server and sites")</h2>
+            <h2>Server</h2>
             @if (server is null)
             {
                 <div class="drop-empty">
@@ -131,7 +130,6 @@ else
                         }
                         else
                         {
-                            var count = Sites.Selected().Count;
                             @if (conformU)
                             {
                                 var ready = log is { Areas.Count: > 0 };
@@ -141,9 +139,8 @@ else
                             }
                             else
                             {
-                                <button class="btn primary" disabled="@(count == 0)"
-                                        title="@(count == 0 ? "Tick at least one site" : $"Test {server.Name}")"
-                                        @onclick="Start"><Icon Kind="Play" Size="18" /> @(count > 1 ? $"Start {count} runs" : "Start run")</button>
+                                <button class="btn primary" title="@($"Test {server.Name}")"
+                                        @onclick="Start"><Icon Kind="Play" Size="18" /> Start run</button>
                             }
                             <button type="button" class="icon-btn" title="Clear" aria-label="Clear the server" @onclick="() => Bench.Select(null)">
                                 <Icon Kind="Close" Size="18" />
@@ -186,11 +183,6 @@ else
                         <input type="number" min="2" class="narrow-input" @bind="_callTimeout" @bind:after="SaveOptions" disabled="@Runs.IsRunning" />
                     </label>
                 </div>
-                @* The ConformU Debug Log Test only follows up the log's problems, at the server's own site: no sites. *@
-                @if (!conformU)
-                {
-                    <SitesCard Disabled="Runs.IsRunning" />
-                }
                 </details>
             }
             @if (dragging)
@@ -334,14 +326,8 @@ else
     <div class="progress-wrap">
         @if (Runs.Status is { } status)
         {
-            @* The step first and clear; where the run is (site, site n of m) after it, muted. *@
-            var parts = status.Split(" · ");
             <div class="run-status">
-                <span class="run-status-step">@parts[0]</span>
-                @foreach (var part in parts.Skip(1))
-                {
-                    <span class="run-status-sep" aria-hidden="true">·</span><span class="run-status-where">@part</span>
-                }
+                <span class="run-status-step">@status</span>
             </div>
         }
         @if (Runs.IsRunning && Runs.Progress is { } p)
@@ -354,14 +340,6 @@ else
         @* Running from the other test's tab, or Options: say where its findings are. *@
         <span class="muted small">Findings on the @(Runs.ConformU is null ? "ASCOM Conformance Check" : "ConformU Debug Log Test") tab.</span>
     }
-    else if (!Runs.IsRunning && Runs.LastReports.Count > 1)
-    {
-        @foreach (var r in Runs.LastReports)
-        {
-            <a class="btn" href="reports/@r.Id">@r.Reference · @r.SiteLabel</a>
-        }
-        <a class="btn" href="compare"><Icon Kind="Compare" Size="16" /> Compare sites</a>
-    }
     else if (Runs.LastReport is { } done)
     {
         <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report @done.Reference</a>
@@ -373,7 +351,7 @@ else
 @if (runsHere && Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
 {
     <section class="card">
-        <h2>@t.Display @if (Runs.Site is { } site) { <small class="muted">at @site.Label (@site.Coordinates)</small> }
+        <h2>@t.Display
             @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
         @* Where the run is in the tiers: tier 1 always first, each deeper tier offered only for what the one below found. *@
         @{
@@ -459,7 +437,6 @@ else
         Runs.Changed += OnChanged;
         Bench.Changed += OnBenchChanged;
         Servers.Changed += OnBenchChanged;
-        Sites.Changed += OnBenchChanged;
         State.Changed += OnBenchChanged;
     }
 
@@ -566,7 +543,7 @@ else
         if (Runs.IsRunning) return;
         var options = CurrentOptions();
         Saved.SaveOptions(options);
-        Runs.Start(server.RunTarget, options, Sites.Selected());
+        Runs.Start(server.RunTarget, options);
     }
 
     // ---------- ConformU log ----------
@@ -656,21 +633,16 @@ else
         Saved.SaveOptions(options);
         // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
-        // One run at the server's own site: the sites are for the conformance test, not the log follow-up.
-        Runs.Start(server.RunTarget, options, [null], log);
+        Runs.Start(server.RunTarget, options, log);
     }
 
     // ---------- Tiers 2 and 3 ----------
 
-    /// <summary>The deeper tier the last run (or the first of a batch that found something) can be followed up with.</summary>
+    /// <summary>The deeper tier the last run can be followed up with.</summary>
     private NextTier? NextTier() => RunOutlook()?.Next;
 
-    /// <summary>What the tier after the last run would do: one that's offered at any of its sites, else the first site's.</summary>
-    private Outlook? RunOutlook()
-    {
-        var outlooks = Runs.LastReports.Select(Tiers.OutlookFor).ToList();
-        return outlooks.FirstOrDefault(o => o.Kind == OutlookKind.Offered) ?? outlooks.FirstOrDefault();
-    }
+    /// <summary>What the tier after the last run would do.</summary>
+    private Outlook? RunOutlook() => Runs.LastReport is { } last ? Tiers.OutlookFor(last) : null;
 
     /// <summary>A tier step's line under its name on the tier track.</summary>
     private string TierState(int step, string state, int tier) => state switch
@@ -692,7 +664,7 @@ else
     private bool NeedsLog(NextTier next) => next.From.ConformULog is not null && Runs.ConformU is null;
 
     /// <summary>
-    /// Runs the next tier for the members the last run found problems with, on the same device and at the same site,
+    /// Runs the next tier for the members the last run found problems with, on the same device,
     /// with the options as ticked now (not saved: tiers are chosen run by run).
     /// </summary>
     /// <summary>The numbers of the tests the next tier makes for its members (ConformU.Diagnose… or Diagnose…).</summary>
@@ -713,7 +685,7 @@ else
         var message = server is not null ? StartMessage(server) : SafetyWarning;
         if (!await Dialogs.ShowAsync(new ConfirmDialogModel($"Run tier {next.Tier}", message, "Start", "Cancel", danger: true))) return;
         if (Runs.IsRunning) return;
-        Runs.Start(target, Tiers.Options(CurrentOptions(), next), [next.From.Site], next.From.ConformULog is null ? null : Runs.ConformU, next.From);
+        Runs.Start(target, Tiers.Options(CurrentOptions(), next), next.From.ConformULog is null ? null : Runs.ConformU, next.From);
     }
 
     private static string SeverityCss(ConformUSeverity s) => s switch
@@ -767,7 +739,6 @@ else
         Runs.Changed -= OnChanged;
         Bench.Changed -= OnBenchChanged;
         Servers.Changed -= OnBenchChanged;
-        Sites.Changed -= OnBenchChanged;
         State.Changed -= OnBenchChanged;
     }
 }

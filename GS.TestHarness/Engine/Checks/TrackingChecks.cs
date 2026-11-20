@@ -76,6 +76,7 @@ public sealed class TrackingChecks : ICheckGroup
         }
         finally
         {
+            using var restoring = ctx.Restoring();
             if (c.CanSetRightAscensionRate) await ctx.TryAsync(t => t.RightAscensionRate = 0);
             if (c.CanSetDeclinationRate) await ctx.TryAsync(t => t.DeclinationRate = 0);
             if (rate.Ok) await ctx.TryAsync(t => t.TrackingRate = rate.Value);
