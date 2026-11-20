@@ -825,3 +825,4 @@ body:has(.print-page) { background: #fff; }
    The dialog sits at the top right, under the header. */
 .dialog-backdrop.preview { background: transparent; backdrop-filter: none; pointer-events: none; place-items: start end; padding: 4rem 1rem 1rem; }
 .dialog-backdrop.preview .dialog { pointer-events: auto; width: min(560px, 100%); max-height: calc(100vh - 5rem); }
+.theme-switch .theme-edit { padding-inline: .5rem; border-left: 1px solid var(--line-strong); }

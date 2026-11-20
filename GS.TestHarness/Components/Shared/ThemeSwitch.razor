@@ -26,6 +26,8 @@
     {
         <button type="button" aria-pressed="@(Theme.Current == name ? "true" : "false")" title="@title" @onclick="() => Pick(name)" @ondblclick="() => Edit(name)">@label</button>
     }
+    @* The colour editor, without needing a double click. *@
+    <button type="button" class="theme-edit" aria-label="Change your own colours" title="Change your own colours" @onclick="OpenEditor">✎</button>
 </div>
 
 @code {
@@ -35,7 +37,7 @@
         ("dark", "Dark", "The default dark look"),
         ("dusk", "Dusk", "Dim amber, while your eyes adapt"),
         ("night", "Night", "Red only, to keep your night vision"),
-        ("custom", "Custom", "Your own colours: double-click to change them")
+        ("custom", "Custom", "Your own colours (double-click, or use the pencil, to change them)")
     ];
 
     protected override void OnInitialized() => Theme.Changed += OnChanged;
@@ -69,6 +71,13 @@
     private async Task Edit(string name)
     {
         if (name != "custom") return;
+        await OpenEditor();
+    }
+
+    /// <summary>The pencil: switches to Custom (starting from the dark theme if it has no colours yet) and opens the editor.</summary>
+    private async Task OpenEditor()
+    {
+        await Pick("custom");
         await Dialogs.ShowAsync(new ThemeDialogModel());
     }
 
