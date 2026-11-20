@@ -117,7 +117,8 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
         try
         {
             Status = await work(home);
-            Note = NeedsHome ? "The mount still isn't reporting that it's at home." : null;
+            Note = IsAtHome ? "The mount is at the home position. It's okay to click \"Start run\"."
+                : NeedsHome ? "The mount still isn't reporting that it's at home." : null;
         }
         finally
         {
