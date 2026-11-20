@@ -168,6 +168,15 @@ else
                         <option value="@MountKind.RealMount">Real mount</option>
                     </select>
                 </label>
+                @* Which hemisphere the mount is in: the sign of SiteLatitude is checked against it, since the slews' targets follow the latitude. Saved at once. *@
+                <label class="mount-field" title="The slews' targets (declination, azimuth) follow the mount's SiteLatitude, so a latitude with the wrong sign sends them to the wrong part of the sky. Say which hemisphere the mount is in and the run checks the sign.">
+                    <span>Site hemisphere <small class="muted">checks the sign of SiteLatitude</small></span>
+                    <select @bind="_hemisphere" @bind:after="SaveOptions" disabled="@Runs.IsRunning">
+                        <option value="@Hemisphere.Unknown">Not specified</option>
+                        <option value="@Hemisphere.North">Northern</option>
+                        <option value="@Hemisphere.South">Southern</option>
+                    </select>
+                </label>
                 @* The mount's flip zone, for the flip checks (and a ConformU run that has them). Saved at once. *@
                 <label class="mount-field" title="Degrees either side of the meridian where the mount can point from either side of the pier. Inside it the flip checks use the SideOfPier command; a goto past it must flip the mount.">
                     <span>Flip angle (°) <small class="muted">@(_motion ? "either side of the meridian, for the flip checks" : "needs Move the mount under Options")</small></span>
@@ -424,6 +433,7 @@ else
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended;
     private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 0;
     private MountKind _mount = MountKind.Unknown;
+    private Hemisphere _hemisphere = Hemisphere.Unknown;
     private bool _over;
 
     protected override void OnInitialized()
@@ -435,6 +445,7 @@ else
         _extended = options.Extended;
         _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
         _mount = options.Mount;
+        _hemisphere = options.SiteHemisphere;
         RecallSettings();
         Runs.Changed += OnChanged;
         Bench.Changed += OnBenchChanged;
@@ -460,7 +471,7 @@ else
         AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
         IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended,
         SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
-        FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount
+        FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount, SiteHemisphere = _hemisphere
     };
 
     /// <summary>
@@ -482,6 +493,7 @@ else
     {
         SourcePath = SourceFolders.FolderOf(server.Target.Codebase),
         Mount = _mount,
+        SiteHemisphere = _hemisphere,
         FlipAngle = Math.Clamp(_flipAngle, 0, 90),
         SlewTimeoutSeconds = Math.Max(10, _slewTimeout),
         CallTimeoutSeconds = Math.Max(2, _callTimeout)
@@ -503,7 +515,7 @@ else
             Servers.Update(server with { Settings = CurrentSettings(server) });
             return;
         }
-        (_mount, _flipAngle, _slewTimeout, _callTimeout) = (settings.Mount, Math.Clamp(settings.FlipAngle, 0, 90),
+        (_mount, _hemisphere, _flipAngle, _slewTimeout, _callTimeout) = (settings.Mount, settings.SiteHemisphere, Math.Clamp(settings.FlipAngle, 0, 90),
             Math.Max(10, settings.SlewTimeoutSeconds), Math.Max(2, settings.CallTimeoutSeconds));
         Saved.SaveOptions(CurrentOptions());
         var codebase = server.Target.Codebase;

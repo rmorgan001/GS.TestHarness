@@ -161,6 +161,12 @@ public sealed record RunOptions
     public MountKind Mount { get; init; } = MountKind.Unknown;
 
     /// <summary>
+    /// Which hemisphere the mount is in, as the user says (the Site hemisphere setting). Unknown: not checked. Otherwise
+    /// the sign of SiteLatitude is checked against it, since the slews' targets (declination, azimuth) follow the latitude.
+    /// </summary>
+    public Hemisphere SiteHemisphere { get; init; } = Hemisphere.Unknown;
+
+    /// <summary>
     /// How deep the run goes (<see cref="Tiers"/>): 1 finds problems (the full check, or a ConformU log's follow-up);
     /// 2 measures a problem found at tier 1 to tell its causes apart; 3 measures further to pin the cause down. A tier 2
     /// or 3 run only diagnoses <see cref="Members"/>, each one that has a diagnosis at that tier.
@@ -183,6 +189,20 @@ public enum MountKind
 
     /// <summary>A real mount (GSServer's SkyWatcher code, GS.SkyWatcher).</summary>
     RealMount
+}
+
+/// <summary>The hemisphere the mount is in (the Site hemisphere option).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<Hemisphere>))]
+public enum Hemisphere
+{
+    /// <summary>Not said: SiteLatitude's sign isn't checked against anything.</summary>
+    Unknown,
+
+    /// <summary>Northern: SiteLatitude should be positive.</summary>
+    North,
+
+    /// <summary>Southern: SiteLatitude should be negative.</summary>
+    South
 }
 
 /// <summary>A check's result.</summary>

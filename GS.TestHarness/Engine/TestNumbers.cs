@@ -238,6 +238,8 @@ public static class TestNumbers
         (1201, "Disconnected.Disconnect.WhenDisconnected"),
         (1202, "Motion.MoveAxis.{axis}.SlewingUntilStopped"),
         (1203, "Motion.StartPosition"),
+        (1204, "Properties.SiteHemisphere"),
+        (1205, "ParkHome.HomePole"),
         (2001, "Diagnose.Readings"),
         (2002, "Diagnose.PulseGuide.{axis}"),
         (2003, "Diagnose.{member}"),

@@ -131,6 +131,7 @@ public sealed class ParkHomeChecks : ICheckGroup
             expected: "AtHome true, Slewing false", ms: call.Ms,
             fix: "AtHome must become true when FindHome has reached the home position (and Slewing false).");
         if (!home) return;
+        await HomePoleAsync(ctx);
 
         // Leaving home must clear AtHome.
         if (ctx.Caps.CanSlewAsync && (await MotionChecks.PositionAsync(ctx)) is { } pos)
@@ -145,6 +146,29 @@ public sealed class ParkHomeChecks : ICheckGroup
                 expected: "false", actual: atHome.Ok ? atHome.Value.ToString() : atHome.ErrorText,
                 fix: "AtHome must be true only while the mount is at its home position: clear it when the mount moves.");
         }
+    }
+
+    /// <summary>
+    /// A German mount at home usually points at the celestial pole of its hemisphere (Dec +90° in the north, -90° in the
+    /// south). Used as a hint for SiteLatitude's sign: ASCOM doesn't say where home is, so a mismatch is only a warning.
+    /// </summary>
+    private static async Task HomePoleAsync(CheckContext ctx)
+    {
+        if (ctx.Caps.SiteLatitude is not { } lat || Math.Abs(lat) < 1) return;
+        if (await MotionChecks.SettledPositionAsync(ctx) is not { } pos) return;
+        if (Math.Abs(pos.Dec) < 80)
+        {
+            ctx.Report("HomePole", "FindHome", Outcome.Info,
+                $"Home is at Dec {pos.Dec:0.0}°, not at a celestial pole, so it can't say which hemisphere the mount is in.");
+            return;
+        }
+        var matches = (pos.Dec > 0) == (lat > 0);
+        ctx.Report("HomePole", "FindHome", matches ? Outcome.Pass : Outcome.Warning,
+            matches ? $"Home is at the {(pos.Dec > 0 ? "north" : "south")} celestial pole (Dec {pos.Dec:0.0}°), as SiteLatitude {lat:0.0}° says."
+                    : $"Home is at the {(pos.Dec > 0 ? "north" : "south")} celestial pole (Dec {pos.Dec:0.0}°), but SiteLatitude is {lat:0.0}° ({(lat > 0 ? "north" : "south")}).",
+            expected: $"Dec {(lat > 0 ? "+" : "-")}90° at home", actual: $"Dec {pos.Dec:0.0}°",
+            fix: "A mount's home position is usually the pole of its own hemisphere. Either this mount homes somewhere unusual, " +
+                 "or SiteLatitude has the wrong sign. Check the sign of the latitude where it is set and stored.");
     }
 
     private static async Task ParkAsync(CheckContext ctx)

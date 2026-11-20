@@ -76,6 +76,9 @@ public sealed record ServerSettings
 
     public MountKind Mount { get; init; } = MountKind.Unknown;
 
+    /// <summary>The hemisphere the mount is in (Unknown: not checked).</summary>
+    public Hemisphere SiteHemisphere { get; init; } = Hemisphere.Unknown;
+
     /// <summary>Degrees either side of the meridian (0: not known).</summary>
     public int FlipAngle { get; init; }
 

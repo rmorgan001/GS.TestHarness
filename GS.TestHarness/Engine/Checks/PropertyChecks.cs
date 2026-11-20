@@ -97,6 +97,7 @@ public sealed class PropertyChecks : ICheckGroup
 
         await ctx.ReadOptionalAsync("SiteElevation", t => t.SiteElevation, v => v is < -300 or > 10000 ? "elevation is -300 to 10000 m" : null);
         await ctx.ReadOptionalAsync("SiteLatitude", t => t.SiteLatitude, v => v is < -90 or > 90 ? "latitude is -90 to 90 degrees" : null);
+        SiteHemisphere(ctx);
         await ctx.ReadOptionalAsync("SiteLongitude", t => t.SiteLongitude, v => v is < -180 or > 180 ? "longitude is -180 to 180 degrees" : null);
         await ctx.ReadMandatoryAsync("Slewing", t => t.Slewing);
         await ctx.ReadOptionalAsync("SlewSettleTime", t => t.SlewSettleTime, v => v < 0 ? "a settle time can't be negative" : null);
@@ -189,5 +190,30 @@ public sealed class PropertyChecks : ICheckGroup
                 : "Altitude/Azimuth and RA/Dec must describe the same place. Check the conversion's latitude sign, the hour " +
                   "angle (LST - RA), and that both come from the same moment.",
             sourceMember: "Azimuth");
+    }
+
+    /// <summary>
+    /// SiteLatitude's sign against the hemisphere the user said the mount is in. The slews' targets (declination, azimuth)
+    /// follow the latitude, so a latitude with the wrong sign sends them to the wrong part of the sky.
+    /// </summary>
+    private static void SiteHemisphere(CheckContext ctx)
+    {
+        if (ctx.Options.SiteHemisphere == Hemisphere.Unknown || ctx.Caps.SiteLatitude is not { } lat) return;
+        var said = ctx.Options.SiteHemisphere == Hemisphere.North ? "northern" : "southern";
+        if (Math.Abs(lat) < 1)
+        {
+            ctx.Report("SiteHemisphere", "SiteLatitude", Outcome.Info,
+                $"SiteLatitude is {lat:0.0}°, within 1° of the equator, so its sign can't say which hemisphere the mount is in (you said {said}).");
+            return;
+        }
+        var north = lat > 0;
+        var ok = north == (ctx.Options.SiteHemisphere == Hemisphere.North);
+        ctx.Report("SiteHemisphere", "SiteLatitude", ok ? Outcome.Pass : Outcome.Warning,
+            ok ? $"SiteLatitude {lat:0.0}° is {(north ? "north" : "south")}, as the {said} hemisphere you said."
+               : $"SiteLatitude is {lat:0.0}° ({(north ? "north" : "south")}), but you said the mount is in the {said} hemisphere.",
+            expected: ctx.Options.SiteHemisphere == Hemisphere.North ? "positive" : "negative", actual: $"{lat:0.0}°",
+            fix: "Either the Site hemisphere setting is wrong, or the mount's latitude has the wrong sign (a sign lost when the " +
+                 "latitude was entered or stored). Every slew's target follows SiteLatitude, so the run's slews, syncs and " +
+                 "alt/az checks would go to the wrong part of the sky. Check the sign where the latitude is set and stored.");
     }
 }

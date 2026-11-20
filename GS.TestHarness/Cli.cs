@@ -92,6 +92,13 @@ public static class Cli
                 "simulator" or "sim" => MountKind.Simulator,
                 "real" or "mount" => MountKind.RealMount,
                 _ => MountKind.Unknown
+            },
+            // --hemisphere north|south: the hemisphere the mount is in; SiteLatitude's sign is checked against it.
+            SiteHemisphere = Value("--hemisphere")?.ToLowerInvariant() switch
+            {
+                "north" or "northern" or "n" => Hemisphere.North,
+                "south" or "southern" or "s" => Hemisphere.South,
+                _ => Hemisphere.Unknown
             }
         };
 

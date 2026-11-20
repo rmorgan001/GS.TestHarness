@@ -209,6 +209,7 @@ public static class TestCatalog
             E("Properties", "TrackingRates.HasCurrent", "TrackingRates lists the current rate.", "Looks for TrackingRate in TrackingRates.", "Fail if missing.", "V4"),
             E("Properties", "UTCDate.Value", "UTCDate is UTC.", "Compares UTCDate with this computer's clock.", "Pass within 10 s; Warning otherwise (a whole number of half hours means local time).", "V4", "ConformU"),
             E("Properties", "AltAz.Consistent", "Altitude/Azimuth describe the same place as RA/Dec.", "Converts RA/Dec with SiderealTime and SiteLatitude and compares.", "Pass within 0.5°; Warning to 2°; Fail beyond (azimuth 180° out is called out).", "V4", "Harness"),
+            E("Properties", "SiteHemisphere", "SiteLatitude has the sign of the hemisphere the mount is in.", "Only when the Site hemisphere option is set: compares the sign of SiteLatitude with it.", "Pass when they agree; Warning when they don't; Info within 1° of the equator.", "Harness"),
 
             // ---------- Methods ----------
             E("Methods", "AxisRates.{axis}", "AxisRates is mandatory and consistent with CanMoveAxis.", "Calls AxisRates for each axis.", "Fail on an error, null, rates for an axis that can't move (or none for one that can), negative rates, Minimum above Maximum, or overlapping ranges.", "V4", "ConformU"),
@@ -322,6 +323,7 @@ public static class TestCatalog
             E("ParkHome", "AbortSlew.DuringPark", "AbortSlew stops parking.", "Moves away, starts Park, waits (up to 3 s) for Slewing to be true, then aborts.", "Fail on an error, if Slewing stays true, or if AtPark is true.", "V4", "ConformU"),
             E("ParkHome", "AbortSlew.DuringFindHome", "AbortSlew stops a find-home.", "Moves away, starts FindHome, waits (up to 3 s) for Slewing to be true, then aborts.", "Fail on an error, if Slewing stays true, or if AtHome is true.", "V4", "ConformU"),
             E("ParkHome", "FindHome", "FindHome reaches home.", "Calls FindHome and waits.", "Pass when AtHome is true and Slewing false; Fail on an error or timeout.", "V4", "ConformU"),
+            E("ParkHome", "HomePole", "Home is at the pole of the mount's hemisphere.", "After FindHome reaches home, reads Declination and compares its sign with SiteLatitude's.", "Pass when home is at the pole the latitude says; Warning at the other pole; Info if home is not at a pole.", "Harness"),
             E("ParkHome", "FindHome.Returns", "FindHome is asynchronous in ITelescopeV4.", "Times the call.", "Warning over 5 s.", "V4", "Async"),
             E("ParkHome", "AtHome.AfterSlew", "AtHome clears when the mount leaves home.", "Slews 10° away after FindHome.", "Fail if AtHome is still true.", "V4", "ConformU"),
             E("ParkHome", "Park", "Park reaches the park position.", "Calls Park and waits.", "Pass when AtPark is true and Slewing false; Fail on an error or timeout. Skipped when CanUnpark is false.", "V4", "ConformU"),
