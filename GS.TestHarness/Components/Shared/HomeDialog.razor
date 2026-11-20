@@ -17,7 +17,7 @@
 @* Asks the user to put the mount in the home position before a run that moves it. *@
 <h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem; color: var(--fail);">
     <Icon Kind="AlertCircle" Size="44" />
-    <span>Mount not at home</span>
+    <span>Safety Warning: Put the mount in the home position!</span>
 </h2>
 
 <div class="dialog-message with-icon">
@@ -25,17 +25,10 @@
     <span>
         @if (Model.Status.Error is { } error)
         {
-            @error
+            @error<br /><br />
         }
-        else
-        {
-            <text>The mount isn't reporting that it's at the home position.</text>
-        }
-        <br /><br />
-        A run starts from the home position. Either:<br />
-        <span class="danger">• put the mount in the home position yourself, then power it <b>OFF</b> and <b>ON</b> again, and click <b>Check again</b>; or</span><br />
-        • click <b>Go home</b> and the mount will slew to the home position.<br /><br />
-        Finally: When the mount is at home position, click <b>Start run</b>.
+        Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check again.<br /><br />
+        Finally: Click "Start run" when the mount is in the home position.
     </span>
 </div>
 
