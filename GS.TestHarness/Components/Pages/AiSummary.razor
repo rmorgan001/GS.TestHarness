@@ -29,7 +29,7 @@
    of them and download them as one Markdown file written for an AI coding agent to fix. *@
 <header class="page-head">
     <h1>Summary</h1>
-    <p class="muted">Each problem area is one interface member that behaves wrongly: the tier 1 problem, with what tier 2 and tier 3 found out about its
+    <p class="muted">For the run group picked on the Reports tab, each problem area is one interface member that behaves wrongly: the tier 1 problem, with what tier 2 and tier 3 found out about its
         cause. Tick the ones you want and download them as one Markdown file to give to an AI coding agent. It says what was seen, the likely
         cause, the fix, where in the code, and how to check it is done.</p>
 </header>
@@ -39,6 +39,10 @@
 @if (_set is null)
 {
     <p class="muted">Loading…</p>
+}
+else if (_group is null)
+{
+    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>No run group is picked. Pick one on the Reports tab to see its summary.</p><a class="btn primary" href="@(ConformUOnly ? "conformu/reports" : "reports")">Pick a run group</a></div>
 }
 else if (_set.Runs.Count == 0)
 {

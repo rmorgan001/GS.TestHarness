@@ -28,8 +28,8 @@
    device are left out, so a problem fixed since doesn't come back. *@
 <header class="page-head">
     <h1>Reviews</h1>
-    <p class="muted">Every check that found a problem in the latest @(ConformUOnly ? "ConformU Debug Log Test run" : "ASCOM Conformance Check run") of each
-        device, with the recommended fix and where the code probably is. Each server is listed apart: the
+    <p class="muted">Every check that found a problem in the run group picked on the Reports tab (its newest tier 1 @(ConformUOnly ? "ConformU Debug Log Test" : "ASCOM Conformance Check")
+        run and the deeper reports that followed it up), with the recommended fix and where the code probably is. Each server is listed apart: the
         fix is in its own code.</p>
 </header>
 
@@ -38,6 +38,10 @@
 @if (_set is null)
 {
     <p class="muted">Loading…</p>
+}
+else if (_group is null)
+{
+    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>No run group is picked. Pick one on the Reports tab to see its reviews.</p><a class="btn primary" href="@(ConformUOnly ? "conformu/reports" : "reports")">Pick a run group</a></div>
 }
 else if (_set.Runs.Count == 0)
 {

@@ -16,8 +16,7 @@
 
 @inject RunPageState State
 
-@* On Reviews and Summary: which reports they are showing. By default the newest run of each device; when a run group is picked on the
-   Reports tab, that group, with a way back. *@
+@* On Reviews and Summary: which reports they are showing. The run group picked on the Reports tab, with a way to pick another. *@
 @if (Group is { } g)
 {
     <div class="run-group-banner" role="status">
@@ -28,11 +27,11 @@
                 <span class="tier-badge tier-@run.Options.Tier">Tier @run.Options.Tier</span><a href="reports/@run.Id" class="mono"> @run.Reference </a>
             }
             <span class="muted">· @g.Root.Label · @g.Root.Started.ToString("yyyy-MM-dd HH:mm")</span></span>
-        <button type="button" class="btn" title="Go back to the newest run of each device" @onclick="() => State.GroupId = null">Latest runs</button>
+        <a class="btn" href="@(State.Tab == RunPageTab.ConformU ? "conformu/reports" : "reports")" title="Pick a different run group on the Reports tab">Pick another</a>
     </div>
 }
 
 @code {
-    /// <summary>The run group being shown, or null for the default (the newest run of each device).</summary>
+    /// <summary>The run group being shown, or null when none is picked.</summary>
     [Parameter] public RunGroup? Group { get; set; }
 }

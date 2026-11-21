@@ -48,7 +48,7 @@ Conformance Check, as 1-RAC0031) or RCU (ConformU Debug Log Test, as 1-RCU0034).
 runs) and **Options** (what a run may do). Under the server on each test: its source code folder, the **Mount**
 (simulator or real mount), the **Site hemisphere**, the flip angle and the timeouts, with a checklist that marks anything
 that looks wrong. **Reports** also groups each tier 1 report with its tier 2 and tier 3 follow-ups as **run groups**;
-pick one and **Reviews** and **Summary** show it (the default is the newest run of each device). **Summary** lists the
+pick one and **Reviews** and **Summary** show it (with none picked they list nothing). **Summary** lists the
 problem areas, each tier 1 problem with its tier 2 and 3 findings, to tick and download as one Markdown file for an AI
 coding agent.
 
