@@ -248,7 +248,7 @@ button.link.danger, .danger { color: var(--fail); }
 
 /* ---- Run bar ---- */
 .run-bar {
-    position: sticky; top: .5rem; z-index: 2; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+    display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
     background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); padding: .65rem .8rem; margin-bottom: 1rem;
     border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 16px 36px -20px rgba(0, 0, 0, .9);
 }
@@ -841,3 +841,5 @@ body:has(.print-page) { background: #fff; }
 .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; margin-bottom: .75rem; }
 .card-head h2 { margin: 0; flex: none; }
 .card-head p { margin: 0; flex: 1 1 18rem; }
+.run-tiers { flex: 0 0 100%; min-width: 0; }
+.run-bar-title { flex: 0 0 100%; margin: 0; }

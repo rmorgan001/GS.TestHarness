@@ -69,7 +69,7 @@ harness only recommends: it never changes the server's code.
 | 2 | Further tests within the problem area, with the source code reviewed, to identify the core issue and possible fixes | The same, running or creating tests for the log's problems |
 | 3 | Deep dive tests to verify tier 2's recommendations: a final analysis, summary and recommended fixes | The same, for the log's problems |
 
-After a run, the next tier is offered under the results for the problems it found that have a deeper test, and only
+After a run, the next tier is offered in the bar above the results for the problems it found that have a deeper test, and only
 those members are tested; the run is linked to the one it follows up. Every check in the catalog (`Engine/TestCatalog.cs`)
 says its tier and, for tiers 2 and 3, which checks of the tier below it follows up; the tests fail if a new check
 doesn't. Each check also has its own number (`Engine/TestNumbers.cs`) whose first digit is its tier: 1001 on for

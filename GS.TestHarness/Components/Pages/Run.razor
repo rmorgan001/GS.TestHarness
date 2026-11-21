@@ -350,10 +350,23 @@ else
    the bar (with Stop) shows on every tab, the mount may be moving; once it's done, its reports and findings show only
    on the tab of the test that made it (a ConformU run under ConformU Debug Log Test, a full check under ASCOM
    Conformance Check), never under Options. *@
-@{ var runsHere = State.Tab == (Runs.ConformU is null ? RunPageTab.Conformance : RunPageTab.ConformU); }
+@{
+    var runsHere = State.Tab == (Runs.ConformU is null ? RunPageTab.Conformance : RunPageTab.ConformU);
+    // The tiers (where the run is in them, the next one, the re-run buttons) are part of the run bar; the card below it is the report.
+    var showTiers = runsHere && Runs.Target is not null && (Runs.IsRunning || Runs.Results.Count > 0);
+    // Where the run is in the tiers: tier 1 always first, each deeper tier offered only for what the one below found.
+    var tier = Runs.Options?.Tier ?? 1;
+    var outlook = showTiers && !Runs.IsRunning ? RunOutlook() : null;
+    var next = outlook?.Next;
+    // The re-run button (Re-run tier N, of the run just made): beside Run tier N+1 when that is offered, else on its own.
+    RenderFragment rerun = @<RunSummary Results="Runs.Results" Running="Runs.IsRunning" Rerun="RerunProblems"
+                                        RerunBusy="_rerunBusy" CanRerun="CanRerunProblems"
+                                        RerunText="@RerunText" RerunTitle="@RerunTitle" />;
+}
 @if (Runs.IsRunning || (runsHere && (Runs.Status is not null || Runs.LastReport is not null)))
 {
 <div class="run-bar">
+    <h2 class="run-bar-title">Summary</h2>
     @if (Runs.IsRunning)
     {
         <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
@@ -381,24 +394,9 @@ else
         <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report @done.Reference</a>
         <a class="btn" href="download/@(done.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
     }
-</div>
-}
-
-@if (runsHere && Runs.Target is { } t && (Runs.IsRunning || Runs.Results.Count > 0))
-{
-    <section class="card">
-        <h2>@t.Display
-            @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
-        @* Where the run is in the tiers: tier 1 always first, each deeper tier offered only for what the one below found. *@
-        @{
-            var tier = Runs.Options?.Tier ?? 1;
-            var outlook = Runs.IsRunning ? null : RunOutlook();
-            var next = outlook?.Next;
-            // The re-run button (Re-run tier N, of the run just made): beside Run tier N+1 when that is offered, else on its own.
-            RenderFragment rerun = @<RunSummary Results="Runs.Results" Running="Runs.IsRunning" Rerun="RerunProblems"
-                                                RerunBusy="_rerunBusy" CanRerun="CanRerunProblems"
-                                                RerunText="@RerunText" RerunTitle="@RerunTitle" />;
-        }
+    @if (showTiers)
+    {
+        <div class="run-tiers">
         <ol class="tier-track" aria-label="Diagnostic tiers">
             @for (var i = 1; i <= Tiers.Max; i++)
             {
@@ -458,6 +456,16 @@ else
             </div>
         }
         @if (next is null) { @rerun }
+        </div>
+    }
+</div>
+}
+
+@if (showTiers && Runs.Target is { } t)
+{
+    <section class="card">
+        <h2>@t.Display
+            @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }
