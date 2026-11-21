@@ -139,7 +139,15 @@ public sealed class ConnectionChecks : ICheckGroup
                      "minor version). Put the full build number in DriverInfo instead.");
         var iface = await ctx.ReadMandatoryAsync("InterfaceVersion", t => t.InterfaceVersion,
             v => v is < 1 or > 4 ? "a telescope's InterfaceVersion is 1 to 4" : null, expected: "4");
-        if (iface is { Ok: true, Value: < 4 })
+        // Anything but 3 or 4 isn't an ITelescopeV3 or V4 driver: the checks assume members it may not have, so the run stops here.
+        var unsupported = iface is { Ok: true, Value: not (3 or 4) };
+        if (unsupported)
+            ctx.Report("InterfaceVersion.Current", "InterfaceVersion", Outcome.Error,
+                $"InterfaceVersion is {iface.Value}: the harness tests ITelescopeV3 and ITelescopeV4 (3 or 4), so the run is stopped.",
+                expected: "3 or 4 (ITelescopeV3 or ITelescopeV4)", actual: $"{iface.Value}",
+                fix: "Implement ITelescopeV4 and return 4 from InterfaceVersion (3 for ITelescopeV3). Below 3 the interface lacks members the checks rely on " +
+                     "(for example the async slew methods and tracking rates), and no interface version above 4 exists yet.");
+        else if (iface is { Ok: true, Value: < 4 })
             ctx.Report("InterfaceVersion.Current", "InterfaceVersion", Outcome.Warning,
                 $"InterfaceVersion is {iface.Value}: Platform 7 members (Connect, DeviceState...) may be missing.",
                 expected: "4 (ITelescopeV4)", actual: $"{iface.Value}",
@@ -154,5 +162,6 @@ public sealed class ConnectionChecks : ICheckGroup
             DriverVersion = version.Value,
             InterfaceVersion = iface.Ok ? iface.Value : null
         };
+        if (unsupported) throw new StopRunException($"InterfaceVersion is {iface.Value}, not 3 or 4: the harness tests ITelescopeV3 and ITelescopeV4.");
     }
 }

@@ -26,6 +26,12 @@ namespace GS.TestHarness.Tests;
 public enum Defect
 {
     InterfaceVersion3,
+
+    /// <summary>InterfaceVersion is 2: older than the harness tests, so the run stops.</summary>
+    InterfaceVersion2,
+
+    /// <summary>InterfaceVersion is 5: not one that exists, so the run stops.</summary>
+    InterfaceVersion5,
     TargetReadsZeroWhenNotSet,
     AcceptsInvalidLatitude,
     WrongErrorForInvalidAxis,
@@ -294,7 +300,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     public string Description => "Fake GEM for the GS.TestHarness tests";
     public string DriverInfo => "GS.TestHarness.Tests fake telescope";
     public string DriverVersion => Has(Defect.DriverVersionFull) ? "1.2.3.3" : "1.0";
-    public short InterfaceVersion => (short)(Has(Defect.InterfaceVersion3) ? 3 : 4);
+    public short InterfaceVersion => (short)(Has(Defect.InterfaceVersion5) ? 5 : Has(Defect.InterfaceVersion2) ? 2 : Has(Defect.InterfaceVersion3) ? 3 : 4);
     public string Name => "Fake GEM";
     public IList<string> SupportedActions => Has(Defect.ActionWrongError) ? ["SLEWTOHA"] : [];
 

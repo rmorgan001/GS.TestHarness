@@ -121,6 +121,32 @@ public class EngineTests(ITestOutputHelper output)
         if (expected is Outcome.Fail or Outcome.Warning) Assert.False(string.IsNullOrWhiteSpace(finding.Fix));
     }
 
+    [Theory]
+    [InlineData(Defect.InterfaceVersion2, 2)]
+    [InlineData(Defect.InterfaceVersion5, 5)]
+    public async Task An_InterfaceVersion_that_is_not_3_or_4_stops_the_run_with_an_error(Defect defect, short version)
+    {
+        var report = await RunAsync(new FakeTelescope(defect), Everything);
+        Dump(report);
+        var finding = Assert.Single(report.Results, r => r.Id == "Connection.InterfaceVersion.Current");
+        Assert.Equal(Outcome.Error, finding.Outcome);
+        Assert.False(string.IsNullOrWhiteSpace(finding.Fix));
+        Assert.Contains(report.Results, r => r is { Id: "Connection.Stopped", Outcome: Outcome.Error } && r.Message.Contains("not 3 or 4"));
+        // Nothing after the Connection group ran, and the identity found so far is kept.
+        Assert.DoesNotContain(report.Results, r => r.Group is "Properties" or "Capabilities" or "Settings" or "Motion");
+        Assert.Equal(version, report.Identity.InterfaceVersion);
+        Assert.Equal("Fake GEM", report.Identity.Name);
+    }
+
+    [Fact]
+    public async Task An_InterfaceVersion_of_3_only_warns_and_the_run_goes_on()
+    {
+        var report = await RunAsync(new FakeTelescope(Defect.InterfaceVersion3), Everything);
+        Assert.Equal(Outcome.Warning, Assert.Single(report.Results, r => r.Id == "Connection.InterfaceVersion.Current").Outcome);
+        Assert.DoesNotContain(report.Results, r => r.Id == "Connection.Stopped");
+        Assert.Contains(report.Results, r => r.Group == "Properties");
+    }
+
     [Fact]
     public async Task An_unreachable_device_stops_the_run_with_an_error()
     {
