@@ -139,6 +139,17 @@ public class EngineTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task An_InterfaceVersion_that_cannot_be_read_stops_the_run_with_an_error()
+    {
+        var report = await RunAsync(new FakeTelescope(Defect.InterfaceVersionUnreadable), Everything);
+        Dump(report);
+        Assert.Contains(report.Results, r => r.Id == "Connection.InterfaceVersion.Read" && r.IsProblem);
+        Assert.Contains(report.Results, r => r is { Id: "Connection.Stopped", Outcome: Outcome.Error } && r.Message.Contains("couldn't be read"));
+        Assert.DoesNotContain(report.Results, r => r.Group is "Properties" or "Capabilities" or "Settings" or "Motion");
+        Assert.Equal("Fake GEM", report.Identity.Name);
+    }
+
+    [Fact]
     public async Task An_InterfaceVersion_of_3_only_warns_and_the_run_goes_on()
     {
         var report = await RunAsync(new FakeTelescope(Defect.InterfaceVersion3), Everything);

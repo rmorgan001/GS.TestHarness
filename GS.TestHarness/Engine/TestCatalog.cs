@@ -149,7 +149,7 @@ public static class TestCatalog
             E("Connection", "{member}.Read", "Identity properties are mandatory and not empty.", "Reads Name, Description, DriverInfo, DriverVersion and InterfaceVersion.", "Fail on an error or an empty value; InterfaceVersion must be 1 to 4.", "V4", "ConformU"),
             E("Connection", "Description.Length", "Description fits in a FITS header.", "Measures Description.", "Warning over 64 characters.", "V4"),
             E("Connection", "DriverVersion.Format", "DriverVersion \"must be in the form 'n.n'\".", "Matches DriverVersion against major.minor.", "Warning if it isn't n.n.", "V4"),
-            E("Connection", "InterfaceVersion.Current", "Platform 7 members need InterfaceVersion 4.", "Reads InterfaceVersion.", "Error unless 3 or 4 (the run stops); Warning for 3.", "V4"),
+            E("Connection", "InterfaceVersion.Current", "Platform 7 members need InterfaceVersion 4.", "Reads InterfaceVersion.", "Error unless 3 or 4, or if it can't be read (the run stops); Warning for 3.", "V4"),
 
             // ---------- Protocol (Alpaca) ----------
             E("Protocol", "Management.ApiVersions", "The management API lists the supported API versions.", "GET /management/apiversions.", "Fail unless the reply's Value includes 1.", "Alpaca", "ConformUProtocol"),

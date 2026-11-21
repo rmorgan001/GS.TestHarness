@@ -162,6 +162,8 @@ public sealed class ConnectionChecks : ICheckGroup
             DriverVersion = version.Value,
             InterfaceVersion = iface.Ok ? iface.Value : null
         };
+        // A version that can't be read at all (the Read check has reported why) is as bad: nothing says which interface this is.
+        if (!iface.Ok) throw new StopRunException($"InterfaceVersion couldn't be read ({iface.ErrorText}): the harness can't tell which interface this is.");
         if (unsupported) throw new StopRunException($"InterfaceVersion is {iface.Value}, not 3 or 4: the harness tests ITelescopeV3 and ITelescopeV4.");
     }
 }
