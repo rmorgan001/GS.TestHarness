@@ -107,8 +107,9 @@
                     and <strong>Recommendations</strong>. Each tab's pages
                     show only its own runs: under ConformU Debug Log Test, Reports and Recommendations show only ConformU runs
                     (the ones that followed up a log); under ASCOM Conformance Check, Reports and Recommendations
-                    show only full conformance runs. A report's reference says which test made it: <strong>RAC</strong> (ASCOM
-                    Conformance Check, as RAC0031) or <strong>RCU</strong> (ConformU Debug Log Test, as RCU0034). The check groups a run makes are listed under
+                    show only full conformance runs. A report's reference starts with its tier (<strong>1</strong>, <strong>2</strong> or <strong>3</strong>), then says which test made it:
+                    <strong>RAC</strong> (ASCOM Conformance Check, as 1-RAC0031) or <strong>RCU</strong> (ConformU Debug Log Test, as 1-RCU0034). A
+                    tier 2 run of the same device is 2-RAC0032, a tier 3 run 3-RAC0033. Older references without the tier (RAC0031) still find the report. The check groups a run makes are listed under
                     <a href="help#checks">What gets checked</a>, and every check in them under <a href="help#tests">The tests</a>.</p>
                 <p>The <strong>Server</strong> card holds the server to test. Drag one onto it from the list;
                     <strong>✕</strong> clears it. Under the server, on both tests, a <strong>Settings</strong> section (closed

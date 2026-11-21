@@ -111,17 +111,20 @@ public sealed class ReportStore(string folder)
     }
 
     /// <summary>
-    /// A saved run by its ID, or by its reference: "RAC0012" (an ASCOM Conformance Check run), "RCU0012" (a ConformU
-    /// Debug Log Test run), or, as before the prefixes, "R0012" or just "12" for either. A prefix that names the other
-    /// test finds nothing, so a reference can't open a run of the wrong kind.
+    /// A saved run by its ID, or by its reference: "1-RAC0012" (a tier 1 ASCOM Conformance Check run), "1-RCU0012" (a ConformU
+    /// Debug Log Test run), "2-RAC0013" for a tier 2 run and so on. The tier digit and dash may be left off ("RAC0012"), as
+    /// before they were added, and so may the prefix ("R0012", or just "12" for either). A tier or prefix that names another
+    /// kind of run finds nothing, so a reference can't open the wrong run.
     /// </summary>
     public async Task<RunReport?> LoadAsync(string id)
     {
-        if (Regex.Match(id.Trim(), @"^(RAC|RCU|R)?0*(\d{1,9})$", RegexOptions.IgnoreCase) is { Success: true } reference)
+        if (Regex.Match(id.Trim(), @"^(?:([1-3])-)?(RAC|RCU|R)?0*(\d{1,9})$", RegexOptions.IgnoreCase) is { Success: true } reference)
         {
-            var prefix = reference.Groups[1].Value.ToUpperInvariant();
-            var number = int.Parse(reference.Groups[2].Value);
+            var tier = reference.Groups[1].Success ? int.Parse(reference.Groups[1].Value) : 0;
+            var prefix = reference.Groups[2].Value.ToUpperInvariant();
+            var number = int.Parse(reference.Groups[3].Value);
             return (await ListAsync()).FirstOrDefault(r => r.Number == number
+                && (tier == 0 || r.Options.Tier == tier)
                 && (prefix is "" or "R" || (prefix == RunReport.ConformUPrefix) == (r.ConformULog is not null)));
         }
         var path = PathOf(id);

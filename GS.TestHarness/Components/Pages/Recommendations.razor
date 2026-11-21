@@ -104,6 +104,11 @@ else
         {
             <article class="card rec">
                 <div class="rec-head">
+                    @* The tier of the test that found it: the first digit of its test number (1001 on is tier 1, 2001 tier 2, 3001 tier 3). *@
+                    @if (TestNumbers.TierOf(TestNumbers.Of(r.Id)) is > 0 and var tier)
+                    {
+                        <span class="tier-tag tier-@tier" title="Found by a tier @tier test (test @TestNumbers.Of(r.Id))">Tier @tier</span>
+                    }
                     <span class="badge @ResultsTable.Css(r.Worst)">@ResultsTable.Label(r.Worst)</span>
                     <span class="rec-member mono">@r.Member</span>
                     <span class="mono muted small">@TestNumbers.Label(r.Id)</span>

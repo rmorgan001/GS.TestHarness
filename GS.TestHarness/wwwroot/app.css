@@ -826,3 +826,9 @@ body:has(.print-page) { background: #fff; }
 .dialog-backdrop.preview { background: transparent; backdrop-filter: none; pointer-events: none; place-items: start end; padding: 4rem 1rem 1rem; }
 .dialog-backdrop.preview .dialog { pointer-events: auto; width: min(560px, 100%); max-height: calc(100vh - 5rem); }
 .theme-switch .theme-edit { padding-inline: .5rem; border-left: 1px solid var(--line-strong); }
+
+/* The tier of the test that found a recommendation, at the left of its heading: an outline for tier 1, a double line for tier 2 and
+   a solid fill for tier 3, so the tier shows without relying on colour (the Night theme has one). */
+.tier-tag { flex: none; padding: .05rem .5rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tier-tag.tier-2 { border: 3px double var(--accent); color: var(--text); }
+.tier-tag.tier-3 { background: var(--accent); border-color: var(--accent); color: var(--green-ink); }

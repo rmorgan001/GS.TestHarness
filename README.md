@@ -9,8 +9,8 @@ A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server i
 - An **Alpaca Server**, over Alpaca. This also checks the Alpaca HTTP protocol itself: the management API,
   transaction IDs, the JSON reply shape, error numbers versus HTTP 400, parameter casing and UDP discovery.
 
-Every run is saved, with a reference that says which test made it: RAC (ASCOM Conformance Check, as RAC0031) or RCU
-(ConformU Debug Log Test, as RCU0034).
+Every run is saved, with a reference that starts with its tier (1, 2 or 3) and says which test made it: RAC (ASCOM
+Conformance Check, as 1-RAC0031) or RCU (ConformU Debug Log Test, as 1-RCU0034). A tier 2 run is 2-RAC0032.
 
 ## What gets checked
 

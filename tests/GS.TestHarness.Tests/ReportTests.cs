@@ -108,20 +108,27 @@ public class ReportTests
             var conformU = Report(Result("A.Y", Outcome.Fail)) with { ConformULog = "ConformU.debug.txt" };
             await store.SaveAsync(conformance);
             await store.SaveAsync(conformU);
-            Assert.Equal("RAC0001", conformance.Reference);
-            Assert.Equal("RCU0002", conformU.Reference);
+            Assert.Equal("1-RAC0001", conformance.Reference);
+            Assert.Equal("1-RCU0002", conformU.Reference);
 
-            Assert.Equal(conformance.Id, (await store.LoadAsync("RAC0001"))!.Id);
+            Assert.Equal(conformance.Id, (await store.LoadAsync("1-RAC0001"))!.Id);
+            Assert.Equal(conformance.Id, (await store.LoadAsync("RAC0001"))!.Id); // before the tier was in it
             Assert.Equal(conformU.Id, (await store.LoadAsync("rcu2"))!.Id);
             // The old form and a bare number still find either kind; a prefix naming the other test finds nothing.
             Assert.Equal(conformU.Id, (await store.LoadAsync("R0002"))!.Id);
             Assert.Equal(conformance.Id, (await store.LoadAsync("1"))!.Id);
             Assert.Null(await store.LoadAsync("RCU0001"));
             Assert.Null(await store.LoadAsync("RAC0002"));
+            // A tier that isn't the run's finds nothing.
+            Assert.Null(await store.LoadAsync("2-RAC0001"));
+            Assert.Null(await store.LoadAsync("3-RCU0002"));
+            Assert.Equal(conformU.Id, (await store.LoadAsync("1-rcu2"))!.Id);
 
             // A deeper tier of a ConformU run follows up the same test's run.
             var tier2 = conformU with { Number = 3, FollowsUpNumber = 2, Options = new RunOptions { Tier = 2, FollowsUp = conformU.Id } };
-            Assert.Equal("RCU0002", tier2.FollowsUpReference);
+            Assert.Equal("1-RCU0002", tier2.FollowsUpReference);
+            Assert.Equal("2-RCU0003", tier2.Reference);
+            Assert.Equal("3-RAC0004", (conformance with { Number = 4, Options = new RunOptions { Tier = 3 } }).Reference);
         }
         finally
         {

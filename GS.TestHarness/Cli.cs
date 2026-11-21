@@ -25,7 +25,7 @@ namespace GS.TestHarness;
 /// GS.TestHarness --run Alpaca --host localhost --port 31416 --device 0 [--motion] [--setpark]
 ///                [--no-writes] [--no-protocol] [--no-disconnect] [--extended] [--drift-seconds 20]
 ///                [--mount simulator|real]
-///                [--source C:\src\GSServer | https://github.com/owner/repo] [--conformu ConformU-debug-log.txt] [--follow RAC0012 | RCU0012] [--md report.md]
+///                [--source C:\src\GSServer | https://github.com/owner/repo] [--conformu ConformU-debug-log.txt] [--follow 1-RAC0012 | 1-RCU0012] [--md report.md]
 /// GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope] [--motion] ...
 /// </code>
 /// The report is saved like a run from the web page. Exit code: 0 no failures, 1 failures or errors, 2 bad arguments.
