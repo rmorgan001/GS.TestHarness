@@ -31,6 +31,11 @@
         </div>
         <StopRunButton />
         <ThemeSwitch />
+        @* The quick start: opens the workflow diagram (help#quick-start) in the help window, beside the help button. *@
+        <a class="quick-start" href="help#quick-start" target="gs-testharness-help" data-popup="width=1000,height=800"
+           title="Quick start: how to use this app, from the first run to a clean report">
+            <Icon Kind="ListChecks" Size="18" /><span>Quick start</span>
+        </a>
         @* Opens the help (/help) in its own window (wwwroot/app.js); a plain new tab if pop-ups are blocked. *@
         <a class="help-button" href="help" target="gs-testharness-help" data-popup="width=1000,height=800"
            title="Open the help in a separate window" aria-label="Help">
@@ -107,19 +112,21 @@
 
     private static readonly (string Href, string Label, string Icon) Run = ("", "Run", "Play"),
         Reports = ("reports", "Reports", "FileDocument"),
-        Recommendations = ("recommendations", "Recommendations", "Lightbulb"),
+        Recommendations = ("recommendations", "Reviews", "Lightbulb"),
+        AiSummary = ("ai-summary", "Summary", "Lightbulb"),
         // The ConformU Debug Log Test's own lists, at their own addresses: they show only its runs.
         ConformUReports = (RunPageState.ConformUPrefix + "reports", "Reports", "FileDocument"),
-        ConformURecommendations = (RunPageState.ConformUPrefix + "recommendations", "Recommendations", "Lightbulb");
+        ConformURecommendations = (RunPageState.ConformUPrefix + "recommendations", "Reviews", "Lightbulb"),
+        ConformUAiSummary = (RunPageState.ConformUPrefix + "ai-summary", "Summary", "Lightbulb");
 
     /// <summary>
-    /// The pages under each top tab. Each test has its own Reports and Recommendations, which show only its runs: the
+    /// The pages under each top tab. Each test has its own Reports, Reviews and Summary, which show only its runs: the
     /// ConformU Debug Log Test's are under conformu/. Options has none.
     /// </summary>
     private static (string Href, string Label, string Icon)[] SubPages(RunPageTab tab) => tab switch
     {
-        RunPageTab.Conformance => [Run, Reports, Recommendations],
-        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations],
+        RunPageTab.Conformance => [Run, Reports, Recommendations, AiSummary],
+        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations, ConformUAiSummary],
         _ => []
     };
 
@@ -134,7 +141,7 @@
     /// <summary>
     /// The top tab the page open belongs to. The address says it for every page but the Run page (whose panel is the
     /// tab picked) and a single report (whose page set the tab from the report): conformu/... is the ConformU Debug Log
-    /// Test's; anything else (Reports, Recommendations, Help) the conformance check's.
+    /// Test's; anything else (Reports, Reviews, Help) the conformance check's.
     /// </summary>
     private RunPageTab ActiveTop
         => OnRunPage ? State.Tab
@@ -144,12 +151,12 @@
 
     private void Show(RunPageTab tab)
     {
-        // The page open, by its label: Reports (a single report counts as its list) or Recommendations.
+        // The page open, by its label: Reports (a single report counts as its list) or Reviews.
         var label = OnReportPage ? "Reports"
             : SubPages(ActiveTop).FirstOrDefault(p => p.Href.Length > 0 && p.Href.Equals(PathNow, StringComparison.OrdinalIgnoreCase)).Label;
         State.Tab = tab;
         if (OnRunPage) return;
-        // The same page under the other test (its Reports, its Recommendations); otherwise that test's Run page.
+        // The same page under the other test (its Reports, its Reviews); otherwise that test's Run page.
         var same = label is null ? null : SubPages(tab).FirstOrDefault(p => p.Href.Length > 0 && p.Label == label).Href;
         Nav.NavigateTo(same ?? "");
     }

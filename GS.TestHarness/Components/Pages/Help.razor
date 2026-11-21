@@ -33,15 +33,20 @@
     <div class="help-body">
         <nav class="help-toc" aria-label="Contents">
             <ol>
+                <li><a href="help#quick-start">Quick start</a></li>
                 <li><a href="help#start">Getting started</a></li>
                 <li><a href="help#servers">The server list</a></li>
                 <li><a href="help#run">The Run tab</a></li>
+                <li><a href="help#safety">Safety warnings</a></li>
+                <li><a href="help#server-settings">Server settings</a></li>
                 <li><a href="help#conformu">ConformU Debug Log Test</a></li>
                 <li><a href="help#tiers">Diagnostic tiers</a></li>
                 <li><a href="help#options">Options</a></li>
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
-                <li><a href="help#recommendations">The Recommendations tab</a></li>
+                <li><a href="help#recommendations">The Reviews tab</a></li>
+                <li><a href="help#ai-summary">The Summary tab</a></li>
+                <li><a href="help#themes">Colour themes</a></li>
                 <li><a href="help#checks">What gets checked</a></li>
                 <li><a href="help#tests">The tests</a></li>
                 <li><a href="help#source">Where to check the code</a></li>
@@ -58,17 +63,124 @@
                 Alpaca, the HTTP protocol), and for each problem says what's wrong, what ASCOM expects, how to fix it and
                 where the code to change probably is.
             </p>
+            <p class="lead">New here? Start with the <a href="help#quick-start">Quick start</a>: one picture of the whole job, from adding a server to a clean report.</p>
+
+            <section id="quick-start">
+                <h2>Quick start: from the first run to a clean report</h2>
+                <p>The whole job in one picture. Follow the numbers from top to bottom. The loop in <strong>E</strong> repeats until the report is
+                    clean. Every step says where to click; the sections below explain each part in full.</p>
+
+                <div class="flow" role="group" aria-label="Workflow from setting up a server to a clean report">
+
+                    <div class="flow-phase phase-a">
+                        <h3><span class="flow-letter">A</span> Set up <small>once for each server</small></h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">1</span><b>Add your server</b>
+                                <span>On the left list: <b>+</b> to type it in, the magnifier to find Alpaca servers on the network, or the telescope for the ASCOM drivers on this PC.</span></li>
+                            <li><span class="flow-n">2</span><b>Put it on the Server card</b>
+                                <span>On the <b>Run</b> tab, drag the server onto the Server card (or select it and press <kbd>Enter</kbd>).</span></li>
+                            <li><span class="flow-n">3</span><b>Check its settings</b>
+                                <span>Under the server: Mount (simulator or real), Site hemisphere, flip angle, timeouts and the source folder. The checklist marks anything that looks wrong with ⚠.</span></li>
+                            <li><span class="flow-n">4</span><b>Choose what a run may do</b>
+                                <span>On the <b>Options</b> tab. Tick <b>Move the mount</b> only for a simulator, or a real mount that is clear to move with the OTAs removed.</span></li>
+                        </ol>
+                    </div>
+
+                    <div class="flow-down" aria-hidden="true">▼</div>
+
+                    <div class="flow-phase phase-b">
+                        <h3><span class="flow-letter">B</span> Run tier 1 <small>the full check</small></h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">5</span><b>Click Start run</b>
+                                <span>Beside the server on the Run tab. The <b>Safety Warning!</b> dialog opens.</span></li>
+                            <li><span class="flow-n">6</span><b>Put the mount at home</b>
+                                <span>If it isn't, click <b>Go home</b>, or put it there by hand, power it OFF and ON, and click <b>Check for home</b>. Read the points, then click <b>Start run</b>.</span></li>
+                            <li><span class="flow-n">7</span><b>Watch the run</b>
+                                <span><b>Run Status</b> shows the group it is in. If something looks unsafe it pauses and asks <b>Proceed</b>, <b>Skip</b> or <b>Stop</b>. <b>Stop run</b> in the header ends it any time.</span></li>
+                        </ol>
+                    </div>
+
+                    <div class="flow-down" aria-hidden="true">▼</div>
+
+                    <div class="flow-phase phase-c">
+                        <h3><span class="flow-letter">C</span> Read the results</h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">8</span><b>Look at the report</b>
+                                <span>Filter by Fail, Error or Warning. Open a finding to see what ASCOM expects, what the server did and how to fix it. <b>Open report</b> and <b>Markdown</b> keep it.</span></li>
+                        </ol>
+                        <div class="flow-decision">
+                            <b>Problems found?</b>
+                            <span class="flow-branch yes"><b>Yes</b> &rarr; carry on to D</span>
+                            <span class="flow-branch no"><b>No</b> &rarr; you are done: go to F</span>
+                        </div>
+                    </div>
+
+                    <div class="flow-down" aria-hidden="true">▼</div>
+
+                    <div class="flow-phase phase-d">
+                        <h3><span class="flow-letter">D</span> Find the cause <small>deeper tiers</small></h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">9</span><b>Run tier 2</b>
+                                <span>In the <b>Run Status</b> bar, beside the tiers. It measures the problems tier 1 found and narrows down the cause.</span></li>
+                            <li><span class="flow-n">10</span><b>Run tier 3</b>
+                                <span>The deepest tier: it confirms the cause and gives the fix, with the code to change. Not every problem has a deeper test.</span></li>
+                        </ol>
+                    </div>
+
+                    <div class="flow-down" aria-hidden="true">▼</div>
+
+                    <div class="flow-phase phase-e">
+                        <h3><span class="flow-letter">E</span> Fix it and prove it <small>repeat until clean</small></h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">11</span><b>Collect the fixes</b>
+                                <span><b>Reviews</b> lists each problem's fix and where in the code. <b>Summary</b> lets you tick problem areas and <b>Download Markdown</b> for an AI agent or a developer.</span></li>
+                            <li><span class="flow-n">12</span><b>Change the server's code</b>
+                                <span>Make the fixes, then rebuild and restart the server.</span></li>
+                            <li><span class="flow-n">13</span><b>Run it again</b>
+                                <span>Click <b>Re-run tier 1</b> (all the tests again), or <b>Re-run tier 2 or 3</b> to check one diagnosis without waiting for the whole run.</span></li>
+                        </ol>
+                        <div class="flow-decision">
+                            <b>All clean now?</b>
+                            <span class="flow-branch yes"><b>Yes</b> &rarr; go to F</span>
+                            <span class="flow-branch no"><b>No</b> &#8634; back to step 9 for what is left, then 11 to 13 again</span>
+                        </div>
+                    </div>
+
+                    <div class="flow-down" aria-hidden="true">▼</div>
+
+                    <div class="flow-phase phase-f">
+                        <h3><span class="flow-letter">F</span> Finish <small>keep the evidence</small></h3>
+                        <ol class="flow-steps">
+                            <li><span class="flow-n">14</span><b>Keep the report</b>
+                                <span>Every run is saved with a name that starts with its tier, such as <b>1-RAC0012</b>. Reopen it on <b>Reports</b>, or download it as Markdown.</span></li>
+                            <li><span class="flow-n">15</span><b>Check it automatically</b>
+                                <span>Run the same check from the command line in a build: <code>GS.TestHarness --run Alpaca …</code>. Exit code 0 means nothing failed.</span></li>
+                        </ol>
+                    </div>
+                </div>
+
+                <p><strong>Starting from a ConformU debug log?</strong> Use the <b>ConformU Debug Log Test</b> tab instead of steps 5 to 7: drag the server on,
+                    drop the log on the card beside it and click <b>Start run</b>. Only the members ConformU flagged are checked, and C to F are the same.</p>
+
+                <h3>Any time</h3>
+                <ul class="flow-anytime">
+                    <li><b>Stop run</b> in the header ends a run and aborts any slew, from any page.</li>
+                    <li><b>Quick start</b> and the <b>?</b> button open this help. The (?) beside a setting opens its part.</li>
+                    <li><b>Day, Dark, Dusk, Night</b> and <b>Custom</b> change the colours. Night is red only, to keep your night vision at the telescope.</li>
+                    <li>Under <b>Options</b>, switch on the sound and notification to be told when a run finishes or needs your answer.</li>
+                </ul>
+            </section>
 
             <section id="start">
                 <h2>Getting started</h2>
                 <ol>
                     <li>Add the server to the <strong>Servers</strong> list on the left (see <a href="help#servers">The server list</a>).</li>
-                    <li>Drag it onto the <strong>Server</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
-                    <li>Check the server's <strong>Settings</strong>, choose what the run may do, and press <strong>Start run</strong> beside the server.
-                        A warning asks you to remove the OTAs and watch the mount for the whole run, and lists the settings under
-                        the server to check first (Mount, flip angle, timeouts and source code), with ⚠ on any that look wrong. Clicking
-                        <strong>Start</strong> there accepts responsibility for the run.</li>
-                    <li>Read the findings as they come in. Each run is saved; open it later on the <strong>Reports</strong> tab.</li>
+                    <li>Drag it onto the <strong>Server Selection</strong> card on the <strong>Run</strong> tab (or select it and press <kbd>Enter</kbd>).</li>
+                    <li>Check the server's <strong>Settings</strong> (the checklist under it marks anything that looks wrong with ⚠), choose what the run may do under
+                        <strong>Options</strong>, and press <strong>Start run</strong> beside the server. The <strong>Safety Warning!</strong> dialog asks you to put the
+                        mount at home, to remove the OTAs and to watch the mount for the whole run. Clicking <strong>Start run</strong> there accepts responsibility for the run.</li>
+                    <li>Read the findings as they come in. Each run is saved; open it later on the <strong>Reports</strong> tab. For a picture of the whole job, see the
+                        <a href="help#quick-start">Quick start</a>.</li>
                 </ol>
                 <p class="warning">Moving the mount is off by default. Turn it on only for a simulator, or a real mount that's clear to move.</p>
             </section>
@@ -101,17 +213,16 @@
                 <p>Three tabs run across the top: <strong>ASCOM Conformance Check</strong> (a full check),
                     <strong>ConformU Debug Log Test</strong> (following up a ConformU debug log, see <a href="help#conformu">ConformU Debug Log Test</a>)
                     and <strong>Options</strong> (what a run may do, for both). Under <strong>ASCOM Conformance Check</strong> a second
-                    row holds its pages: <strong>Run</strong>, <strong>Reports</strong>
-                    and <strong>Recommendations</strong>. Under <strong>ConformU Debug Log Test</strong>
-                    the same row holds the pages its runs use: <strong>Run</strong>, <strong>Reports</strong>
-                    and <strong>Recommendations</strong>. Each tab's pages
-                    show only its own runs: under ConformU Debug Log Test, Reports and Recommendations show only ConformU runs
-                    (the ones that followed up a log); under ASCOM Conformance Check, Reports and Recommendations
-                    show only full conformance runs. A report's reference starts with its tier (<strong>1</strong>, <strong>2</strong> or <strong>3</strong>), then says which test made it:
+                    row holds its pages: <strong>Run</strong>, <strong>Reports</strong>,
+                    <strong>Reviews</strong> and <strong>Summary</strong>. Under <strong>ConformU Debug Log Test</strong>
+                    the same row holds the pages its runs use: <strong>Run</strong>, <strong>Reports</strong>,
+                    <strong>Reviews</strong> and <strong>Summary</strong>. Each tab's pages
+                    show only its own runs: under ConformU Debug Log Test, Reports, Reviews and Summary show only ConformU runs
+                    (the ones that followed up a log); under ASCOM Conformance Check, they show only full conformance runs. A report's reference starts with its tier (<strong>1</strong>, <strong>2</strong> or <strong>3</strong>), then says which test made it:
                     <strong>RAC</strong> (ASCOM Conformance Check, as 1-RAC0031) or <strong>RCU</strong> (ConformU Debug Log Test, as 1-RCU0034). A
                     tier 2 run of the same device is 2-RAC0032, a tier 3 run 3-RAC0033. Older references without the tier (RAC0031) still find the report. The check groups a run makes are listed under
                     <a href="help#checks">What gets checked</a>, and every check in them under <a href="help#tests">The tests</a>.</p>
-                <p>The <strong>Server</strong> card holds the server to test. Drag one onto it from the list;
+                <p>The <strong>Server Selection</strong> card holds the server to test. Drag one onto it from the list;
                     <strong>✕</strong> clears it. Under the server, on both tests, a <strong>Settings</strong> section (closed
                     until you open it, with a reminder to check it before starting a run) holds these:</p>
                 <dl>
@@ -133,14 +244,21 @@
                     <dt>Slew timeout and call timeout</dt>
                     <dd>How long a slew, and any single call, may take before it counts as never answered. Remembered as soon as they are changed.</dd>
                 </dl>
-                <p><strong>Start run</strong> sits beside the server. While it runs, a bar shows the step and progress, with <strong>Stop</strong> to end it early (the mount
-                    is still put back). The findings appear below as they come in.</p>
-                <p>When it's done, the bar links to the report.</p>
+                <p>Under the server a short <strong>checklist</strong> shows what to know before you start: ✓ for what is fine, ⚠ for what looks wrong (the
+                    Mount not set, a short timeout for a real mount, no source folder) and ℹ for information (whether Move the mount is on, the Site hemisphere, whether it is
+                    connected).</p>
+                <p><strong>Start run</strong> sits beside the server; a <a href="help#safety">safety warning</a> comes first. While a run goes, the
+                    <strong>Run Status</strong> bar shows its status beside the title, with <strong>Stop</strong> to end it early (the mount is still put back), the progress, the time
+                    it has been going and how long the last run of the device took. Under that, the three tiers show where the run is, and what can come next (see
+                    <a href="help#tiers">Diagnostic tiers</a>): <strong>Run tier 2</strong> (or 3), and <strong>Re-run tier N</strong> to run the tier just made again.
+                    <strong>Re-run tier 1</strong> runs all the tests again.</p>
+                <p>The <strong>Report</strong> section below it holds the findings as they come in, with their filters. When the run is done, <strong>Open report</strong> and
+                    <strong>Markdown</strong> at the top of it open or download the report.</p>
             </section>
 
             <section id="conformu">
                 <h2>ConformU Debug Log Test</h2>
-                <p>Drop a ConformU debug log on the <strong>ConformU debug log</strong> card, or click it to choose one.
+                <p>Drop a ConformU debug log on the card beside the Server Selection card, or click it to choose one.
                     It must be a debug log: run ConformU with debug logging turned on in its settings. A normal log (one
                     with no DEBUG lines) is turned away with a note saying so. Every ERROR, ISSUE, CONFIGURATION ALERT and WARNING line is read (the repeats in ConformU's
                     end-of-run summary count once) and grouped by the ITelescopeV4 member it is about. The table shows, for
@@ -187,6 +305,9 @@
                 <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>, on either test,
                     is tier 1); tiers 2 and 3 are offered in the bar above the results, only for
                     problems the tier below found that have a deeper test.</p>
+                <p>Under the tiers, <strong>Re-run tier N</strong> sits beside <strong>Run tier N+1</strong>: <strong>Re-run tier 1</strong> runs all the tests again, and
+                    <strong>Re-run tier 2</strong> or <strong>3</strong> runs that tier's diagnosis again of what the tier below found, to check a fix without
+                    waiting for the whole run. A tier 2 or 3 report is named with its tier first, such as <strong>2-RAC0013</strong>.</p>
                 <table>
                     <thead><tr><th>Tier</th><th>ASCOM Conformance Check</th><th>ConformU Debug Log Test</th></tr></thead>
                     <tbody>
@@ -201,7 +322,7 @@
                 <p>A tier 2 or 3 run can't be started any other way: it follows up the run just below it (same device,
                     the options as set now), and its report says which run that was. Its findings are the
                     <strong>Diagnose…</strong> group for a conformance run, <strong>ConformU.Diagnose…</strong> for a ConformU
-                    run. Recommendations add each tier 1 run's deeper findings, the deepest tier's
+                    run. Reviews add each tier 1 run's deeper findings, the deepest tier's
                     where a check was made at more than one.</p>
                 <p>A conformance run's tier 2 also takes apart its other kinds of problem: invalid arguments, members that work
                     when they must refuse (tracking off, during a slew), members that answer while disconnected, SlewSettleTime, AxisRates against CanMoveAxis, DriverVersion and the COM registration. Each
@@ -286,7 +407,7 @@
                     night vision barely responds to it, so the screen doesn't spoil your dark adaptation. With one hue, the outcomes are told apart by
                     shape instead of colour: a Fail is a solid fill, an Error has a dashed outline and a Warning a thick one. This browser remembers
                     your choice. For the dimmest screen, also turn down the device's brightness or use its night-light or red-screen setting.</p>
-                <p><strong>Custom</strong> is your own colours. <strong>Double-click</strong> the <strong>Custom</strong> button to open <em>Your own colours</em>, with seven pickers (background, text,
+                <p><strong>Custom</strong> is your own colours. The <strong>✎</strong> button beside <strong>Custom</strong> (or a double click on Custom) opens <em>Your own colours</em>, with seven pickers (background, text,
                     accent, warning, error, fail and info); panels, lines and hover shades are worked out from them. Start from one of the built-in themes,
                     watch the page change as you move a picker, and check the contrast figure beside each colour: under 4.5 to 1 is hard to read. It also says
                     whether the colours are safe for night vision (almost no green or blue). The palette is kept by this browser; <strong>Export</strong> copies it
@@ -315,9 +436,12 @@
                 <h2>Safety warnings</h2>
                 <p>Starting a run that moves the mount asks two things of you first.</p>
                 <ol>
-                    <li><strong>The start dialog.</strong> The app connects to the mount and reads whether it is at the home position. If it isn't,
-                        the dialog asks you to put it there: <strong>Go home</strong>, or move it yourself, power it off and on, and
-                        <strong>Check for home</strong>. <strong>Start run</strong> is not available until the mount reports at home. If the mount can't be connected
+                    <li><strong>The Safety Warning! dialog.</strong> The app connects to the mount and reads whether it is at the home position. The dialog has numbered steps.
+                        <strong>1. Mount position</strong> (for a run that moves the mount) shows a green card when it is at home, with <strong>Check for home</strong> to read it again,
+                        or a red card when it isn't, with two choices side by side: <strong>A. Let the mount go home</strong> (<strong>Go home</strong>) or <strong>B. Do it by hand</strong>
+                        (put it there, power it off and on, then <strong>Check for home</strong>). <strong>2. Before you start</strong> lists what to check: the OTAs removed, your settings
+                        understood, and staying with the mount; and, in red, any setting that looks wrong. Below it, clicking <strong>Start run</strong> accepts responsibility for
+                        watching the mount. <strong>Start run</strong> is not available until the mount reports at home. If the mount can't be connected
                         or read, only <strong>Check for home</strong> and <strong>Cancel</strong> are offered. Cancel disconnects the mount; Start run keeps it connected.</li>
                     <li><strong>The warnings before the mount moves.</strong> Before the first test that moves the mount, the run looks at what it found so far
                         (the position, time and site) and whether the mount is already slewing, parked or away from home. If anything looks wrong
@@ -354,10 +478,8 @@
 
             <section id="results">
                 <h2>Reading the results</h2>
-                <p>At the top, a summary says in plain words how many things need a look and lists the first few (failures, then errors, then warnings;
-                    anything about the mount's safety first). It also says what is new and what is fixed since the last run of the same device, and
-                    <strong>Re-run the groups with problems</strong> runs just the groups that had problems, whole, to check a fix without waiting for a full run.
-                    In a finding, <strong>Copy</strong> puts its check, message, expected and actual values, fix and code location on the clipboard.</p>
+                <p>The findings sit in the <strong>Report</strong> section, with filters for the outcome, the group and a search. Open a finding to see what ASCOM
+                    expects, what the server did, how to fix it and where the code probably is. In a finding, <strong>Copy</strong> puts its check, message, expected and actual values, fix and code location on the clipboard.</p>
                 <p>Each finding has an outcome:</p>
                 <table>
                     <thead><tr><th>Outcome</th><th>Means</th></tr></thead>
@@ -391,10 +513,17 @@
                     there with one <strong>CommunicationLost</strong> error that holds the last errors seen. The groups that need
                     the device are skipped, and the findings up to that point are kept. Such runs are tagged
                     <em>connection lost</em> in the list.</p>
+                <p><strong>Run groups.</strong> At the top of the page, a tier 1 report is grouped with the tier 2 and tier 3 reports that followed it up, directly or
+                    through each other, and with its re-runs: a report made by <strong>Re-run tier N</strong> joins the group of the report it re-ran. (Reports made
+                    before re-runs were recorded stay in their own groups.) A group's Reviews and Summary are built on its newest tier 1 report. Each group shows its reports as tier badges that open them. Pick one and the list below shows only its reports, and <strong>Reviews</strong> and
+                    <strong>Summary</strong> show that group, instead of the newest run of each device. Click it again to show every report. There are <strong>Open Reviews</strong> and
+                    <strong>Open Summary</strong> buttons to go there. Until you pick one, Reviews and Summary show the newest run of each device; the <strong>Latest runs</strong> button in
+                    their banner goes back to that. The pick lasts until you change it or close the browser tab. A deeper
+                    report whose tier 1 report was deleted makes a group of its own.</p>
             </section>
 
             <section id="recommendations">
-                <h2>The Recommendations tab</h2>
+                <h2>The Reviews tab</h2>
                 <p>Every check that found a problem, across the saved runs, with the recommended fix and where the code
                     probably is. Only the latest run of each device counts, so a problem fixed since an
                     older run doesn't come back. Each server is listed apart, because the fix is in its own code.</p>
@@ -403,6 +532,22 @@
                     with the expected and actual values. A check with no recorded fix shows those values instead.</p>
                 <p>Click a count to show failures, errors or warnings (click several to show more than one, and again to take one away); <strong>No problem</strong> also lists the
                     checks that passed. <strong>Download Markdown</strong> saves the list, ready to paste into an issue.</p>
+                <p>By default Reviews shows the newest run of each device, with the deeper reports that followed it up. A new tier 1 run of a device
+                    replaces the older one here, and its tier 2 and 3 reports are made again. To look at an earlier set, pick a
+                    <a href="help#reports">run group</a> on the Reports tab: a banner at the top says which run group is showing, and <strong>Latest runs</strong>
+                    goes back.</p>
+            </section>
+
+            <section id="ai-summary">
+                <h2>Summary</h2>
+                <p>A page under each test, next to Reviews, for handing problems to an AI coding agent. It lists <strong>problem areas</strong>:
+                    each interface member that behaves wrongly, with the tier 1 problem and what tier 2 and tier 3 found out about its cause, together.
+                    Tick the areas you want (<strong>Select all shown</strong> and <strong>Clear</strong> help), then <strong>Download Markdown</strong>, or
+                    <strong>Copy</strong> it. <strong>Preview</strong> shows the text first.</p>
+                <p>The file is written to be given to the agent as it is. It says what the harness is and how to read an area, then for each area the problem
+                    (what the test expected and got), the analysis of the cause, the confirmed cause and the fix when tier 3 has one, the files and lines to change,
+                    and the checks that must pass afterwards, with a command to run them again. A line number is a pointer found by searching the server's source,
+                    so the agent is told to read around it and judge. Servers are kept apart: the fix goes in the code of the server named in each heading.</p>
             </section>
 
             <section id="checks">

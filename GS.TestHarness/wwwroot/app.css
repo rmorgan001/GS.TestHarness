@@ -255,7 +255,7 @@ button.link.danger, .danger { color: var(--fail); }
 .progress-wrap { flex: 1; min-width: 200px; }
 /* The run's progress text. Not ".status": that is the sidebar's connection dot (a fixed .6rem circle). */
 .run-status { margin-bottom: .3rem; line-height: 1.4; overflow-wrap: anywhere; }
-.run-status-step { color: var(--text); font-weight: 600; }
+.run-status-step { color: var(--muted); font-weight: 400; }
 .progress { height: 6px; background: var(--well); border-radius: 3px; overflow: hidden; }
 .progress div { height: 100%; background: linear-gradient(90deg, var(--green), var(--green-hover)); border-radius: 3px; transition: width .3s; }
 
@@ -838,7 +838,7 @@ body:has(.print-page) { background: #fff; }
 .tier-next-buttons .run-summary-actions { margin: 0; }
 
 /* A card's title with its description beside it, on one row; the description wraps below when the card is narrow. */
-.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; margin-bottom: .75rem; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .5rem; margin-bottom: .75rem; }
 .card-head h2 { margin: 0; flex: none; }
 .card-head p { margin: 0; flex: 1 1 18rem; }
 .run-tiers { flex: 0 0 100%; min-width: 0; }
@@ -850,5 +850,68 @@ body:has(.print-page) { background: #fff; }
 .report-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 /* The run bar's title with the run's status beside it. */
-.run-bar-head { flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; }
+.run-bar-head { flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem .5rem; }
 .run-bar-head .run-bar-title { flex: none; }
+.report-target { font-family: var(--font); font-weight: 400; font-size: 1rem; color: var(--muted); }
+
+/* AI Summary: the problem areas to pick from, and the bar that downloads them. */
+.ai-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.ai-toolbar .spacer { flex: 1; }
+.ai-section { border-left: 4px solid transparent; }
+.ai-section.selected { border-left-color: var(--accent); }
+.ai-pick { display: inline-flex; align-items: center; gap: .5rem; }
+.ai-tier { margin: .8rem 0 .3rem; font-size: 1rem; color: var(--muted); }
+.ai-checks { margin: 0; padding-left: 1.1rem; display: grid; gap: .5rem; }
+.ai-preview { width: 100%; min-height: 18rem; font-family: var(--mono); font-size: .8rem; background: var(--well); color: var(--text); border: 1px solid var(--line-strong); border-radius: 6px; }
+
+/* The safety warning before a run (StartDialog): numbered sections in the order a person acts on them. */
+.dialog:has(.safety-dialog) { width: min(700px, 100%); }
+.safety-title { display: flex; align-items: center; gap: .6rem; margin: 0 0 .25rem; font-size: 1.6rem; color: var(--yellow); }
+.safety-lead { margin: 0 0 1rem; color: var(--muted); }
+.safety-section { margin: 0 0 1rem; }
+.safety-h { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .5rem; font-size: 1.1rem; }
+.safety-num { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--yellow); color: var(--sky); font-size: .85rem; font-weight: 700; }
+.safety-chip { padding: .05rem .55rem; border: 1px solid var(--line-strong); border-radius: 999px; font-family: var(--font); font-size: .8rem; font-weight: 600; }
+.safety-chip.ok { color: var(--green); border-color: var(--green); }
+.safety-chip.bad { color: var(--fail); border-color: var(--fail); }
+.safety-card { display: grid; gap: .6rem; padding: .75rem .9rem; border: 1px solid var(--line-strong); border-left-width: 4px; border-radius: 8px; }
+.safety-card.ok { border-left-color: var(--green); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.safety-card.bad { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 9%, transparent); }
+.safety-card.warn { border-left-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 9%, transparent); margin-bottom: .4rem; }
+.safety-card .btn { justify-self: start; }
+.safety-card-head { display: flex; align-items: center; gap: .75rem; }
+.safety-card.ok .safety-card-head { color: var(--text); }
+.safety-error { color: var(--fail); overflow-wrap: anywhere; }
+.safety-small { font-size: .9rem; color: var(--muted); }
+.safety-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .6rem; }
+.safety-option { display: grid; gap: .35rem; align-content: start; padding: .6rem .75rem; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-raised); }
+.safety-option .btn { justify-self: start; }
+.safety-next { margin: 0; color: var(--yellow); }
+.safety-note { margin: .5rem 0 0; color: var(--green); }
+.safety-note.problem { color: var(--fail); }
+.safety-list { margin: 0; padding: 0; list-style: none; display: grid; gap: .45rem; }
+.safety-list li { padding: .5rem .75rem .5rem 1.9rem; position: relative; border-left: 4px solid var(--yellow); border-radius: 4px; background: color-mix(in srgb, var(--yellow) 8%, transparent); font-weight: 600; }
+.safety-list li::before { content: "!"; position: absolute; left: .7rem; top: .5rem; color: var(--yellow); font-weight: 800; }
+.safety-sub { margin: .8rem 0 .4rem; font-weight: 600; color: var(--muted); }
+.safety-accept { margin: 0 0 1rem; padding: .5rem .75rem; border: 1px solid var(--yellow); border-radius: 8px; color: var(--yellow); }
+.safety-buttons { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: .75rem 1.25rem; }
+
+/* Quick start: a pill in the header that opens the workflow diagram in the help window. */
+.quick-start { display: inline-flex; align-items: center; gap: .4rem; flex: none; padding: .3rem .8rem; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--link-sky); font-size: .85rem; font-weight: 600; white-space: nowrap; transition: border-color .15s, background .15s; }
+.quick-start:hover { border-color: var(--mare); background: color-mix(in srgb, var(--link-sky) 10%, transparent); text-decoration: none; }
+.theme-switch + .quick-start, .header-run + .quick-start, .quick-start + .help-button { margin-left: 0; }
+
+/* Reviews and Summary: which reports they show (a run group picked on the Reports tab), with the way back to the latest runs. */
+.run-group-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin: 0 0 1rem; padding: .6rem .9rem; border: 1px solid var(--line-strong); border-left: 4px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* Reports tab: the run groups to pick from (a tier 1 report with its deeper reports). */
+.rg-list { list-style: none; margin: .5rem 0; padding: 0; max-height: 15rem; overflow: auto; display: grid; gap: .3rem; }
+.rg { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; padding: .4rem .7rem; border: 1px solid var(--line); border-left: 4px solid transparent; border-radius: 8px; }
+.rg.picked { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.rg label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; cursor: pointer; }
+.rg-chain { display: inline-flex; gap: .3rem; }
+.rg-open { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .5rem; }
+.rg-pick { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rg-pick:hover .rg-mark { color: var(--accent); }
+.rg-mark { color: var(--muted); }
+.rg.picked .rg-mark { color: var(--accent); }

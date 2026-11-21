@@ -40,14 +40,56 @@ else if (_reports.Count == 0)
 }
 else
 {
-    var all = _checked.Count == _reports.Count;
+    var groups = RunGroups.Build(_reports);
+    var picked = RunGroups.Find(groups, State.GroupId);
+    // The list shows the picked run group's reports, or every report when none is picked.
+    var listed = Visible;
+    var all = listed.Count > 0 && listed.All(r => _checked.Contains(r.Id));
+    var prefix = ConformUOnly ? RunPageState.ConformUPrefix : "";
+    @* Run groups: a tier 1 report with the deeper reports that followed it up. Picking one makes Reviews and Summary show it. *@
+    <section class="card run-groups">
+        <h2>Run groups</h2>
+        <p class="muted small">A tier 1 report with the tier 2 and tier 3 reports that followed it up, and its re-runs. Pick a run group and the list below shows
+            only its reports, and <b>Reviews</b> and <b>Summary</b> show it. Click it again to show every report.</p>
+        <ul class="rg-list">
+            @foreach (var g in groups)
+            {
+                var isPicked = picked?.Key == g.Key;
+                var failing = g.Latest.Count(Outcome.Fail) + g.Latest.Count(Outcome.Error);
+                <li class="rg @(isPicked ? "picked" : null)">
+                    <button type="button" class="rg-pick" aria-pressed="@(isPicked ? "true" : "false")"
+                            title="@(isPicked ? "Click again to show every report" : "Show only this run group's reports here, and in Reviews and Summary")"
+                            @onclick="() => Pick(g.Key)">
+                        <span class="rg-mark" aria-hidden="true">@(isPicked ? "●" : "○")</span>
+                        <b class="mono">@g.Root.Reference</b>
+                        <span>@(g.Root.Identity.Name ?? g.Root.Target.Display) <span class="muted small">@g.Root.Started.ToString("yyyy-MM-dd HH:mm")</span></span>
+                    </button>
+                    <span class="rg-chain">
+                        @foreach (var run in g.Runs)
+                        {
+                            <a class="tier-badge tier-@run.Options.Tier" href="reports/@run.Id" title="@run.Reference">Tier @run.Options.Tier</a>
+                        }
+                    </span>
+                    <span class="muted small">@failing fail · @g.Latest.Count(Outcome.Warning) warning</span>
+                </li>
+            }
+        </ul>
+        @if (picked is not null)
+        {
+            <div class="rg-open">
+                <span>Reviews and Summary now show <b>@picked.Root.Reference</b>.</span>
+                <a class="btn" href="@(prefix)recommendations"><Icon Kind="Lightbulb" Size="16" /> Open Reviews</a>
+                <a class="btn" href="@(prefix)ai-summary"><Icon Kind="Lightbulb" Size="16" /> Open Summary</a>
+            </div>
+        }
+    </section>
     @* Tick reports (or Select all), then delete them together. *@
     <div class="bulk-bar">
         <label class="bulk-all">
             <input type="checkbox" checked="@all" @onchange="e => SelectAll((bool)e.Value!)" />
             <span>Select all</span>
         </label>
-        <span class="muted">@(_checked.Count == 0 ? $"{_reports.Count} reports" : $"{_checked.Count} of {_reports.Count} checked")</span>
+        <span class="muted">@(_checked.Count == 0 ? $"{listed.Count} report{(listed.Count == 1 ? "" : "s")}{(picked is null ? "" : " in this run group")}" : $"{_checked.Count} of {listed.Count} checked")</span>
         <button class="btn danger-outline" disabled="@(_checked.Count == 0)" @onclick="DeleteCheckedAsync">
             <Icon Kind="Delete" Size="16" /> Delete checked@(_checked.Count > 0 ? $" ({_checked.Count})" : "")
         </button>
@@ -59,7 +101,7 @@ else
                                                      @onchange="e => SelectAll((bool)e.Value!)" /></th><th>Ref</th><th>When</th><th>Tier</th><th>Device</th><th>Via</th><th class="col-bar">Outcome</th><th class="num">Fail</th><th class="num">Warn</th><th class="num">Pass</th><th></th></tr>
             </thead>
             <tbody>
-                @foreach (var r in _reports)
+                @foreach (var r in listed)
                 {
                     var fail = r.Count(Outcome.Fail) + r.Count(Outcome.Error);
                     var warn = r.Count(Outcome.Warning);
@@ -131,6 +173,18 @@ else
     private List<RunReport>? _all, _reports;
     private readonly HashSet<string> _checked = [];
 
+    /// <summary>The reports the list shows: the picked run group's, or every report of this tab.</summary>
+    private List<RunReport> Visible
+        => RunGroups.Find(RunGroups.Build(_reports!), State.GroupId) is { } group
+            ? [.. _reports!.Where(r => group.Runs.Any(x => x.Id == r.Id))] : _reports!;
+
+    /// <summary>Picks a run group (Reviews and Summary follow it, and the list shows only its reports), or, picked again, none.</summary>
+    private void Pick(string key)
+    {
+        State.GroupId = State.GroupId == key ? null : key;
+        _checked.Clear();
+    }
+
     // Each run by its ID, and for each tier 1 run how many runs follow up its chain.
     private Dictionary<string, RunReport>? _byId;
     private Dictionary<string, int>? _followers;
@@ -191,7 +245,7 @@ else
     private void SelectAll(bool on)
     {
         _checked.Clear();
-        if (on) _checked.UnionWith(_reports!.Select(r => r.Id));
+        if (on) _checked.UnionWith(Visible.Select(r => r.Id));
     }
 
     private async Task DeleteCheckedAsync()

@@ -181,6 +181,12 @@ public sealed record RunOptions
 
     /// <summary>The report this run follows up: the tier below's run that found the problems. Null at tier 1.</summary>
     public string? FollowsUp { get; init; }
+
+    /// <summary>
+    /// The report this run re-ran (the Re-run button), so the two are one run group on the Reports tab. A re-run of tier 1 is a new tier 1
+    /// run; it joins the group of the report it re-ran. Null for any other run.
+    /// </summary>
+    public string? RerunOf { get; init; }
 }
 
 /// <summary>What the server under test drives (the Mount option).</summary>

@@ -57,6 +57,16 @@ public sealed class RunPageState
     }
 
     /// <summary>
+    /// The run group (its first report's ID, see <see cref="RunGroups"/>) that Reviews and Summary show, chosen on the Reports tab; null
+    /// for the default, the newest run of each device.
+    /// </summary>
+    public string? GroupId
+    {
+        get;
+        set { if (field == value) return; field = value; Changed?.Invoke(); }
+    }
+
+    /// <summary>
     /// Where the ConformU Debug Log Test's own pages live: conformu/reports and conformu/recommendations. The address
     /// says which test's runs a page shows, so a reload, a reconnect or a link opened on its own can't mix them.
     /// </summary>

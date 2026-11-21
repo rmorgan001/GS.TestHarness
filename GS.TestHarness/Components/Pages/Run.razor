@@ -108,6 +108,7 @@ else
                  @ondrop:preventDefault>
             @* The title with its description beside it (it wraps below on a narrow card). *@
             <div class="card-head">
+                <h2>Server Selection:</h2>
                 @if (conformU)
                 {
                     <p class="muted">Drag a server from the list onto this box and drop a ConformU debug log on the card beside it.
@@ -367,7 +368,7 @@ else
 {
 <div class="run-bar">
     <div class="run-bar-head">
-        <h2 class="run-bar-title">Run Summary</h2>
+        <h2 class="run-bar-title">Run Status:</h2>
         @* The run's status (Connecting…, Checking Motion…, Finished and saved., Stopped; the findings so far are saved.) beside the title. *@
         @if (Runs.Status is { } status)
         {
@@ -461,7 +462,7 @@ else
 {
     <section class="card">
         <div class="report-head">
-            <h2>@t.Display
+            <h2>Report: <span class="report-target">@t.Display</span>
                 @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
             @* The finished run's report, at the top of the report section: open it, or download it as Markdown. *@
             @if (!Runs.IsRunning && Runs.LastReport is { } done)
@@ -815,7 +816,7 @@ else
             var followed = last.Options.FollowsUp is { } id ? await Store.LoadAsync(id) : null;
             if (RerunPlan.SameTier(last, followed) is not { } next) return;
             if (next.From.ConformULog is not null && Runs.ConformU is null) return;
-            options = Tiers.Options(CurrentOptions(), next);
+            options = Tiers.Options(CurrentOptions(), next) with { RerunOf = last.Id };
             conformU = next.From.ConformULog is null ? null : Runs.ConformU;
             followsUp = next.From;
         }
@@ -824,13 +825,13 @@ else
             // A ConformU Debug Log Test run: the same follow-up of the same log again.
             var plan = log.Plan();
             var current = CurrentOptions();
-            options = current with { Groups = plan.Groups, Members = plan.Members, Extended = current.Extended || plan.NeedsExtended };
+            options = current with { Groups = plan.Groups, Members = plan.Members, Extended = current.Extended || plan.NeedsExtended, RerunOf = last.Id };
             conformU = log;
         }
         else
         {
             // A full check: all the tests again.
-            options = CurrentOptions();
+            options = CurrentOptions() with { RerunOf = last.Id };
         }
         // Connecting and reading the mount can take a while: show it, the way the Start button does.
         _rerunBusy = true;

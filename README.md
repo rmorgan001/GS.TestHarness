@@ -34,11 +34,16 @@ Conformance Check, as 1-RAC0031) or RCU (ConformU Debug Log Test, as 1-RCU0034).
 
 **Extended checks** (off by default) add a few minutes: tracking drift and several clients at once.
 
-**Tabs.** Across the top: **ASCOM Conformance Check** (a full check, with Run, Reports and Recommendations
-under it), **ConformU Debug Log Test** (following up a ConformU log, with Run, Reports and Recommendations showing only
-its runs) and **Options** (what a run may do). Under the server on each test: its source code folder, the **Mount**
-(simulator or real mount), the flip angle and the timeouts. Pressing Start lists those settings to check, with
-a warning on any that look wrong.
+**Quick start.** The **Quick start** button at the top opens the help at a picture of the whole job, from adding a server to a clean report.
+
+**Tabs.** Across the top: **ASCOM Conformance Check** (a full check, with Run, Reports, Reviews and Summary under it),
+**ConformU Debug Log Test** (following up a ConformU log, with Run, Reports, Reviews and Summary showing only its
+runs) and **Options** (what a run may do). Under the server on each test: its source code folder, the **Mount**
+(simulator or real mount), the **Site hemisphere**, the flip angle and the timeouts, with a checklist that marks anything
+that looks wrong. **Reports** also groups each tier 1 report with its tier 2 and tier 3 follow-ups as **run groups**;
+pick one and **Reviews** and **Summary** show it (the default is the newest run of each device). **Summary** lists the
+problem areas, each tier 1 problem with its tier 2 and 3 findings, to tick and download as one Markdown file for an AI
+coding agent.
 
 **Motion is off by default.** Turn it on only for a simulator, or for a real mount that is clear to move.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
@@ -75,7 +80,7 @@ says its tier and, for tiers 2 and 3, which checks of the tier below it follows 
 doesn't. Each check also has its own number (`Engine/TestNumbers.cs`) whose first digit is its tier: 1001 on for
 tier 1, 2001 on for tier 2, 3001 on for tier 3. A new check takes the next number of its tier, and numbers are never
 reused; the help's Diagnostic tiers section lists which numbers follow up which. Tier 3 ends with a Summary finding: whether it confirms or overturns tier 2, and the final recommendation.
-Recommendations add each tier 1 run's deeper findings (the deepest tier's).
+Reviews add each tier 1 run's deeper findings (the deepest tier's).
 
 **The help** (the **?** at the top right) lists every check: its objective, how it's tested, how the result is
 verified, and the ASCOM documentation or ConformU code it's based on.

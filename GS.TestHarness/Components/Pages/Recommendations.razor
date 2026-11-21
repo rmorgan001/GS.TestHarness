@@ -22,16 +22,18 @@
 @inject RunPageState State
 @inject NavigationManager Nav
 
-<PageTitle>Recommendations · GS Test Harness</PageTitle>
+<PageTitle>Reviews · GS Test Harness</PageTitle>
 
 @* Every problem the latest runs found, once per check and server, with what to change and where. Older runs of a
    device are left out, so a problem fixed since doesn't come back. *@
 <header class="page-head">
-    <h1>Recommendations</h1>
+    <h1>Reviews</h1>
     <p class="muted">Every check that found a problem in the latest @(ConformUOnly ? "ConformU Debug Log Test run" : "ASCOM Conformance Check run") of each
         device, with the recommended fix and where the code probably is. Each server is listed apart: the
         fix is in its own code.</p>
 </header>
+
+<RunGroupBanner Group="_group" />
 
 @if (_set is null)
 {
@@ -188,13 +190,15 @@ else
     // Which test's runs: set by the address (conformu/recommendations or recommendations), never by the tab remembered
     // in memory, so a reload or a link opened on its own shows the right ones.
     private bool ConformUOnly => RunPageState.IsConformUPage(Nav.ToBaseRelativePath(Nav.Uri));
-    private bool? _builtFor;
+    private string? _builtKey;
+    private RunGroup? _group;
 
     protected override async Task OnInitializedAsync()
     {
         _lastRun = Runs.LastReport?.Id;
         _all = await Store.ListAsync();
         Runs.Changed += OnRunsChanged;
+        State.Changed += OnStateChanged;
         Nav.LocationChanged += OnLocationChanged;
     }
 
@@ -217,10 +221,27 @@ else
     {
         var conformU = ConformUOnly;
         State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
-        if (_all is null || _builtFor == conformU) return;
-        _builtFor = conformU;
-        _set = RecommendationBuilder.Build(RunPageState.Shown(_all, conformU));
+        if (_all is null) return;
+        // The default view, or the run group picked on the Reports tab: rebuilt when either changes.
+        var key = $"{conformU}|{State.GroupId}";
+        if (_builtKey == key) return;
+        _builtKey = key;
+        Rebuild(conformU);
     }
+
+    /// <summary>The recommendations of the run group picked on the Reports tab, or of the newest run of each device.</summary>
+    private void Rebuild(bool conformU)
+    {
+        var runs = RunPageState.Shown(_all!, conformU);
+        _group = RunGroups.Find(RunGroups.Build(runs), State.GroupId);
+        _set = _group is null ? RecommendationBuilder.Build(runs) : RecommendationBuilder.BuildFrom([_group.Latest], runs);
+    }
+
+    private void OnStateChanged() => InvokeAsync(() =>
+    {
+        BuildForAddress();
+        StateHasChanged();
+    });
 
     /// <summary>The recommendations the server and search filters leave (not yet filtered by outcome).</summary>
     private List<Recommendation> Filtered => [.. _set!.Recommendations.Where(r =>
@@ -243,13 +264,14 @@ else
         if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
         _lastRun = Runs.LastReport?.Id;
         _all = await Store.ListAsync();
-        _set = RecommendationBuilder.Build(RunPageState.Shown(_all, ConformUOnly));
+        Rebuild(ConformUOnly);
         StateHasChanged();
     });
 
     public void Dispose()
     {
         Runs.Changed -= OnRunsChanged;
+        State.Changed -= OnStateChanged;
         Nav.LocationChanged -= OnLocationChanged;
     }
 }

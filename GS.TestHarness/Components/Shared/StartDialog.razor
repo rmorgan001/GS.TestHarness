@@ -14,97 +14,133 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *@
 
-@* The warning before a run: the user takes responsibility for watching the mount. When the mount isn't at the
-   home position it also asks for it to be put there (Go home, or by hand and Check for home). *@
-<h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem;">
-    <Icon Kind="Alert" Size="52" />
-    <span>@Model.Title</span>
-</h2>
+@* The warning before a run, in the order a person acts on it: where the mount is (for a run that moves it), then what to
+   check before starting, then the responsibility line and the buttons. Start run is only offered once the mount is at home. *@
+<div class="safety-dialog">
+    <h2 class="safety-title">
+        <Icon Kind="Alert" Size="40" />
+        <span>@Model.Title</span>
+    </h2>
+    <p class="safety-lead">@(Model.HasMount ? "This run moves the mount by itself. Go through these points, then start." : "Go through these points, then start the run.")</p>
 
-@if (Model.IsAtHome)
-{
-    <p class="dialog-message" style="font-weight: 600; font-size: 1.1rem; color: var(--yellow);">Please verify the mount is in the home position</p>
-}
+    @{ var step = 0; }
 
-@if (Model.HasError)
-{
-    <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
-        <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
-        <span style="white-space: normal;">
-            <b style="color: var(--fail); font-size: 1.15rem;">@(Model.NotConnected ? "The mount is not connected" : "The mount's position couldn't be read")</b><br /><br />
-            <span style="color: var(--fail);">@Model.Status?.Error</span><br /><br />
-            The run can't start until the mount is connected and reports where it is. If you've just powered it off and on, give it a moment, then click Check for home. Otherwise click Cancel, check the mount and its connection, and start again.
-        </span>
-    </div>
-}
-else
-{
-    @if (Model.NeedsHome)
-    {
-        <div class="dialog-message with-icon" style="align-items: center; gap: 1.2rem;">
-            <span style="flex-shrink: 0; display: flex; color: var(--fail);"><Icon Kind="Telescope" Size="72" /></span>
-            <span style="white-space: normal;">
-                <b style="color: var(--fail); font-size: 1.15rem;">Put the mount in the home position</b><br /><br />
-                <span style="color: var(--yellow);">Finally: Click "Start run" when the mount is in the home position</span><br /><br />
-                Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check for home.
-            </span>
-        </div>
-    }
-
-    @* Each bullet stands out in its own highlighted box. *@
-    <div style="margin: 0 0 1rem;">
-        @foreach (var line in Model.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--yellow); border-radius: 4px; background: color-mix(in srgb, var(--yellow) 12%, transparent); font-weight: 600;">@line</div>
-        }
-    </div>
-
-    @* Settings that look wrong for this run, each in its own red box. *@
-    @if (Model.Warnings.Count > 0)
-    {
-        <div style="margin: 0 0 1rem;">
-            @foreach (var warning in Model.Warnings)
-            {
-                <div style="margin-bottom: .5rem; padding: .55rem .8rem; border-left: 4px solid var(--fail); border-radius: 4px; background: color-mix(in srgb, var(--red) 12%, transparent);">@warning</div>
-            }
-        </div>
-    }
-
-    <p class="dialog-message" style="color: var(--yellow);">By clicking Start you accept responsibility for monitoring the mount's safety.</p>
-}
-
-@if (Model.Note is { } note)
-{
-    <p class="dialog-message" style="color: @(Model.NoteIsProblem ? "var(--fail)" : "var(--green)"); text-align: center; margin-bottom: 0;">@note</p>
-}
-
-<div class="dialog-buttons" style="justify-content: center; align-items: flex-start;">
-    @if (!Model.HasError)
-    {
-        <div class="dialog-choice">
-            <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
-            <small>@(Model.NeedsHome ? "Available once the mount is at home." : "Begins the run. You are responsible for watching the mount.")</small>
-        </div>
-        @if (Model.HasMount)
-        {
-            <div class="dialog-choice">
-                <button type="button" class="btn" disabled="@(Model.Busy || (Model.Status is { CanFindHome: false }))" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
-                <small>Slews the mount to the home position.</small>
-            </div>
-        }
-    }
     @if (Model.HasMount)
     {
-        @* Also after an error: a mount that is still starting up after a power cycle can be tried again without closing the dialog. *@
-        <div class="dialog-choice">
-            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check for home</button>
-            <small>Reads the position again, after you have moved the mount or powered it off and on.</small>
-        </div>
+        <section class="safety-section">
+            <h3 class="safety-h">
+                <span class="safety-num">@(++step)</span> Mount position
+                @if (Model.HasError)
+                {
+                    <span class="safety-chip bad">@(Model.NotConnected ? "Not connected" : "Can't read position")</span>
+                }
+                else if (Model.IsAtHome)
+                {
+                    <span class="safety-chip ok">✓ At home</span>
+                }
+                else if (Model.NeedsHome)
+                {
+                    <span class="safety-chip bad">Not at home</span>
+                }
+            </h3>
+
+            @if (Model.HasError)
+            {
+                <div class="safety-card bad">
+                    <div class="safety-card-head">
+                        <Icon Kind="Telescope" Size="34" />
+                        <div>
+                            <b>@(Model.NotConnected ? "The mount is not connected." : "The mount's position couldn't be read.")</b>
+                            <div class="safety-error">@Model.Status?.Error</div>
+                        </div>
+                    </div>
+                    <p class="safety-small">The run can't start until the mount is connected and reports where it is. If you've just powered it off and on, give it a
+                        moment and check again. Otherwise cancel, check the mount and its connection, and start again.</p>
+                    <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check for home</button>
+                </div>
+            }
+            else if (Model.IsAtHome)
+            {
+                <div class="safety-card ok">
+                    <div class="safety-card-head">
+                        <Icon Kind="Telescope" Size="34" />
+                        <div>
+                            <b>The mount is at the home position.</b>
+                            <div class="safety-small">Please check that this is true before you start.</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check for home</button>
+                </div>
+            }
+            else
+            {
+                <div class="safety-card bad">
+                    <div class="safety-card-head">
+                        <Icon Kind="Telescope" Size="34" />
+                        <div>
+                            <b>The mount is not at the home position.</b>
+                            <div class="safety-small">A run starts from the home position. Choose one:</div>
+                        </div>
+                    </div>
+                    <div class="safety-options">
+                        <div class="safety-option">
+                            <b>A. Let the mount go home</b>
+                            <span class="safety-small">It slews to the home position.</span>
+                            <button type="button" class="btn" disabled="@(Model.Busy || Model.Status is { CanFindHome: false })" @onclick="() => Model.GoHomeAsync(Changed)">Go home</button>
+                        </div>
+                        <div class="safety-option">
+                            <b>B. Do it by hand</b>
+                            <span class="safety-small">Put the mount in the home position, power it <b>OFF</b> and <b>ON</b> again, then check.</span>
+                            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check for home</button>
+                        </div>
+                    </div>
+                    <p class="safety-next">Then click <b>Start run</b> once the mount is at home.</p>
+                </div>
+            }
+
+            @if (Model.Note is { } note)
+            {
+                <p class="safety-note @(Model.NoteIsProblem ? "problem" : null)" role="status">@note</p>
+            }
+        </section>
     }
-    @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
-    <div class="dialog-choice">
-        <button type="button" class="btn" autofocus disabled="@Model.Busy" @onclick="() => Model.Close(false)">Cancel</button>
-        <small>@(Model.HasMount ? "Closes this and disconnects the mount." : "Closes this without starting.")</small>
+
+    @if (!Model.HasError)
+    {
+        <section class="safety-section">
+            <h3 class="safety-h"><span class="safety-num">@(++step)</span> Before you start</h3>
+            <ul class="safety-list">
+                @foreach (var line in Model.Message.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    <li>@line</li>
+                }
+            </ul>
+            @if (Model.Warnings.Count > 0)
+            {
+                <div class="safety-sub">Check your settings</div>
+                @foreach (var warning in Model.Warnings)
+                {
+                    <div class="safety-card warn"><span class="safety-small">@warning.TrimStart('⚠', ' ')</span></div>
+                }
+            }
+        </section>
+
+        <p class="safety-accept">By clicking <b>Start run</b> you accept responsibility for monitoring the mount's safety.</p>
+    }
+
+    <div class="safety-buttons">
+        @if (!Model.HasError)
+        {
+            <div class="dialog-choice">
+                <button type="button" class="btn danger-btn" disabled="@(Model.Busy || Model.NeedsHome)" @onclick="() => Model.Close(true)">Start run</button>
+                <small>@(Model.NeedsHome ? "Available once the mount is at home." : "Begins the run.")</small>
+            </div>
+        }
+        @* A dangerous choice doesn't get the focus: Enter alone mustn't accept it. *@
+        <div class="dialog-choice">
+            <button type="button" class="btn" autofocus disabled="@Model.Busy" @onclick="() => Model.Close(false)">Cancel</button>
+            <small>@(Model.HasMount ? "Closes this and disconnects the mount." : "Closes this without starting.")</small>
+        </div>
     </div>
 </div>
 

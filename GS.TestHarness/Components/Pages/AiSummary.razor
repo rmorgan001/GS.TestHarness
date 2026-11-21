@@ -1,0 +1,275 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/ai-summary"
+@page "/conformu/ai-summary"
+@implements IDisposable
+@inject ReportStore Store
+@inject RunService Runs
+@inject RunPageState State
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Summary · GS Test Harness</PageTitle>
+
+@* The problems of the latest runs as problem areas: each tier 1 problem with the tier 2 and 3 diagnoses of the same member. Pick any
+   of them and download them as one Markdown file written for an AI coding agent to fix. *@
+<header class="page-head">
+    <h1>Summary</h1>
+    <p class="muted">Each problem area is one interface member that behaves wrongly: the tier 1 problem, with what tier 2 and tier 3 found out about its
+        cause. Tick the ones you want and download them as one Markdown file to give to an AI coding agent. It says what was seen, the likely
+        cause, the fix, where in the code, and how to check it is done.</p>
+</header>
+
+<RunGroupBanner Group="_group" />
+
+@if (_set is null)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_set.Runs.Count == 0)
+{
+    <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>@(ConformUOnly ? "No ConformU runs yet." : "No ASCOM Conformance Check runs yet.")</p><a class="btn primary" href="">Start one</a></div>
+}
+else
+{
+    var visible = Visible;
+    var chosen = Chosen;
+    <section class="card ai-toolbar">
+        <b>@chosen.Count of @_sections.Count selected</b>
+        <button type="button" class="btn" @onclick="SelectShown" disabled="@(visible.Count == 0)">Select all shown</button>
+        <button type="button" class="btn" @onclick="ClearSelection" disabled="@(_selected.Count == 0)">Clear</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" @onclick="() => _preview = !_preview" disabled="@(chosen.Count == 0)">@(_preview ? "Hide preview" : "Preview")</button>
+        <button type="button" class="btn" @onclick="CopyAsync" disabled="@(chosen.Count == 0)"><Icon Kind="FileDocument" Size="16" /> @(_copied ? "Copied" : "Copy")</button>
+        <button type="button" class="btn primary" @onclick="DownloadAsync" disabled="@(chosen.Count == 0)"><Icon Kind="Download" Size="16" /> Download Markdown</button>
+    </section>
+    @if (_preview && chosen.Count > 0)
+    {
+        <section class="card">
+            <textarea class="ai-preview" readonly aria-label="The Markdown that will be downloaded" onfocus="this.select()">@Markdown(chosen)</textarea>
+        </section>
+    }
+
+    <div class="summary">
+        @foreach (var outcome in Problems)
+        {
+            <button class="chip @ResultsTable.Css(outcome) @(_outcomes.Contains(outcome) ? "on" : "")" @onclick="() => Toggle(outcome)"
+                    title="Show areas whose worst problem is @outcome (click again to hide it; with none picked, all show)">
+                <span class="chip-count">@ByServer.Count(s => s.Worst == outcome)</span> @ResultsTable.Label(outcome)
+            </button>
+        }
+        <span class="spacer"></span>
+        <select @bind="_codebase" aria-label="Server">
+            <option value="">All servers</option>
+            @foreach (var c in _set.Runs.Select(r => r.Target.Codebase).Distinct())
+            {
+                <option value="@c">@c</option>
+            }
+        </select>
+        <input type="search" placeholder="Search" @bind="_search" @bind:event="oninput" aria-label="Search problem areas" />
+    </div>
+
+    @if (_sections.Count == 0)
+    {
+        <p class="muted empty">The latest runs found no problems.</p>
+    }
+    else if (visible.Count == 0)
+    {
+        <p class="muted empty">No problem areas match the filter.</p>
+    }
+
+    @foreach (var server in visible.GroupBy(s => s.Codebase))
+    {
+        <h2 class="rec-server">@server.Key <span class="muted">(@server.Count())</span></h2>
+        @foreach (var s in server)
+        {
+            var picked = _selected.Contains(s.Key);
+            <article class="card ai-section @(picked ? "selected" : null)">
+                <div class="rec-head">
+                    <label class="check ai-pick">
+                        <input type="checkbox" checked="@picked" @onchange="e => Pick(s.Key, e.Value is true)" aria-label="Include @s.Member" />
+                        <span class="rec-member mono">@s.Member</span>
+                    </label>
+                    <span class="badge @ResultsTable.Css(s.Worst)">@ResultsTable.Label(s.Worst)</span>
+                    @if (s.Tier1.Count > 0) { <span class="tier-tag tier-1" title="A tier 1 test found the problem">Tier 1</span> }
+                    @if (s.Tier2.Count > 0) { <span class="tier-tag tier-2" title="Tier 2 narrowed down the cause">Tier 2</span> }
+                    @if (s.Tier3.Count > 0) { <span class="tier-tag tier-3" title="Tier 3 confirmed the cause">Tier 3</span> }
+                </div>
+                @foreach (var (title, items) in new[] { ("Problem (tier 1)", s.Tier1), ("Cause analysis (tier 2)", s.Tier2), ("Confirmed cause and fix (tier 3)", s.Tier3) })
+                {
+                    @if (items.Count > 0)
+                    {
+                        <h3 class="ai-tier">@title</h3>
+                        <ul class="ai-checks">
+                            @foreach (var r in items)
+                            {
+                                var hit = r.Hits[0];
+                                <li>
+                                    <span class="mono small muted">@TestNumbers.Label(r.Id)</span>
+                                    <span class="badge @ResultsTable.Css(hit.Result.Outcome)">@ResultsTable.Label(hit.Result.Outcome)</span>
+                                    <span>@hit.Result.Message</span>
+                                    @if (r.Fixes.Count > 0) { <div class="small"><b>Fix:</b> @r.Fixes[0]</div> }
+                                    @foreach (var source in r.Sources.Take(3)) { <div class="small mono muted">@source</div> }
+                                </li>
+                            }
+                        </ul>
+                    }
+                }
+            </article>
+        }
+    }
+}
+
+@code {
+    private static readonly Outcome[] Problems = [Outcome.Fail, Outcome.Error, Outcome.Warning];
+
+    private RecommendationSet? _set;
+    private List<RecommendationSection> _sections = [];
+    private readonly HashSet<string> _selected = [];
+    private readonly HashSet<Outcome> _outcomes = [];
+    private string _codebase = "", _search = "";
+    private bool _preview, _copied;
+    private string? _lastRun;
+
+    // Every saved run; the areas are built from the top tab's own runs (ConformU, or ASCOM Conformance Check).
+    private List<RunReport>? _all;
+
+    // Which test's runs: set by the address (conformu/ai-summary or ai-summary), as on the Recommendations page.
+    private bool ConformUOnly => RunPageState.IsConformUPage(Nav.ToBaseRelativePath(Nav.Uri));
+    private string? _builtKey;
+    private RunGroup? _group;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _lastRun = Runs.LastReport?.Id;
+        _all = await Store.ListAsync();
+        Runs.Changed += OnRunsChanged;
+        State.Changed += OnStateChanged;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override void OnParametersSet() => BuildForAddress();
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(() =>
+    {
+        // Only to this page's own addresses: leaving it (to a report, say) must not set the tab.
+        if (Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].ToLowerInvariant() is not ("ai-summary" or "conformu/ai-summary")) return;
+        BuildForAddress();
+        StateHasChanged();
+    });
+
+    private void BuildForAddress()
+    {
+        var conformU = ConformUOnly;
+        State.Tab = conformU ? RunPageTab.ConformU : RunPageTab.Conformance;
+        if (_all is null) return;
+        var key = $"{conformU}|{State.GroupId}";
+        if (_builtKey == key) return;
+        _builtKey = key;
+        Rebuild(conformU);
+    }
+
+    private void Rebuild(bool conformU)
+    {
+        var runs = RunPageState.Shown(_all!, conformU);
+        _group = RunGroups.Find(RunGroups.Build(runs), State.GroupId);
+        _set = _group is null ? RecommendationBuilder.Build(runs) : RecommendationBuilder.BuildFrom([_group.Latest], runs);
+        _sections = RecommendationSection.Group(_set.Recommendations);
+        // A selection survives the list being built again, for the areas that are still there.
+        _selected.IntersectWith(_sections.Select(s => s.Key));
+    }
+
+    private void OnStateChanged() => InvokeAsync(() =>
+    {
+        BuildForAddress();
+        StateHasChanged();
+    });
+
+    /// <summary>A run finished: rebuild from the saved runs.</summary>
+    private void OnRunsChanged() => InvokeAsync(async () =>
+    {
+        if (Runs.IsRunning || Runs.LastReport?.Id == _lastRun) return;
+        _lastRun = Runs.LastReport?.Id;
+        _all = await Store.ListAsync();
+        Rebuild(ConformUOnly);
+        StateHasChanged();
+    });
+
+    /// <summary>The areas the server and search filters leave (not yet filtered by outcome).</summary>
+    private List<RecommendationSection> ByServer => [.. _sections.Where(s =>
+        (_codebase.Length == 0 || s.Codebase.ToString() == _codebase)
+        && (_search.Length == 0 || s.Member.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || s.All.Any(r => r.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                              || r.Fixes.Any(f => f.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                              || r.Sources.Any(x => x.Contains(_search, StringComparison.OrdinalIgnoreCase)))))];
+
+    private List<RecommendationSection> Visible => [.. ByServer.Where(s => _outcomes.Count == 0 || _outcomes.Contains(s.Worst))];
+
+    /// <summary>The selected areas, in the order they are listed.</summary>
+    private List<RecommendationSection> Chosen => [.. _sections.Where(s => _selected.Contains(s.Key))];
+
+    private string Markdown(IReadOnlyList<RecommendationSection> chosen) => AgentBrief.Build(chosen, _set!);
+
+    private void Toggle(Outcome o)
+    {
+        if (!_outcomes.Remove(o)) _outcomes.Add(o);
+    }
+
+    private void Pick(string key, bool on)
+    {
+        if (on) _selected.Add(key);
+        else _selected.Remove(key);
+        _copied = false;
+    }
+
+    private void SelectShown()
+    {
+        foreach (var s in Visible) _selected.Add(s.Key);
+        _copied = false;
+    }
+
+    private void ClearSelection()
+    {
+        _selected.Clear();
+        _preview = false;
+        _copied = false;
+    }
+
+    private async Task DownloadAsync()
+    {
+        var chosen = Chosen;
+        if (chosen.Count == 0) return;
+        var servers = string.Join("-", chosen.Select(s => s.Codebase).Distinct().Select(c => c.ToString().ToLowerInvariant()));
+        try { await JS.InvokeVoidAsync("gsDownload", $"fix-list-{servers}-{DateTime.Now:yyyyMMdd-HHmm}.md", Markdown(chosen)); }
+        catch (Exception) { /* no browser to hand the file to */ }
+    }
+
+    private async Task CopyAsync()
+    {
+        var chosen = Chosen;
+        if (chosen.Count == 0) return;
+        try { _copied = await JS.InvokeAsync<bool>("gsCopy", Markdown(chosen)); }
+        catch (Exception) { /* no clipboard here */ }
+    }
+
+    public void Dispose()
+    {
+        Runs.Changed -= OnRunsChanged;
+        State.Changed -= OnStateChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

@@ -105,7 +105,15 @@ public static class RecommendationBuilder
     public static RecommendationSet Build(IEnumerable<RunReport> runs)
     {
         var all = runs.ToList();
-        var latest = LatestRuns(all);
+        return BuildFrom(LatestRuns(all), all);
+    }
+
+    /// <summary>
+    /// The recommendations of exactly these tier 1 runs (<paramref name="latest"/>), with the deeper reports among <paramref name="all"/> that
+    /// follow them up: the newest at each tier. <see cref="Build"/> uses the newest run of each device; a run group uses its own first report.
+    /// </summary>
+    public static RecommendationSet BuildFrom(IReadOnlyList<RunReport> latest, IReadOnlyList<RunReport> all)
+    {
         var recommendations = new List<Recommendation>();
         var clean = new List<CleanCheck>();
 
@@ -207,7 +215,7 @@ public static class RecommendationBuilder
         => string.Join(" ", Lines(text).Select(l => l.Trim()).Where(l => l.Length > 0));
 
     /// <summary>A code span that holds any text: the fence is one backtick longer than the longest run inside.</summary>
-    private static string Code(string text)
+    internal static string Code(string text)
     {
         text = Inline(text);
         var longest = 0;

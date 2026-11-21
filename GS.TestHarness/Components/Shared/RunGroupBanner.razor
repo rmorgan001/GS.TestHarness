@@ -1,0 +1,38 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@inject RunPageState State
+
+@* On Reviews and Summary: which reports they are showing. By default the newest run of each device; when a run group is picked on the
+   Reports tab, that group, with a way back. *@
+@if (Group is { } g)
+{
+    <div class="run-group-banner" role="status">
+        <span><b>Showing run group</b>
+            <a href="reports/@g.Root.Id">@g.Root.Reference</a>:
+            @foreach (var run in g.Runs)
+            {
+                <span class="tier-badge tier-@run.Options.Tier">Tier @run.Options.Tier</span><a href="reports/@run.Id" class="mono"> @run.Reference </a>
+            }
+            <span class="muted">· @g.Root.Label · @g.Root.Started.ToString("yyyy-MM-dd HH:mm")</span></span>
+        <button type="button" class="btn" title="Go back to the newest run of each device" @onclick="() => State.GroupId = null">Latest runs</button>
+    </div>
+}
+
+@code {
+    /// <summary>The run group being shown, or null for the default (the newest run of each device).</summary>
+    [Parameter] public RunGroup? Group { get; set; }
+}

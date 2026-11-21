@@ -234,3 +234,27 @@
 .help-body .help-text dl {
     display: block;
 }
+
+/* The quick-start workflow diagram: phases down the page, numbered steps inside each, a decision at the end of some. A phase's colour
+   is a hint only (the Night theme has one hue): every phase has a letter and every step a number. */
+.flow { display: grid; margin: 1rem 0 1.5rem; }
+.flow-phase { --phase: var(--green); padding: .8rem 1rem 1rem; border: 1px solid var(--line-strong); border-left: 6px solid var(--phase); border-radius: 10px; background: var(--panel); }
+.phase-a { --phase: var(--green); }
+.phase-b { --phase: var(--yellow); }
+.phase-c { --phase: var(--info); }
+.phase-d { --phase: var(--error); }
+.phase-e { --phase: var(--green); }
+.phase-f { --phase: var(--mare); }
+.flow-phase h3 { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin: 0 0 .6rem; font-size: 1.15rem; }
+.flow-phase h3 small { color: var(--muted); font-family: var(--font); font-size: .85rem; font-weight: 400; }
+.flow-letter { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--phase); color: var(--sky); font-weight: 700; }
+.flow-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .7rem; }
+.flow-steps li { position: relative; display: grid; gap: .3rem; align-content: start; padding: .7rem .8rem .8rem 3rem; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-raised); }
+.flow-n { position: absolute; left: .7rem; top: .65rem; display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; border: 2px solid var(--phase); border-radius: 50%; font-weight: 700; }
+.flow-steps li > span:not(.flow-n) { color: var(--muted); font-size: .92rem; }
+.flow-down { text-align: center; color: var(--muted); font-size: 1.3rem; line-height: 1.7; }
+.flow-decision { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.2rem; margin-top: .8rem; padding: .6rem 1rem; border: 2px dashed var(--phase); border-radius: 999px; }
+.flow-branch.yes b { color: var(--green); }
+.flow-branch.no b { color: var(--yellow); }
+.flow-anytime { margin: .4rem 0 0; padding-left: 1.2rem; }
+.flow-anytime li { margin-bottom: .3rem; }
