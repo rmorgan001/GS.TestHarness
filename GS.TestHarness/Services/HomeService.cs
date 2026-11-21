@@ -37,7 +37,7 @@ public sealed class HomeService(ILogger<HomeService> log)
 
 /// <summary>
 /// Checks, before a run that moves the mount, that it is at the home position, and can send it there (FindHome).
-/// One connection is kept for the whole check, the dialog's Check again and Go home included, so the mount isn't
+/// One connection is kept for the whole check, the dialog's Check for home and Go home included, so the mount isn't
 /// dropped and picked up again at every button. Reading is retried once after reconnecting (the mount was powered off
 /// and on, so the link the server held is dead); a motion command (Unpark, FindHome) never is, so a slow or failed
 /// Go home isn't interrupted and sent again. Calls are one at a time, and disposing waits for the one under way.

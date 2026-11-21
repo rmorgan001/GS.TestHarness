@@ -366,18 +366,19 @@ else
 @if (Runs.IsRunning || (runsHere && (Runs.Status is not null || Runs.LastReport is not null)))
 {
 <div class="run-bar">
-    <h2 class="run-bar-title">Run Summary</h2>
+    <div class="run-bar-head">
+        <h2 class="run-bar-title">Run Summary</h2>
+        @* The run's status (Connecting…, Checking Motion…, Finished and saved., Stopped; the findings so far are saved.) beside the title. *@
+        @if (Runs.Status is { } status)
+        {
+            <span class="run-status-step">@status</span>
+        }
+    </div>
     @if (Runs.IsRunning)
     {
         <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
     }
     <div class="progress-wrap">
-        @if (Runs.Status is { } status)
-        {
-            <div class="run-status">
-                <span class="run-status-step">@status</span>
-            </div>
-        }
         @if (Runs.IsRunning && Runs.Progress is { } p)
         {
             <div class="progress"><div style="width:@(100.0 * p.GroupIndex / Math.Max(1, p.GroupCount))%"></div></div>
@@ -388,11 +389,6 @@ else
     {
         @* Running from the other test's tab, or Options: say where its findings are. *@
         <span class="muted small">Findings on the @(Runs.ConformU is null ? "ASCOM Conformance Check" : "ConformU Debug Log Test") tab.</span>
-    }
-    else if (Runs.LastReport is { } done)
-    {
-        <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report @done.Reference</a>
-        <a class="btn" href="download/@(done.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
     }
     @if (showTiers)
     {
@@ -464,8 +460,18 @@ else
 @if (showTiers && Runs.Target is { } t)
 {
     <section class="card">
-        <h2>@t.Display
-            @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
+        <div class="report-head">
+            <h2>@t.Display
+                @if (Runs.ConformU is { } followed) { <small class="muted">following up @followed.FileName</small> }</h2>
+            @* The finished run's report, at the top of the report section: open it, or download it as Markdown. *@
+            @if (!Runs.IsRunning && Runs.LastReport is { } done)
+            {
+                <span class="report-actions">
+                    <a class="btn" href="reports/@done.Id"><Icon Kind="FileDocument" Size="16" /> Open report @done.Reference</a>
+                    <a class="btn" href="download/@(done.Id).md" download><Icon Kind="Download" Size="16" /> Markdown</a>
+                </span>
+            }
+        </div>
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }

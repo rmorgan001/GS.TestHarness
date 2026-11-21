@@ -843,3 +843,12 @@ body:has(.print-page) { background: #fff; }
 .card-head p { margin: 0; flex: 1 1 18rem; }
 .run-tiers { flex: 0 0 100%; min-width: 0; }
 .run-bar-title { flex: 0 0 100%; margin: 0; }
+
+/* The report section's title, with the open-report and Markdown buttons at its right. */
+.report-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-bottom: .75rem; }
+.report-head h2 { margin: 0; }
+.report-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+/* The run bar's title with the run's status beside it. */
+.run-bar-head { flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; }
+.run-bar-head .run-bar-title { flex: none; }

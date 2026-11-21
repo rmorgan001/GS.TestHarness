@@ -79,7 +79,7 @@ public sealed class ConfirmDialogModel(string title, string message, string acce
 /// <summary>
 /// The warning shown before every run: the user takes responsibility for watching the mount. For a run that moves the
 /// mount it holds a <see cref="HomeSession"/> (the mount is connected while the dialog is open) and, when the mount
-/// isn't at the home position, adds the "put the mount in the home position" section with Go home and Check again.
+/// isn't at the home position, adds the "put the mount in the home position" section with Go home and Check for home.
 /// Accepting means the user confirms the mount is at home (if it was asked), so the run can start.
 /// </summary>
 public sealed class StartDialogModel(string title, string message, HomeSession? home, HomeStatus? status, IReadOnlyList<string>? warnings = null) : DialogModel
@@ -112,7 +112,7 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     /// <summary>The mount is connected and reports that it is at home.</summary>
     public bool IsAtHome => home is not null && Status is { Error: null, AtHome: true };
 
-    /// <summary>The mount couldn't be connected or read: only Check again and Cancel are offered.</summary>
+    /// <summary>The mount couldn't be connected or read: only Check for home and Cancel are offered.</summary>
     public bool HasError => home is not null && Status?.Error is not null;
 
     /// <summary>The mount couldn't be connected (as opposed to connected but not readable).</summary>

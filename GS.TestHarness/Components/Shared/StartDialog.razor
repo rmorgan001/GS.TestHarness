@@ -15,7 +15,7 @@
  *@
 
 @* The warning before a run: the user takes responsibility for watching the mount. When the mount isn't at the
-   home position it also asks for it to be put there (Go home, or by hand and Check again). *@
+   home position it also asks for it to be put there (Go home, or by hand and Check for home). *@
 <h2 class="dialog-title" style="display: flex; align-items: center; gap: .6rem;">
     <Icon Kind="Alert" Size="52" />
     <span>@Model.Title</span>
@@ -33,7 +33,7 @@
         <span style="white-space: normal;">
             <b style="color: var(--fail); font-size: 1.15rem;">@(Model.NotConnected ? "The mount is not connected" : "The mount's position couldn't be read")</b><br /><br />
             <span style="color: var(--fail);">@Model.Status?.Error</span><br /><br />
-            The run can't start until the mount is connected and reports where it is. If you've just powered it off and on, give it a moment, then click Check again. Otherwise click Cancel, check the mount and its connection, and start again.
+            The run can't start until the mount is connected and reports where it is. If you've just powered it off and on, give it a moment, then click Check for home. Otherwise click Cancel, check the mount and its connection, and start again.
         </span>
     </div>
 }
@@ -46,7 +46,7 @@ else
             <span style="white-space: normal;">
                 <b style="color: var(--fail); font-size: 1.15rem;">Put the mount in the home position</b><br /><br />
                 <span style="color: var(--yellow);">Finally: Click "Start run" when the mount is in the home position</span><br /><br />
-                Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check again.
+                Click the "Go home" button below - OR - manually put the mount in the home position, then power the mount <b>OFF</b> and <b>ON</b> again, then click Check for home.
             </span>
         </div>
     }
@@ -97,7 +97,7 @@ else
     {
         @* Also after an error: a mount that is still starting up after a power cycle can be tried again without closing the dialog. *@
         <div class="dialog-choice">
-            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check again</button>
+            <button type="button" class="btn" disabled="@Model.Busy" @onclick="() => Model.CheckAsync(Changed)">Check for home</button>
             <small>Reads the position again, after you have moved the mount or powered it off and on.</small>
         </div>
     }
