@@ -95,7 +95,8 @@ public class RecommendationTests
         Assert.Equal(["two", "one"], set.Recommendations.Single(r => r.Id == "A.X").Fixes);
 
         var md = RecommendationBuilder.ToMarkdown(set);
-        Assert.Contains("## GreenSwampAlpaca (2)", md);
+        Assert.Contains("## Alpaca server (2)", md);
+        Assert.DoesNotContain("## GreenSwampAlpaca", md); // the test data names its device after the codebase, so only the heading is checked
         Assert.Contains("- Recommendation: one", md);
         Assert.Contains("- Recommendation: two", md);
         Assert.Contains("- Recommendation: none recorded", md);

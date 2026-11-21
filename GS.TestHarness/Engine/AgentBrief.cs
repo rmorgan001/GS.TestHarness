@@ -113,12 +113,12 @@ public static class AgentBrief
         {
             foreach (var run in set.Runs.Where(r => r.Target.Codebase == codebase))
             {
-                sb.AppendLine($"- **{codebase}**: {RecommendationBuilder.Inline(run.Label)} at {RecommendationBuilder.Inline(run.Target.Display)}, report {run.Reference} ({run.Started:yyyy-MM-dd HH:mm})");
+                sb.AppendLine($"- **{codebase.ServerDescription()}**: {RecommendationBuilder.Inline(run.Label)} at {RecommendationBuilder.Inline(run.Target.Display)}, report {run.Reference} ({run.Started:yyyy-MM-dd HH:mm})");
                 sb.AppendLine($"  - Check again with: {RecommendationBuilder.Code(CommandFor(run))}");
             }
         }
         sb.AppendLine();
-        sb.AppendLine("The fix goes in the code of the server named in each area's heading. Problems in different servers are separate.");
+        sb.AppendLine("The fix goes in the code of the server each area names in its heading (the COM driver or the Alpaca server). Problems in different servers are separate.");
         sb.AppendLine();
     }
 
@@ -135,7 +135,7 @@ public static class AgentBrief
 
     private static void AppendSection(StringBuilder sb, RecommendationSection s, int number)
     {
-        sb.AppendLine($"## {number}. `{s.Member}` in {s.Codebase} ({s.Worst})");
+        sb.AppendLine($"## {number}. `{s.Member}` in the {s.Codebase.ServerDescription()} ({s.Worst})");
         sb.AppendLine();
         if (s.Tier1.Count > 0)
         {

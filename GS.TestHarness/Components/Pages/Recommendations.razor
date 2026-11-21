@@ -59,7 +59,7 @@ else
             @foreach (var run in _set.Runs)
             {
                 <li>
-                    <b>@run.Target.Codebase</b>
+                    <b>@run.Target.Codebase.ServerType()</b>
                     <a href="reports/@run.Id">@run.Reference</a> <span class="muted">@run.Started.ToString("yyyy-MM-dd HH:mm")</span>
                     <span class="muted">@run.Label · @(run.Count(Outcome.Fail) + run.Count(Outcome.Error)) fail · @run.Count(Outcome.Warning) warning</span>
                     @if (run.Cancelled) { <span class="tag" title="No finished run of this device">stopped</span> }
@@ -84,7 +84,7 @@ else
             <option value="">All servers</option>
             @foreach (var c in _set.Runs.Select(r => r.Target.Codebase).Distinct())
             {
-                <option value="@c">@c</option>
+                <option value="@c">@c.ServerType()</option>
             }
         </select>
         <input type="search" placeholder="Search" @bind="_search" @bind:event="oninput" aria-label="Search recommendations" />
@@ -101,7 +101,7 @@ else
 
     @foreach (var server in shown.GroupBy(r => r.Codebase))
     {
-        <h2 class="rec-server">@server.Key <span class="muted">(@server.Count())</span></h2>
+        <h2 class="rec-server">@server.Key.ServerType() <span class="muted">(@server.Count())</span></h2>
         @foreach (var r in server)
         {
             <article class="card rec">
@@ -166,7 +166,7 @@ else
                 <tbody>
                     @foreach (var c in clean)
                     {
-                        <tr><td>@c.Codebase</td><td class="mono num">@TestNumbers.Of(c.Id)</td><td class="mono">@c.Id</td><td class="mono">@c.Member</td><td class="num">@c.Runs</td></tr>
+                        <tr><td>@c.Codebase.ServerType()</td><td class="mono num">@TestNumbers.Of(c.Id)</td><td class="mono">@c.Id</td><td class="mono">@c.Member</td><td class="num">@c.Runs</td></tr>
                     }
                 </tbody>
             </table>

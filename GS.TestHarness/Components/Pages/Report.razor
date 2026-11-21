@@ -67,7 +67,7 @@ else if (_report is { } r)
                         <UncoveredTests Outlook="outlook" Max="8" />
                     }
                 </dd>
-                <dt>Server</dt><dd>@r.Target.Codebase (@(r.Target.Kind == TargetKind.Com ? "COM" : "Alpaca"))</dd>
+                <dt>Server</dt><dd>@r.Target.Codebase.ServerDescription()</dd>
                 <dt>Motion</dt><dd>@(r.Options.AllowMotion ? "allowed" : "not allowed")</dd>
                 <dt>Settings writes</dt><dd>@(r.Options.AllowSettingsWrites ? "allowed" : "not allowed")</dd>
                 <dt>Duration</dt><dd>@((r.Finished - r.Started)?.TotalSeconds.ToString("0")) s</dd>

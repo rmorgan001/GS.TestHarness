@@ -185,7 +185,7 @@ public static class RecommendationBuilder
         foreach (var server in set.Recommendations.GroupBy(r => r.Codebase))
         {
             sb.AppendLine();
-            sb.AppendLine($"## {server.Key} ({server.Count()})");
+            sb.AppendLine($"## {server.Key.ServerDescription()} ({server.Count()})");
             foreach (var r in server)
             {
                 sb.AppendLine();

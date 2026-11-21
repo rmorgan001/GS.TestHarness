@@ -14,6 +14,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GS.TestHarness.Engine;
@@ -33,7 +34,7 @@ public enum TargetKind
 /// The server under test, which is also the source code findings point at. Each is reached one way only:
 /// GSServer through its COM driver, GreenSwampAlpaca over Alpaca.
 /// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter<Codebase>))]
+[JsonConverter(typeof(CodebaseJsonConverter))]
 public enum Codebase
 {
     /// <summary>GSServer: the ASCOM.GS.Sky.Telescope COM driver.</summary>
@@ -41,6 +42,43 @@ public enum Codebase
 
     /// <summary>GreenSwampAlpaca: the Alpaca server.</summary>
     GreenSwampAlpaca
+}
+
+/// <summary>
+/// How a server is named to the user: by how it is reached, COM or Alpaca. The <see cref="Codebase"/> names (GSServer, GreenSwampAlpaca) are
+/// only the harness's own labels for which source code a server's findings point into; they are not server types, and are never shown.
+/// </summary>
+public static class CodebaseExtensions
+{
+    /// <summary>"COM" or "Alpaca".</summary>
+    public static string ServerType(this Codebase codebase) => codebase == Codebase.GSServer ? "COM" : "Alpaca";
+
+    /// <summary>"COM driver" or "Alpaca server", for a sentence.</summary>
+    public static string ServerDescription(this Codebase codebase) => codebase == Codebase.GSServer ? "COM driver" : "Alpaca server";
+}
+
+/// <summary>
+/// Saves a codebase as how its server is reached ("COM" or "Alpaca"), so saved reports and the server list never carry the harness's own
+/// names for them. Reads those, and the names written before (GSServer, GreenSwampAlpaca), so older files still open.
+/// </summary>
+public sealed class CodebaseJsonConverter : JsonConverter<Codebase>
+{
+    private static Codebase Parse(string? text)
+        => text?.Trim().ToUpperInvariant() switch
+        {
+            "COM" or "GSSERVER" => Codebase.GSServer,
+            "ALPACA" or "GREENSWAMPALPACA" => Codebase.GreenSwampAlpaca,
+            var other => throw new JsonException($"Not a server type: {other}")
+        };
+
+    public override Codebase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => Parse(reader.GetString());
+
+    public override void Write(Utf8JsonWriter writer, Codebase value, JsonSerializerOptions options) => writer.WriteStringValue(value.ServerType());
+
+    // As a dictionary key too (the saved source folders are a dictionary by codebase).
+    public override Codebase ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => Parse(reader.GetString());
+
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, Codebase value, JsonSerializerOptions options) => writer.WritePropertyName(value.ServerType());
 }
 
 /// <summary>The mount to test: one of the servers, reached the one way that server is reached.</summary>

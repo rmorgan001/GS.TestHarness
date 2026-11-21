@@ -84,7 +84,7 @@ public class AgentBriefTests
         var text = AgentBrief.Build(sections, set);
         Assert.Contains("# Fix list: ASCOM ITelescopeV4 conformance problems", text);
         Assert.Contains("## What this is", text);
-        Assert.Contains("## 1. `SlewSettleTime` in GSServer (Fail)", text);
+        Assert.Contains("## 1. `SlewSettleTime` in the COM driver (Fail)", text);
         Assert.Contains("### Problem (tier 1)", text);
         Assert.Contains("### Cause analysis (tier 2)", text);
         Assert.Contains("### Confirmed cause and fix (tier 3)", text);
@@ -121,5 +121,62 @@ public class AgentBriefTests
         Assert.Contains("SlewToCoordinates", text);
         Assert.DoesNotContain("SlewSettleTime", text);
         Assert.Contains("1 problem area ", text);
+    }
+
+    [Fact]
+    public void Servers_are_named_by_how_they_are_reached_never_by_a_codebase_name()
+    {
+        Assert.Equal("COM", Codebase.GSServer.ServerType());
+        Assert.Equal("Alpaca", Codebase.GreenSwampAlpaca.ServerType());
+        Assert.Equal("COM driver", Codebase.GSServer.ServerDescription());
+        Assert.Equal("Alpaca server", Codebase.GreenSwampAlpaca.ServerDescription());
+
+        var com = Run();
+        var alpaca = com with { Target = new TestTarget { Codebase = Codebase.GreenSwampAlpaca, Host = "localhost", Port = 31416 } };
+        var other = Rec("Motion.SlewToCoordinates.West", "SlewToCoordinates", Outcome.Warning, "Check the target.");
+        other = other with { Codebase = Codebase.GreenSwampAlpaca };
+        var sections = RecommendationSection.Group([Tier1, other]);
+        var brief = AgentBrief.Build(sections, new RecommendationSet([com, alpaca], [Tier1, other], []));
+        Assert.Contains("in the COM driver", brief);
+        Assert.Contains("in the Alpaca server", brief);
+        Assert.Contains("- **COM driver**:", brief);
+        Assert.Contains("- **Alpaca server**:", brief);
+        Assert.DoesNotContain("GSServer", brief);
+        Assert.DoesNotContain("GreenSwampAlpaca", brief);
+
+        var markdown = RecommendationBuilder.ToMarkdown(new RecommendationSet([com, alpaca], [Tier1, other], []));
+        Assert.Contains("## COM driver (1)", markdown);
+        Assert.Contains("## Alpaca server (1)", markdown);
+        Assert.DoesNotContain("GreenSwampAlpaca", markdown);
+    }
+
+    [Fact]
+    public void A_codebase_is_saved_as_com_or_alpaca_and_the_old_names_still_read()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new TestTarget { Codebase = Codebase.GreenSwampAlpaca });
+        Assert.Contains("\"Codebase\":\"Alpaca\"", json);
+        Assert.DoesNotContain("GreenSwampAlpaca", json);
+        Assert.Contains("\"Codebase\":\"COM\"", System.Text.Json.JsonSerializer.Serialize(new TestTarget { Codebase = Codebase.GSServer }));
+
+        // Reports saved before the names changed.
+        Assert.Equal(Codebase.GreenSwampAlpaca, System.Text.Json.JsonSerializer.Deserialize<TestTarget>("{\"Codebase\":\"GreenSwampAlpaca\"}")!.Codebase);
+        Assert.Equal(Codebase.GSServer, System.Text.Json.JsonSerializer.Deserialize<TestTarget>("{\"Codebase\":\"GSServer\"}")!.Codebase);
+        Assert.Equal(Codebase.GSServer, System.Text.Json.JsonSerializer.Deserialize<TestTarget>("{\"Codebase\":\"com\"}")!.Codebase);
+        Assert.Throws<System.Text.Json.JsonException>(() => System.Text.Json.JsonSerializer.Deserialize<TestTarget>("{\"Codebase\":\"nonsense\"}"));
+    }
+
+    [Fact]
+    public void A_dictionary_by_codebase_saves_com_and_alpaca_keys_and_reads_the_old_ones()
+    {
+        // The saved source folders are a dictionary by codebase: the app failed to start when its keys couldn't be read.
+        var saved = System.Text.Json.JsonSerializer.Serialize(new Dictionary<Codebase, string> { [Codebase.GSServer] = "folderA", [Codebase.GreenSwampAlpaca] = "folderB" });
+        Assert.Contains("\"COM\":", saved);
+        Assert.Contains("\"Alpaca\":", saved);
+        Assert.DoesNotContain("GreenSwampAlpaca", saved);
+        Assert.Equal(Codebase.GreenSwampAlpaca, System.Text.Json.JsonSerializer.Deserialize<Dictionary<Codebase, string>>(saved)!.Single(kv => kv.Value == "folderB").Key);
+
+        var old = System.Text.Json.JsonSerializer.Deserialize<Dictionary<Codebase, string>>("{\"GreenSwampAlpaca\":\"folderX\",\"GSServer\":\"folderY\"}")!;
+        Assert.Equal("folderX", old[Codebase.GreenSwampAlpaca]);
+        Assert.Equal("folderY", old[Codebase.GSServer]);
     }
 }
