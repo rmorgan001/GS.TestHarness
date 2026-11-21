@@ -31,29 +31,17 @@
 
 <PageTitle>Run · GS Test Harness</PageTitle>
 
-@* Each top tab's own heading and introduction. *@
-<header class="page-head">
-    @switch (State.Tab)
-    {
-        case RunPageTab.ConformU:
-            <h1>Run a ConformU Debug Log Test</h1>
-            <p class="muted">Drag a server from the list onto the Server box and drop a ConformU debug log on the card beside it.
-                The harness matches each problem ConformU found to its own checks, runs only those, and says whether each
-                problem is still there.</p>
-            break;
-        case RunPageTab.Options:
-            <h1>Choose What a Run May Do</h1>
-            <p class="muted">Whether a run may move the mount and write settings, and which extra checks it makes. They apply to
-                both the ASCOM Conformance Check and the ConformU Debug Log Test, and are remembered for the next run. The mount's
-                own settings (Mount, flip angle, timeouts) and its source code are under the server on each test.</p>
-            break;
-        default:
-            <h1>Run an ASCOM Conformance Check</h1>
-            <p class="muted">Drag a server from the list onto the Server box. Choose the correct setting then run a full
-                conformance test against ITelescopeV4 (Alpaca Server and COM).</p>
-            break;
-    }
-</header>
+@* The Options tab's heading and introduction. The other two tabs' (a conformance check, a ConformU debug log test) are the
+   Server card's heading, where "Server" used to be. *@
+@if (State.Tab == RunPageTab.Options)
+{
+    <header class="page-head">
+        <h1>Choose What a Run May Do</h1>
+        <p class="muted">Whether a run may move the mount and write settings, and which extra checks it makes. They apply to
+            both the ASCOM Conformance Check and the ConformU Debug Log Test, and are remembered for the next run. The mount's
+            own settings (Mount, flip angle, timeouts) and its source code are under the server on each test.</p>
+    </header>
+}
 
 @{
     var dragging = Bench.Dragging is not null && !Runs.IsRunning;
@@ -118,7 +106,20 @@ else
                  @ondragover:preventDefault
                  @ondrop="Drop"
                  @ondrop:preventDefault>
-            <h2>Server</h2>
+            @* The title with its description beside it (it wraps below on a narrow card). *@
+            <div class="card-head">
+                @if (conformU)
+                {
+                    <p class="muted">Drag a server from the list onto this box and drop a ConformU debug log on the card beside it.
+                        The harness matches each problem ConformU found to its own checks, runs only those, and says whether each
+                        problem is still there.</p>
+                }
+                else
+                {
+                    <p class="muted">Drag a server from the list onto this box. Choose the correct setting then run a full
+                        conformance test against ITelescopeV4 (Alpaca Server and COM).</p>
+                }
+            </div>
             @if (server is null)
             {
                 <div class="drop-empty">
@@ -149,7 +150,7 @@ else
                                 var ready = log is { Areas.Count: > 0 };
                                 <button class="btn primary" disabled="@(!ready || _starting)"
                                         title="@(!ready ? "Drop a ConformU log with problems first" : $"Check {log!.Areas.Count} problem areas on {server.Name}")"
-                                        @onclick="StartConformU"><Icon Kind="Play" Size="18" /> Run ConformU checks</button>
+                                        @onclick="StartConformU"><Icon Kind="Play" Size="18" /> @(_starting ? "Checking the mount…" : "Start run")</button>
                             }
                             else
                             {
@@ -230,7 +231,6 @@ else
         {
             @* A ConformU log: drop it, see what it found and which checks look at each problem, and run just those. *@
             <section class="card conformu">
-                <h2>ConformU debug log</h2>
                 <div class="conformu-drop @(_fileOver ? "over" : null) @(log is null ? null : "compact")"
                      @ondragenter="FileDragEnter" @ondragleave="FileDragLeave" @ondrop="() => (_fileDepth, _fileOver) = (0, false)">
                     <InputFile OnChange="LoadLog" accept=".txt,.log" title="Drop a ConformU debug log here, or click to choose one"

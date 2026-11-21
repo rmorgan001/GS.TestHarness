@@ -836,3 +836,8 @@ body:has(.print-page) { background: #fff; }
 /* Run tier N+1 and Re-run tier N side by side. */
 .tier-next-buttons { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
 .tier-next-buttons .run-summary-actions { margin: 0; }
+
+/* A card's title with its description beside it, on one row; the description wraps below when the card is narrow. */
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .15rem 1rem; margin-bottom: .75rem; }
+.card-head h2 { margin: 0; flex: none; }
+.card-head p { margin: 0; flex: 1 1 18rem; }

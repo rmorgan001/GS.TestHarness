@@ -44,7 +44,7 @@ a warning on any that look wrong.
 Tracking and park state are put back afterwards. SetPark (which moves the saved park position) has its own switch.
 
 **ConformU Debug Log Test.** Takes a ConformU *debug* log by drag and drop (a normal log is turned away). Its errors,
-issues and configuration alerts are grouped by ITelescopeV4 member; **Run ConformU checks** checks only those members:
+issues and configuration alerts are grouped by ITelescopeV4 member; **Start run**, on the ConformU Debug Log Test tab, checks only those members:
 the groups that cover them, only the parts of each group that touch them, and only findings about them. It then says
 for each problem whether the harness reproduced it, didn't, or couldn't check it. A property no check reached is read by
 a generated check; anything else nothing here can test is flagged to reproduce by hand.

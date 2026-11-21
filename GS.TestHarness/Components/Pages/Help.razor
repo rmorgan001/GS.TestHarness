@@ -145,7 +145,7 @@
                     with no DEBUG lines) is turned away with a note saying so. Every ERROR, ISSUE, CONFIGURATION ALERT and WARNING line is read (the repeats in ConformU's
                     end-of-run summary count once) and grouped by the ITelescopeV4 member it is about. The table shows, for
                     each, what ConformU said and which harness checks look at it.</p>
-                <p><strong>Run ConformU checks</strong>, beside the server, checks only the members ConformU found problems
+                <p><strong>Start run</strong>, beside the server, checks only the members ConformU found problems
                     with. It runs the groups that check them, and within each group only the parts that touch those members
                     (for a PulseGuide problem, Motion's pulse-guide moves but not its slews, syncs or flips), plus the quick
                     read-only groups they depend on (Connection, Common, Capabilities, Properties, Methods, Performance).
@@ -184,8 +184,8 @@
 
             <section id="tiers">
                 <h2>Diagnostic tiers</h2>
-                <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>
-                    and <strong>Run ConformU checks</strong> are tier 1); tiers 2 and 3 are offered under the results, only for
+                <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>, on either test,
+                    is tier 1); tiers 2 and 3 are offered under the results, only for
                     problems the tier below found that have a deeper test.</p>
                 <table>
                     <thead><tr><th>Tier</th><th>ASCOM Conformance Check</th><th>ConformU Debug Log Test</th></tr></thead>
