@@ -366,7 +366,7 @@ else
 @if (Runs.IsRunning || (runsHere && (Runs.Status is not null || Runs.LastReport is not null)))
 {
 <div class="run-bar">
-    <h2 class="run-bar-title">Summary</h2>
+    <h2 class="run-bar-title">Run Summary</h2>
     @if (Runs.IsRunning)
     {
         <button class="btn stop" @onclick="Runs.Stop"><Icon Kind="Stop" Size="18" /> Stop</button>
