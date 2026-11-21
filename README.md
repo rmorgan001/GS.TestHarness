@@ -12,6 +12,13 @@ A run tests one server's telescope through **ASCOM ITelescopeV4**. Each server i
 Every run is saved, with a reference that starts with its tier (1, 2 or 3) and says which test made it: RAC (ASCOM
 Conformance Check, as 1-RAC0031) or RCU (ConformU Debug Log Test, as 1-RCU0034). A tier 2 run is 2-RAC0032.
 
+## Download
+
+**[Download the latest Windows release](https://github.com/rmorgan001/GS.TestHarness/releases/latest)**: the
+`GS.TestHarness-<version>-win-x64.zip` file under **Assets**. It needs no .NET installed. Unzip it, run
+`GS.TestHarness.exe`, then open http://localhost:5207 in a browser. All releases are on the
+[Releases page](https://github.com/rmorgan001/GS.TestHarness/releases).
+
 ## What gets checked
 
 | Group | Checks |
@@ -89,6 +96,8 @@ verified, and the ASCOM documentation or ConformU code it's based on.
 `CommunicationLost` error and keeps what it found so far.
 
 ## Running it
+
+From source (to run a release, see [Download](#download)):
 
 ```
 dotnet run --project GS.TestHarness
