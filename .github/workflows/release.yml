@@ -1,0 +1,57 @@
+# Builds the Windows release when a version tag such as v1.2.0 is pushed, and attaches it to a GitHub release.
+#   git tag v1.2.0
+#   git push origin v1.2.0
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # v1.2.0 -> 1.2.0 (a suffix such as v1.2.0-beta.1 makes a pre-release).
+      - name: Version from the tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLower())" >> $env:GITHUB_OUTPUT
+
+      # Self-contained, so the PC needs no .NET installed. The harness is a Blazor Server app: run GS.TestHarness.exe and open the address it prints.
+      - name: Publish
+        shell: pwsh
+        run: >
+          dotnet publish GS.TestHarness/GS.TestHarness.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:Version=${{ steps.version.outputs.version }}
+          --output publish/GS.TestHarness
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/GS.TestHarness/* -DestinationPath "GS.TestHarness-${{ steps.version.outputs.version }}-win-x64.zip"
+
+      - name: Create the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "${{ github.ref_name }}"
+          "GS.TestHarness-${{ steps.version.outputs.version }}-win-x64.zip"
+          --title "GS Test Harness ${{ steps.version.outputs.version }}"
+          --generate-notes
+          $(if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { '--prerelease' })
