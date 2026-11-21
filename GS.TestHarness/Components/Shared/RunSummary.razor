@@ -14,115 +14,35 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *@
 
-@* A plain-language summary above the findings: how many things need a look, and the ones to look at first
-   (failures, then errors, then warnings; anything about the mount's safety ahead of the rest), what changed since the
-   last run of the same device, and a button to run just the problems again. *@
-@if (Results.Count > 0)
+@* Above the findings: the button to run the last run (or its problem groups) again. There used to be a summary with it, a headline
+   counting the problems, the first few listed and what had changed since the last run; the list of findings below has it all. *@
+@if (Results.Any(r => r.IsProblem) && !Running && Rerun.HasDelegate && CanRerun)
 {
-    var fail = Results.Count(r => r.Outcome == Outcome.Fail);
-    var error = Results.Count(r => r.Outcome == Outcome.Error);
-    var warning = Results.Count(r => r.Outcome == Outcome.Warning);
-    var problems = fail + error + warning;
-    <div class="run-summary @(problems == 0 ? "ok" : fail + error > 0 ? "bad" : "warn")" role="status">
-        @if (problems == 0)
-        {
-            <b>No problems found@(Running ? " so far" : "").</b>
-        }
-        else
-        {
-            <b>@problems thing@(problems == 1 ? "" : "s") to look at@(Running ? " so far" : ""):</b>
-            <span>@Parts(fail, error, warning)</span>
-            <div class="run-summary-first">Look at these first:</div>
-            <ol>
-                @foreach (var r in First)
-                {
-                    <li><span class="badge @ResultsTable.Css(r.Outcome)">@ResultsTable.Label(r.Outcome)</span>
-                        <span class="mono small">@TestNumbers.Label(r.Id)</span> @r.Message</li>
-                }
-            </ol>
-            @if (problems > First.Count)
-            {
-                <div class="muted small">…and @(problems - First.Count) more in the list below.</div>
-            }
-        }
-
-        @if (Changes is { IsEmpty: false } changes)
-        {
-            <div class="run-summary-first">Since @(PreviousLabel ?? "the last run"):
-                <span class="@(changes.New.Count > 0 ? "changes-new" : null)">@changes.New.Count new</span>,
-                <span class="@(changes.Fixed.Count > 0 ? "changes-fixed" : null)">@changes.Fixed.Count fixed</span>,
-                @changes.Unchanged unchanged.</div>
-            @if (changes.New.Count > 0)
-            {
-                <div class="small"><b>New:</b> @string.Join(", ", changes.New.Take(Shown).Select(r => TestNumbers.Label(r.Id)))@(changes.New.Count > Shown ? $" and {changes.New.Count - Shown} more" : "")</div>
-            }
-            @if (changes.Fixed.Count > 0)
-            {
-                <div class="small"><b>Fixed:</b> @string.Join(", ", changes.Fixed.Take(Shown).Select(r => TestNumbers.Label(r.Id)))@(changes.Fixed.Count > Shown ? $" and {changes.Fixed.Count - Shown} more" : "")</div>
-            }
-        }
-
-        @if (problems > 0 && !Running && Rerun.HasDelegate && CanRerun)
-        {
-            <div class="run-summary-actions">
-                <button type="button" class="btn" title="Run it again to check a fix, without waiting for the whole run" disabled="@RerunBusy" @onclick="Rerun">
-                    <Icon Kind="Play" Size="16" /> @(RerunBusy ? "Checking the mount…" : RerunText)
-                </button>
-                @if (RerunNote is { } note) { <div class="small changes-new" role="alert">@note</div> }
-            </div>
-        }
+    <div class="run-summary-actions">
+        <button type="button" class="btn" title="@RerunTitle" disabled="@RerunBusy" @onclick="Rerun">
+            <Icon Kind="Play" Size="16" /> @(RerunBusy ? "Checking the mount…" : RerunText)
+        </button>
     </div>
 }
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<CheckResult> Results { get; set; } = [];
 
-    /// <summary>The run is still going, so more may turn up.</summary>
+    /// <summary>The run is still going: no button until it has finished.</summary>
     [Parameter] public bool Running { get; set; }
 
-    /// <summary>The findings of the last run of the same device, to say what is new and what is fixed.</summary>
-    [Parameter] public IReadOnlyList<CheckResult>? Previous { get; set; }
-
-    /// <summary>What to call that run ("1-RAC0012", "the run on 3 May").</summary>
-    [Parameter] public string? PreviousLabel { get; set; }
-
-    /// <summary>Run only the problems again; the button shows when this is set.</summary>
+    /// <summary>Run it again; the button shows when this is set.</summary>
     [Parameter] public EventCallback Rerun { get; set; }
 
-    /// <summary>The re-run is getting ready (connecting to the mount): the button says so.</summary>
     /// <summary>Whether there is something to run again (the page knows: it depends on the run's tier).</summary>
     [Parameter] public bool CanRerun { get; set; }
 
     /// <summary>What the button says.</summary>
     [Parameter] public string RerunText { get; set; } = "Re-run the groups with problems";
 
+    /// <summary>The re-run is getting ready (connecting to the mount): the button says so.</summary>
     [Parameter] public bool RerunBusy { get; set; }
 
-    /// <summary>Why the re-run didn't start, when it didn't.</summary>
-    [Parameter] public string? RerunNote { get; set; }
-
-    private const int Shown = 5;
-
-    private RunComparison? Changes => Previous is null || Running ? null : RunComparison.Compare(Results, Previous);
-
-    private static string Parts(int fail, int error, int warning)
-    {
-        var parts = new List<string>();
-        if (fail > 0) parts.Add($"{fail} failure{(fail == 1 ? "" : "s")}");
-        if (error > 0) parts.Add($"{error} error{(error == 1 ? "" : "s")} (the check couldn't be made)");
-        if (warning > 0) parts.Add($"{warning} warning{(warning == 1 ? "" : "s")}");
-        return string.Join(", ", parts);
-    }
-
-    private IReadOnlyList<CheckResult> First => [.. Results
-        .Where(r => r.Outcome is Outcome.Fail or Outcome.Error or Outcome.Warning)
-        .OrderByDescending(Safety)
-        .ThenBy(r => r.Outcome switch { Outcome.Fail => 0, Outcome.Error => 1, _ => 2 })
-        .Take(Shown)];
-
-    /// <summary>Findings about the mount's safety come first: the pre-motion gate, where the mount starts, its site and position.</summary>
-    private static bool Safety(CheckResult r)
-        => r.Id.EndsWith(".Gate", StringComparison.Ordinal) || r.Id is "Motion.StartPosition" or "Properties.SiteHemisphere" or "ParkHome.HomePole"
-           || r.Id.StartsWith("Properties.AltAz", StringComparison.Ordinal)
-           || r.Member is "SiteLatitude" or "SiteLongitude" or "SiderealTime" or "AtPark" or "AtHome";
+    /// <summary>What the button's tooltip says.</summary>
+    [Parameter] public string RerunTitle { get; set; } = "Run it again to check a fix, without waiting for the whole run";
 }

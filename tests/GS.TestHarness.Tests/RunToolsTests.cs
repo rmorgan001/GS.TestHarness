@@ -87,46 +87,10 @@ public class RunToolsTests
 
     // ---------- RerunPlan ----------
 
-    [Fact]
-    public void Nothing_is_rerun_when_there_are_no_problems()
-        => Assert.Null(RerunPlan.For(EngineTests.Everything, [R("A", Outcome.Pass)]));
 
-    [Fact]
-    public void The_rerun_covers_the_problems_groups_whole_with_the_connection()
-    {
-        var options = RerunPlan.For(EngineTests.Everything, [R("A", Outcome.Fail, "Motion", "SlewToCoordinates"), R("B", Outcome.Pass, "Settings", "X")])!;
-        Assert.Contains("Motion", options.Groups!);
-        Assert.Contains("Connection", options.Groups!);
-        Assert.Contains("Capabilities", options.Groups!);
-        Assert.DoesNotContain("Settings", options.Groups!);
-        // Whole groups: narrowing to members would leave out the checks that have no member and make a problem look fixed.
-        Assert.Null(options.Members);
-        Assert.Equal(1, options.Tier);
-    }
 
-    [Fact]
-    public async Task A_rerun_finds_the_same_problem_without_running_the_other_groups()
-    {
-        // Saying the mount is southern gives a problem at latitude 28.5° north; re-run just that.
-        var first = await EngineTests.RunAsync(new FakeTelescope(), EngineTests.Everything with { SiteHemisphere = Hemisphere.South });
-        var again = RerunPlan.For(EngineTests.Everything with { SiteHemisphere = Hemisphere.South }, first.Results)!;
-        var second = await EngineTests.RunAsync(new FakeTelescope(), again);
-        Assert.Contains(second.Results, r => r.Id == "Properties.SiteHemisphere" && r.Outcome == Outcome.Warning);
-        Assert.DoesNotContain(second.Results, r => r.Group == "Tracking");
-        Assert.True(second.Results.Count < first.Results.Count, $"{second.Results.Count} findings against {first.Results.Count}");
-    }
 
-    [Fact]
-    public void A_problem_with_no_member_still_gets_its_group_rerun_whole()
-    {
-        var options = RerunPlan.For(EngineTests.Everything, [R("Motion.StartPosition", Outcome.Warning, "Motion", "")])!;
-        Assert.Contains("Motion", options.Groups!);
-        Assert.Null(options.Members);
-    }
 
-    [Fact]
-    public void Diagnoses_and_ConformU_findings_have_nothing_to_rerun()
-        => Assert.Null(RerunPlan.For(EngineTests.Everything, [R("Diagnose.X.Cause", Outcome.Fail, "Diagnose"), R("ConformU.Y", Outcome.Warning, "ConformU")]));
 
     // ---------- ReportStore.Comparable ----------
 
@@ -163,19 +127,6 @@ public class RunToolsTests
         Assert.True(ReportStore.Comparable(Report(conformU: true, groups: ["Motion"]), new TestTarget(), 1, true));
     }
 
-    [Fact]
-    public async Task A_rerun_of_a_motion_problem_runs_the_motion_group_again_and_finds_it_again()
-    {
-        var first = await EngineTests.RunAsync(new FakeTelescope(Defect.SyncIgnored), EngineTests.Everything);
-        var problems = first.Results.Where(r => r.IsProblem).ToList();
-        Assert.Contains(problems, r => r.Group == "Motion");
-        var again = RerunPlan.For(EngineTests.Everything, first.Results)!;
-        var second = await EngineTests.RunAsync(new FakeTelescope(Defect.SyncIgnored), again);
-        var groups = string.Join(", ", second.Results.Select(r => r.Group).Distinct());
-        Assert.True(second.Results.Any(r => r.Group == "Motion"), $"the re-run made findings in: {groups}");
-        foreach (var p in problems.Where(p => p.Group == "Motion"))
-            Assert.True(second.Results.Any(r => r.Id == p.Id && r.IsProblem), $"{p.Id} wasn't found again; the re-run had: {groups}");
-    }
 
     // ---------- Re-running a tier 2 or 3 run ----------
 

@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+        if (Runs.LastReport is not { } last || Runs.Target is not { } target) return;@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -394,6 +394,10 @@ else
             var tier = Runs.Options?.Tier ?? 1;
             var outlook = Runs.IsRunning ? null : RunOutlook();
             var next = outlook?.Next;
+            // The re-run button (Re-run tier N, of the run just made): beside Run tier N+1 when that is offered, else on its own.
+            RenderFragment rerun = @<RunSummary Results="Runs.Results" Running="Runs.IsRunning" Rerun="RerunProblems"
+                                                RerunBusy="_rerunBusy" CanRerun="CanRerunProblems"
+                                                RerunText="@RerunText" RerunTitle="@RerunTitle" />;
         }
         <ol class="tier-track" aria-label="Diagnostic tiers">
             @for (var i = 1; i <= Tiers.Max; i++)
@@ -445,14 +449,15 @@ else
                     }
                     else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
                 </div>
-                <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next) || _starting)" @onclick="() => StartNextTier(next)">
-                    <Icon Kind="Play" Size="18" /> Run tier @next.Tier
-                </button>
+                <div class="tier-next-buttons">
+                    <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next) || _starting)" @onclick="() => StartNextTier(next)">
+                        <Icon Kind="Play" Size="18" /> Run tier @next.Tier
+                    </button>
+                    @rerun
+                </div>
             </div>
         }
-        <RunSummary Results="Runs.Results" Running="Runs.IsRunning" Previous="Runs.PreviousReport?.Results"
-                    PreviousLabel="@(Runs.PreviousReport?.Reference)" Rerun="RerunProblems"
-                    RerunBusy="_rerunBusy" RerunNote="_rerunNote" CanRerun="CanRerunProblems" RerunText="@RerunText" />
+        @if (next is null) { @rerun }
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }
@@ -771,24 +776,22 @@ else
     /// check a fix without waiting for the whole run. The same warnings come first as for any run.
     /// </summary>
     private bool _rerunBusy;
-    private string? _rerunNote;
 
-    /// <summary>Whether the last run can be run again from the summary: a tier 1 run's problem groups, or a tier 2 or 3 run's own diagnosis.</summary>
+    /// <summary>Whether the last run can be run again from the button: a tier 1 run (all its tests again), or a tier 2 or 3 run's own diagnosis.</summary>
     private bool CanRerunProblems
-        => Runs.LastReport is { } last && (last.Options.Tier > 1 ? last.Options.FollowsUp is not null : RerunPlan.For(CurrentOptions(), last.Results) is not null);
+        => Runs.LastReport is { } last && (last.Options.Tier == 1 || last.Options.FollowsUp is not null);
 
-    private string RerunText => Runs.LastReport is { Options.Tier: > 1 } last ? $"Re-run tier {last.Options.Tier}" : "Re-run the groups with problems";
+    private string RerunText => $"Re-run tier {Runs.LastReport?.Options.Tier ?? 1}";
+
+    private string RerunTitle => Runs.LastReport is { Options.Tier: > 1 }
+        ? "Run this tier's diagnosis again, to check a fix without waiting for the whole run"
+        : "Run all the tests again, to check a fix";
 
     private async Task RerunProblems()
     {
-        _rerunNote = null;
-        if (_rerunBusy || _starting) { _rerunNote = "A start is already in progress."; return; }
-        if (Runs.IsRunning) { _rerunNote = "A run is going: stop it or wait for it to finish first."; return; }
-        if (Runs.LastReport is not { } last || Runs.Target is not { } target)
-        {
-            _rerunNote = "The last run's report isn't available to re-run from. Open it under Reports, or start a new run.";
-            return;
-        }
+        if (_rerunBusy || _starting) return;
+        if (Runs.IsRunning) return;
+        if (Runs.LastReport is not { } last || Runs.Target is not { } target) return;
         RunOptions options;
         ConformULog? conformU = null;
         RunReport? followsUp = null;
@@ -796,28 +799,24 @@ else
         {
             // A tier 2 or 3 run is its diagnosis again, of what the run below it found, not a full check's groups.
             var followed = last.Options.FollowsUp is { } id ? await Store.LoadAsync(id) : null;
-            if (RerunPlan.SameTier(last, followed) is not { } next)
-            {
-                _rerunNote = $"Can't run tier {last.Options.Tier} again: the run it follows up isn't available, or has nothing left to diagnose.";
-                return;
-            }
-            if (next.From.ConformULog is not null && Runs.ConformU is null)
-            {
-                _rerunNote = "Drop the ConformU log this run followed up again first.";
-                return;
-            }
+            if (RerunPlan.SameTier(last, followed) is not { } next) return;
+            if (next.From.ConformULog is not null && Runs.ConformU is null) return;
             options = Tiers.Options(CurrentOptions(), next);
             conformU = next.From.ConformULog is null ? null : Runs.ConformU;
             followsUp = next.From;
         }
-        else if (RerunPlan.For(CurrentOptions(), [.. last.Results]) is { } narrowed)
+        else if (Runs.ConformU is { } log)
         {
-            options = narrowed;
+            // A ConformU Debug Log Test run: the same follow-up of the same log again.
+            var plan = log.Plan();
+            var current = CurrentOptions();
+            options = current with { Groups = plan.Groups, Members = plan.Members, Extended = current.Extended || plan.NeedsExtended };
+            conformU = log;
         }
         else
         {
-            _rerunNote = "Nothing to re-run: its problems aren't in a group a full check can run again.";
-            return;
+            // A full check: all the tests again.
+            options = CurrentOptions();
         }
         // Connecting and reading the mount can take a while: show it, the way the Start button does.
         _rerunBusy = true;
@@ -829,8 +828,8 @@ else
         {
             _rerunBusy = false;
         }
-        if (Runs.IsRunning) { _rerunNote = "A run started meanwhile."; return; }
-        if (!Runs.Start(target, options, conformU, followsUp)) _rerunNote = Runs.Status ?? "The run couldn't be started.";
+        if (Runs.IsRunning) return;
+        Runs.Start(target, options, conformU, followsUp);
     }
 
     private async Task StartNextTier(NextTier next)

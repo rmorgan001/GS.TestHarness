@@ -16,15 +16,12 @@
 
 namespace GS.TestHarness.Engine;
 
-/// <summary>Re-running only the checks a run had problems with.</summary>
+/// <summary>
+/// The Re-run button. A tier 1 run is run again whole (a full check, or the same ConformU follow-up); a tier 2 or 3 run is its own
+/// diagnosis again, which is what <see cref="SameTier"/> works out.
+/// </summary>
 public static class RerunPlan
 {
-    /// <summary>
-    /// The options for a run of the groups that had problems in <paramref name="results"/> (with the connection and capabilities
-    /// every group needs). The groups run whole: narrowing them to the problems' members would leave out the checks that have no
-    /// member (where the mount started, the protocol checks, the pre-motion gate), and a problem whose check never ran again would
-    /// look fixed. Null when there are no problems.
-    /// </summary>
     /// <summary>
     /// Re-running a tier 2 or 3 run: the same diagnosis again, of what the run below it found (<paramref name="followed"/>).
     /// Null if that run isn't this run's, or has nothing at this tier to diagnose any more. A tier 1 run isn't re-run this way.
@@ -32,19 +29,4 @@ public static class RerunPlan
     public static NextTier? SameTier(RunReport last, RunReport? followed)
         => last.Options.Tier > 1 && followed is not null && followed.Id == last.Options.FollowsUp && Tiers.Next(followed) is { } next && next.Tier == last.Options.Tier
             ? next : null;
-
-    public static RunOptions? For(RunOptions options, IEnumerable<CheckResult> results)
-    {
-        var problems = results.Where(r => r.IsProblem).ToList();
-        if (problems.Count == 0) return null;
-        var known = TestRunner.Groups.Select(g => g.Name).ToHashSet();
-        // The diagnoses (tiers 2 and 3) and the ConformU checks aren't a tier 1 run's groups: nothing to re-run for them.
-        var groups = problems.Select(r => r.Group).Where(g => known.Contains(g) && g is not ("Diagnose" or "ConformU")).ToHashSet();
-        if (groups.Count == 0) return null;
-        // Every group needs the device connected and its capabilities read.
-        groups.Add("Connection");
-        groups.Add("Capabilities");
-        // A tier 1 run of just these groups: the tier and what it follows up aren't carried over, and no member narrowing.
-        return options with { Groups = [.. groups], Members = null, Tier = 1, FollowsUp = null };
-    }
 }

@@ -832,3 +832,7 @@ body:has(.print-page) { background: #fff; }
 .tier-tag { flex: none; padding: .05rem .5rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: .78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
 .tier-tag.tier-2 { border: 3px double var(--accent); color: var(--text); }
 .tier-tag.tier-3 { background: var(--accent); border-color: var(--accent); color: var(--green-ink); }
+
+/* Run tier N+1 and Re-run tier N side by side. */
+.tier-next-buttons { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
+.tier-next-buttons .run-summary-actions { margin: 0; }
