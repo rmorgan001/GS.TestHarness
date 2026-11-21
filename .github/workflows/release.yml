@@ -1,4 +1,5 @@
 # Builds the Windows release when a version tag such as v1.2.0 is pushed, and attaches it to a GitHub release.
+# For a full release it then writes that version into Directory.Build.props on main, so local builds report it too.
 #   git tag v1.2.0
 #   git push origin v1.2.0
 name: Release
@@ -55,3 +56,21 @@ jobs:
           --title "GS Test Harness ${{ steps.version.outputs.version }}"
           --generate-notes
           $(if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { '--prerelease' })
+
+      # Keeps the version in the repository in step with the latest release (a pre-release leaves it alone).
+      - name: Record the version in Directory.Build.props
+        if: steps.version.outputs.prerelease == 'false'
+        shell: pwsh
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          $path = 'Directory.Build.props'
+          $text = [IO.File]::ReadAllText($path)
+          $updated = $text -replace '<Version>[^<]*</Version>', '<Version>${{ steps.version.outputs.version }}</Version>'
+          if ($updated -ne $text) {
+            [IO.File]::WriteAllText($path, $updated, [Text.UTF8Encoding]::new($false))
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -am 'Version ${{ steps.version.outputs.version }}'
+            git push origin main
+          }
