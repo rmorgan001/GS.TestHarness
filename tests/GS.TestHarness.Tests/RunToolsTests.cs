@@ -162,4 +162,50 @@ public class RunToolsTests
         Assert.True(ReportStore.Comparable(Report(tier: 2, groups: ["Diagnose"]), new TestTarget(), 2, false));
         Assert.True(ReportStore.Comparable(Report(conformU: true, groups: ["Motion"]), new TestTarget(), 1, true));
     }
+
+    [Fact]
+    public async Task A_rerun_of_a_motion_problem_runs_the_motion_group_again_and_finds_it_again()
+    {
+        var first = await EngineTests.RunAsync(new FakeTelescope(Defect.SyncIgnored), EngineTests.Everything);
+        var problems = first.Results.Where(r => r.IsProblem).ToList();
+        Assert.Contains(problems, r => r.Group == "Motion");
+        var again = RerunPlan.For(EngineTests.Everything, first.Results)!;
+        var second = await EngineTests.RunAsync(new FakeTelescope(Defect.SyncIgnored), again);
+        var groups = string.Join(", ", second.Results.Select(r => r.Group).Distinct());
+        Assert.True(second.Results.Any(r => r.Group == "Motion"), $"the re-run made findings in: {groups}");
+        foreach (var p in problems.Where(p => p.Group == "Motion"))
+            Assert.True(second.Results.Any(r => r.Id == p.Id && r.IsProblem), $"{p.Id} wasn't found again; the re-run had: {groups}");
+    }
+
+    // ---------- Re-running a tier 2 or 3 run ----------
+
+    private static RunReport Tier1WithAnActionProblem()
+        => new()
+        {
+            Target = new TestTarget { Codebase = Codebase.GSServer }, Options = EngineTests.Everything,
+            Results = [R("Common.Action.Unknown", Outcome.Fail, "Common", "Action")]
+        };
+
+    [Fact]
+    public void A_tier_2_run_is_rerun_as_the_same_diagnosis_of_the_run_it_followed_up()
+    {
+        var tier1 = Tier1WithAnActionProblem();
+        var next = Tiers.Next(tier1)!;
+        var tier2 = new RunReport { Target = tier1.Target, Options = Tiers.Options(EngineTests.Everything, next) };
+        var again = RerunPlan.SameTier(tier2, tier1);
+        Assert.NotNull(again);
+        Assert.Equal(2, again.Tier);
+        Assert.Equal(next.Members, again.Members);
+        Assert.Same(tier1, again.From);
+    }
+
+    [Fact]
+    public void A_tier_1_run_or_another_runs_follow_up_isnt_rerun_as_a_tier()
+    {
+        var tier1 = Tier1WithAnActionProblem();
+        var tier2 = new RunReport { Target = tier1.Target, Options = Tiers.Options(EngineTests.Everything, Tiers.Next(tier1)!) };
+        Assert.Null(RerunPlan.SameTier(tier1, tier1));                       // tier 1: its groups are re-run instead
+        Assert.Null(RerunPlan.SameTier(tier2, Tier1WithAnActionProblem()));  // a different run than the one it followed
+        Assert.Null(RerunPlan.SameTier(tier2, null));                        // the run it followed is gone
+    }
 }

@@ -62,12 +62,13 @@
             }
         }
 
-        @if (problems > 0 && !Running && Rerun.HasDelegate && RerunPlan.For(new RunOptions(), Results) is not null)
+        @if (problems > 0 && !Running && Rerun.HasDelegate && CanRerun)
         {
             <div class="run-summary-actions">
-                <button type="button" class="btn" title="Run again only the groups that had problems, to check a fix without waiting for the whole run" @onclick="Rerun">
-                    <Icon Kind="Play" Size="16" /> Re-run the groups with problems
+                <button type="button" class="btn" title="Run it again to check a fix, without waiting for the whole run" disabled="@RerunBusy" @onclick="Rerun">
+                    <Icon Kind="Play" Size="16" /> @(RerunBusy ? "Checking the mount…" : RerunText)
                 </button>
+                @if (RerunNote is { } note) { <div class="small changes-new" role="alert">@note</div> }
             </div>
         }
     </div>
@@ -87,6 +88,18 @@
 
     /// <summary>Run only the problems again; the button shows when this is set.</summary>
     [Parameter] public EventCallback Rerun { get; set; }
+
+    /// <summary>The re-run is getting ready (connecting to the mount): the button says so.</summary>
+    /// <summary>Whether there is something to run again (the page knows: it depends on the run's tier).</summary>
+    [Parameter] public bool CanRerun { get; set; }
+
+    /// <summary>What the button says.</summary>
+    [Parameter] public string RerunText { get; set; } = "Re-run the groups with problems";
+
+    [Parameter] public bool RerunBusy { get; set; }
+
+    /// <summary>Why the re-run didn't start, when it didn't.</summary>
+    [Parameter] public string? RerunNote { get; set; }
 
     private const int Shown = 5;
 

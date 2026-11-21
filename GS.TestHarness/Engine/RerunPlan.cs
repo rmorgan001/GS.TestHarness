@@ -25,6 +25,14 @@ public static class RerunPlan
     /// member (where the mount started, the protocol checks, the pre-motion gate), and a problem whose check never ran again would
     /// look fixed. Null when there are no problems.
     /// </summary>
+    /// <summary>
+    /// Re-running a tier 2 or 3 run: the same diagnosis again, of what the run below it found (<paramref name="followed"/>).
+    /// Null if that run isn't this run's, or has nothing at this tier to diagnose any more. A tier 1 run isn't re-run this way.
+    /// </summary>
+    public static NextTier? SameTier(RunReport last, RunReport? followed)
+        => last.Options.Tier > 1 && followed is not null && followed.Id == last.Options.FollowsUp && Tiers.Next(followed) is { } next && next.Tier == last.Options.Tier
+            ? next : null;
+
     public static RunOptions? For(RunOptions options, IEnumerable<CheckResult> results)
     {
         var problems = results.Where(r => r.IsProblem).ToList();

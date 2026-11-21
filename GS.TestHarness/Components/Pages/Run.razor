@@ -17,6 +17,7 @@
 @page "/"
 @implements IDisposable
 @inject RunService Runs
+@inject ReportStore Store
 @inject TargetStore Saved
 @inject Workbench Bench
 @inject ServerList Servers
@@ -450,7 +451,8 @@ else
             </div>
         }
         <RunSummary Results="Runs.Results" Running="Runs.IsRunning" Previous="Runs.PreviousReport?.Results"
-                    PreviousLabel="@(Runs.PreviousReport?.Reference)" Rerun="RerunProblems" />
+                    PreviousLabel="@(Runs.PreviousReport?.Reference)" Rerun="RerunProblems"
+                    RerunBusy="_rerunBusy" RerunNote="_rerunNote" CanRerun="CanRerunProblems" RerunText="@RerunText" />
         <ResultsTable Results="Runs.Results" Empty="Waiting for the first finding…" />
     </section>
 }
@@ -768,12 +770,67 @@ else
     /// Runs again only the groups the last run had problems with, with the options as ticked now: to
     /// check a fix without waiting for the whole run. The same warnings come first as for any run.
     /// </summary>
+    private bool _rerunBusy;
+    private string? _rerunNote;
+
+    /// <summary>Whether the last run can be run again from the summary: a tier 1 run's problem groups, or a tier 2 or 3 run's own diagnosis.</summary>
+    private bool CanRerunProblems
+        => Runs.LastReport is { } last && (last.Options.Tier > 1 ? last.Options.FollowsUp is not null : RerunPlan.For(CurrentOptions(), last.Results) is not null);
+
+    private string RerunText => Runs.LastReport is { Options.Tier: > 1 } last ? $"Re-run tier {last.Options.Tier}" : "Re-run the groups with problems";
+
     private async Task RerunProblems()
     {
-        if (Runs.IsRunning || Runs.LastReport is not { } last || Runs.Target is not { } target) return;
-        if (RerunPlan.For(CurrentOptions(), [.. last.Results]) is not { } narrowed) return;
-        if (!await ConfirmStartAsync("Safety Warning!", target, narrowed) || Runs.IsRunning) return;
-        Runs.Start(target, narrowed);
+        _rerunNote = null;
+        if (_rerunBusy || _starting) { _rerunNote = "A start is already in progress."; return; }
+        if (Runs.IsRunning) { _rerunNote = "A run is going: stop it or wait for it to finish first."; return; }
+        if (Runs.LastReport is not { } last || Runs.Target is not { } target)
+        {
+            _rerunNote = "The last run's report isn't available to re-run from. Open it under Reports, or start a new run.";
+            return;
+        }
+        RunOptions options;
+        ConformULog? conformU = null;
+        RunReport? followsUp = null;
+        if (last.Options.Tier > 1)
+        {
+            // A tier 2 or 3 run is its diagnosis again, of what the run below it found, not a full check's groups.
+            var followed = last.Options.FollowsUp is { } id ? await Store.LoadAsync(id) : null;
+            if (RerunPlan.SameTier(last, followed) is not { } next)
+            {
+                _rerunNote = $"Can't run tier {last.Options.Tier} again: the run it follows up isn't available, or has nothing left to diagnose.";
+                return;
+            }
+            if (next.From.ConformULog is not null && Runs.ConformU is null)
+            {
+                _rerunNote = "Drop the ConformU log this run followed up again first.";
+                return;
+            }
+            options = Tiers.Options(CurrentOptions(), next);
+            conformU = next.From.ConformULog is null ? null : Runs.ConformU;
+            followsUp = next.From;
+        }
+        else if (RerunPlan.For(CurrentOptions(), [.. last.Results]) is { } narrowed)
+        {
+            options = narrowed;
+        }
+        else
+        {
+            _rerunNote = "Nothing to re-run: its problems aren't in a group a full check can run again.";
+            return;
+        }
+        // Connecting and reading the mount can take a while: show it, the way the Start button does.
+        _rerunBusy = true;
+        try
+        {
+            if (!await ConfirmStartAsync("Safety Warning!", target, options)) return;
+        }
+        finally
+        {
+            _rerunBusy = false;
+        }
+        if (Runs.IsRunning) { _rerunNote = "A run started meanwhile."; return; }
+        if (!Runs.Start(target, options, conformU, followsUp)) _rerunNote = Runs.Status ?? "The run couldn't be started.";
     }
 
     private async Task StartNextTier(NextTier next)
