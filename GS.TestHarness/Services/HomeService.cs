@@ -43,7 +43,8 @@ public sealed class HomeService(ILogger<HomeService> log)
 /// Go home isn't interrupted and sent again. Calls are one at a time, and disposing waits for the one under way.
 /// Disposing disconnects if this connected it, so the run finds the mount as it was.
 /// </summary>
-public sealed class HomeSession(ILogger log, TestTarget target, RunOptions options) : IAsyncDisposable
+/// <param name="open">Opens the session to the device (the real transport unless a test gives another).</param>
+public sealed class HomeSession(ILogger log, TestTarget target, RunOptions options, Func<Task<ITelescopeSession>>? open = null) : IAsyncDisposable
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
 
@@ -147,6 +148,22 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         }
         catch (Exception first)
         {
+            // A driver such as GS Server's reads Connected true for any client while its hardware is connected, but refuses the
+            // commands of a client that hasn't connected itself (NotConnected, 0x407). This client read Connected true, so it never
+            // called Connect: do it now, and read again, before dropping the session and starting over (which would do the same).
+            if (_session is not null && AscomError.Classify(first).Kind == AscomErrorKind.NotConnected)
+            {
+                log.LogInformation("Home check for {Target}: {Error}; this client isn't connected to the driver, connecting it", target.Display, first.Message);
+                try
+                {
+                    await ConnectThisClientAsync();
+                    return await ReadAsync();
+                }
+                catch (Exception second)
+                {
+                    log.LogInformation("Home check for {Target}: still {Error}", target.Display, second.Message);
+                }
+            }
             log.LogInformation("Home check for {Target}: {Error}; connecting again", target.Display, first.Message);
             try
             {
@@ -166,6 +183,23 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         }
     }
 
+    /// <summary>
+    /// Connects this client to the driver although Connected already reads true (the hardware is connected, but not by this client).
+    /// Harmless on a driver that is connected (Connect while connected raises no error). It is left connected: the mount was connected
+    /// before, and this client didn't make that connection, so <see cref="DropAsync"/> doesn't undo it.
+    /// </summary>
+    private async Task ConnectThisClientAsync()
+    {
+        var session = _session!;
+        await session.RunAsync(t =>
+        {
+            try { t.Connect(); }
+            catch (ASCOM.NotImplementedException) { t.Connected = true; }
+        }, _timeout);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (watch.Elapsed < ConnectTimeout && await session.RunAsync(t => t.Connecting, _timeout)) await Task.Delay(100);
+    }
+
     /// <summary>The mount couldn't be connected (as opposed to connected but not readable).</summary>
     private sealed class NotConnectedException(Exception inner) : Exception(inner.Message, inner);
 
@@ -179,7 +213,7 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
     private async Task EnsureConnectedAsync()
     {
         if (_session is not null) return;
-        var session = await TestRunner.OpenAsync(target, options);
+        var session = await (open?.Invoke() ?? TestRunner.OpenAsync(target, options));
         try
         {
             if (!await session.RunAsync(t => t.Connected, _timeout))

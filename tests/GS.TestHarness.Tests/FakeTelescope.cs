@@ -108,6 +108,9 @@ public enum Defect
     /// <summary>Connected reports the hardware state: true for every client while any client is connected (allowed, as a hub does).</summary>
     ConnectedSharedByClients,
 
+    /// <summary>As GS Server's COM driver: a client that hasn't called Connect itself is refused (NotConnected) even though Connected reads true for it.</summary>
+    RefusesUnconnectedClient,
+
     // As GSServer 1.2.3.3 (the tier 2 area diagnoses, AreaDiagnosticsTests).
 
     /// <summary>No member checks the connection: everything answers while the client is disconnected.</summary>
@@ -209,6 +212,10 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private void NeedConnected()
     {
         NeedAlive();
+        if (Has(Defect.RefusesUnconnectedClient))
+        {
+            lock (_clients) if (!_clients.Contains(Client)) throw new NotConnectedException("Telescope not connected");
+        }
         if (!IsConnected && !Has(Defect.NoConnectedCheck)) throw new NotConnectedException("not connected");
     }
 
