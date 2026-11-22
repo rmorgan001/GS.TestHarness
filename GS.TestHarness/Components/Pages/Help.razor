@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -641,7 +641,11 @@
                     driver is in a folder of the repository. It's downloaded once (as a zip, into
                     <code>%LOCALAPPDATA%\GS.TestHarness\github</code>) and read from there; the card says when, and its
                     download button fetches the latest. A private repository needs a GitHub token in the
-                    <code>GITHUB_TOKEN</code> environment variable. <code>--source</code> takes a URL as well.</p>
+                    <code>GITHUB_TOKEN</code> environment variable. Public repositories can be downloaded anonymously.
+                    When a token is present, it is used first; a failed HTTP request is retried once without the token.
+                    The card always identifies token or anonymous access, including an anonymous retry; cached copies
+                    retain the access mode used for their download. Older copies say when that information was not recorded.
+                    Token values are never displayed. <code>--source</code> takes a URL as well and prints the access mode.</p>
                 <p>The code is only reviewed when it's the server answering's: for an Alpaca server, its name (from the
                     management API) must appear in the source. Another server answering (the ASCOM Alpaca Simulators, say,
                     with another Alpaca Server's source set) gets no file names and no code review, and the findings say why.</p>

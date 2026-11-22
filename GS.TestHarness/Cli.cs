@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -61,9 +61,18 @@ public static class Cli
         // review). A GitHub repository is downloaded first.
         if (Value("--source") is { Length: > 0 } source)
         {
-            var problem = GitHubSource.Parse(source) is { } repo ? await repo.DownloadAsync() : null;
+            var problem = GitHubSource.Parse(source) is { } repo
+                ? await repo.DownloadAsync(reportAccess: access => Console.WriteLine($"--source {source}: {GitHubSource.AccessDescription(access)}"))
+                : null;
             problem ??= locator.SetFolder(server, source);
             if (problem is not null) Console.Error.WriteLine($"--source {source}: {problem} Findings won't name a file.");
+        }
+        else if (GitHubSource.Parse(locator.FolderSetFor(server)) is { } savedRepo)
+        {
+            var access = savedRepo.DownloadAccess is { } mode ? GitHubSource.AccessDescription(mode)
+                : savedRepo.Downloaded is not null ? "Cached copy: access mode was not recorded."
+                : $"Next download: {GitHubSource.AccessDescription(GitHubSource.InitialAccess)}";
+            Console.WriteLine($"Source {savedRepo.Display}: {access}");
         }
 
         var target = new TestTarget
