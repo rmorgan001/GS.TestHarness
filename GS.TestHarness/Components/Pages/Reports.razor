@@ -71,6 +71,11 @@ else
                         }
                     </span>
                     <span class="muted small">@failing fail · @g.Latest.Count(Outcome.Warning) warning</span>
+                    @* A ConformU run: its fail and warning counts say nothing of the log's own problems, so say what became of them. *@
+                    @if (ConformUSummary.Build(g.Runs) is { } conformU)
+                    {
+                        <span class="small @(conformU.AnyRemain ? "conformu-error" : "muted")" title="What became of the problems in @conformU.FileName">ConformU log: @conformU.Headline</span>
+                    }
                 </li>
             }
         </ul>

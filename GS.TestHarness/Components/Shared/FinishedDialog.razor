@@ -33,6 +33,15 @@
     </ul>
 </section>
 
+@* A ConformU Debug Log Test run: what became of the problems the log reported, area by area. *@
+@if (ConformUSummary.Build(Model.Info.Reports) is { } conformU)
+{
+    <section class="safety-section">
+        <h3 class="safety-h">Problems from the ConformU log</h3>
+        <ConformUSummaryView Summary="conformU" Compact="true" />
+    </section>
+}
+
 <section class="safety-section">
     <h3 class="safety-h">Suggested new tests</h3>
     @if (Model.Info.Suggestions.Count == 0)

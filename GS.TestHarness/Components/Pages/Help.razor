@@ -1,4 +1,4 @@
-﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -295,6 +295,13 @@
                     <dt>No check (Warning)</dt>
                     <dd>Nothing here can test it safely (a ConformU-only topic): reproduce it by hand.</dd>
                 </dl>
+                <h3>What became of the log's problems</h3>
+                <p>A ConformU run's fail and warning counts say nothing about the problems the log itself reported, so each ConformU run (and the finished dialog,
+                    and the run group on the Reports tab) also gets a summary: one line for each problem area with <em>what ConformU said</em> (its first line and
+                    how many more there were) and <em>the harness's last word</em>, which is the verdict of the deepest tier that looked at it. For example,
+                    "3 areas: 2 explained (not a fault), 1 not reproduced" means tier 2 showed that ConformU's rate readings were too coarse to measure the
+                    rates and the pulse-guide problem did not happen again. The summary is red when any area is <em>Reproduced</em> (or explained but still a
+                    problem). It is built from the saved reports, so it is there for older runs too.</p>
                 <h3>Diagnoses</h3>
                 <p>This run is tier 1: it finds the problems. Rate offset and pulse guide problems can then be taken further
                     at tiers 2 and 3 (see <a href="help#tiers">Diagnostic tiers</a>), whose findings

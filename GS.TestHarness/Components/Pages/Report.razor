@@ -97,6 +97,15 @@ else if (_report is { } r)
         </section>
     </div>
 
+    @* A ConformU Debug Log Test: what became of each problem the log reported, over this report's tiers. *@
+    @if (ConformUSummary.Build(_chain.Count > 0 ? _chain : [r]) is { } conformUSummary)
+    {
+        <section class="card" id="conformu-log">
+            <h2>Problems from the ConformU log</h2>
+            <ConformUSummaryView Summary="conformUSummary" />
+        </section>
+    }
+
     @* The run's tiers: the tier 1 run and every run that follows it up, each linked; this one marked. *@
     @if (_chain.Count > 1 || r.Options.FollowsUp is not null)
     {

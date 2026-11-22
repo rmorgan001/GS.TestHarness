@@ -1,0 +1,62 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* What became of the problems the ConformU log reported: one line for each area, with what ConformU said and the harness's last word. *@
+<p class="@(Summary.AnyRemain ? "conformu-error" : "muted")">
+    <b>ConformU log @Summary.FileName</b>: @(Summary.LogLine is { } line ? line[(line.IndexOf(':') + 1)..].Trim().TrimEnd('.') + " → " : "")@Summary.Headline.
+    @(Summary.AnyRemain ? "A problem remains in at least one area." : "No problem remains in any area.")
+</p>
+<table class="results conformu-areas">
+    <thead>
+        <tr><th>Area</th><th>What ConformU said</th><th>The harness's conclusion</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var a in Summary.Areas)
+        {
+            <tr>
+                <td class="mono">@a.Member</td>
+                <td class="small">@a.ShortSaid</td>
+                <td>
+                    <span class="badge @Css(a)">@a.Label</span> <span class="muted small">tier @a.Tier, <a href="reports/@a.ReportId">@a.Reference</a></span>
+                    @if (Compact)
+                    {
+                        <div class="small">@Trim(a.Message)</div>
+                    }
+                    else
+                    {
+                        <details>
+                            <summary class="small">@Trim(a.Message)</summary>
+                            <p class="small">@a.Message</p>
+                            @if (a.Fix is not null) { <p class="small"><b>How to fix:</b> @a.Fix</p> }
+                        </details>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public ConformUSummary Summary { get; set; } = null!;
+
+    /// <summary>No folding away of the conclusion: for a dialog.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private static string Css(ConformUAreaSummary a) => a.Remains ? (a.Outcome is Outcome.Fail or Outcome.Error ? "fail" : "warning")
+        : a.Verdict is ConformUVerdict.NotChecked or ConformUVerdict.NoCheck ? "skipped" : "pass";
+
+    private static string Trim(string s) => s.Length > 240 ? s[..240].TrimEnd() + "…" : s;
+}
