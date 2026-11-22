@@ -93,4 +93,20 @@ public class SuggestedTestsTests
             if (Directory.GetParent(folder) is { } parent && parent.Exists) parent.Delete(recursive: true);
         }
     }
+
+    [Fact]
+    public void The_title_names_the_findings_not_the_catalogs_placeholders_and_a_shared_number_is_listed_once()
+    {
+        var report = Tier1(
+            R("Motion.Flip.Goto.EastToWest.Flipped", Outcome.Fail, "Motion", "SideOfPier"),
+            R("Motion.Flip.Goto.WestToEast.Flipped", Outcome.Fail, "Motion", "SideOfPier"));
+        var s = SuggestedTests.Evaluate(report).Single(x => x.Spec.ProposedKey.Contains("Flip.Goto"));
+        Assert.DoesNotContain("{", s.Title);
+        Assert.Contains("Flip.Goto.(EastToWest, WestToEast).Flipped", s.Title);
+        // Both findings are the same catalog test, so one line, with its number once.
+        var number = TestNumbers.Of("Motion.Flip.Goto.EastToWest.Flipped");
+        Assert.Single(s.Related, r => r.StartsWith($"Test {number}:"));
+        Assert.Contains("EastToWest", s.Related.Single(r => r.StartsWith($"Test {number}:")));
+        Assert.Contains("WestToEast", s.Related.Single(r => r.StartsWith($"Test {number}:")));
+    }
 }

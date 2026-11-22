@@ -85,15 +85,16 @@ public static class SuggestedTests
             var first = kind.First();
 
             // The findings that called for it, then (tier 1) the members' other tier 1 problems: the new test should explain them too.
-            var related = ids.Select(id => Describe(id, TestNumbers.Of(id))).ToList();
+            var pairs = ids.Select(id => (Id: id, Number: TestNumbers.Of(id))).ToList();
             if (tier == 1)
-                related.AddRange(report.Results.Where(x => x.IsProblem && members.Contains(x.Member) && !Tiers.IsDiagnosis(x) && !ids.Contains(x.Id))
-                    .Select(x => x.Id).Distinct().Take(5).Select(id => Describe(id, TestNumbers.Of(id))));
+                pairs.AddRange(report.Results.Where(x => x.IsProblem && members.Contains(x.Member) && !Tiers.IsDiagnosis(x) && !ids.Contains(x.Id))
+                    .Select(x => x.Id).Distinct().Take(5).Select(id => (Id: id, Number: TestNumbers.Of(id))));
             else if (entry is not null)
-                related.AddRange(entry.FollowsUp.Select(k => Describe(k, TestNumbers.For(k))));
+                pairs.AddRange(entry.FollowsUp.Select(k => (Id: k, Number: TestNumbers.For(k))));
+            var related = Related(pairs);
 
             var weight = Math.Max(TestWeights.Min, kind.Max(TestWeights.Of));
-            var what = entry?.DisplayId ?? first.Id;
+            var what = Label(entry?.Key, ids);
             var who = members.Count switch { 0 => "", 1 or 2 or 3 => $" for {string.Join(", ", members)}", _ => $" for {members.Count} members" };
             var title = tier == 1
                 ? $"Tier 2 diagnosis of {what}{who}"
@@ -160,9 +161,42 @@ public static class SuggestedTests
         }
         return sb.ToString();
     }
-    private static string KindOf(CheckResult r) => TestCatalog.For(r.Id)?.Key ?? r.Id;
+    /// <summary>
+    /// The related tests as lines, one for each test number: two findings of the same catalog test (the two directions of a flip,
+    /// say) share a number, so they are listed together as "Test 1104: id, id". A finding with no number is a line of its own.
+    /// </summary>
+    private static List<string> Related(IEnumerable<(string Id, int Number)> pairs)
+    {
+        var lines = new List<string>();
+        var list = pairs.DistinctBy(p => p.Id).ToList();
+        foreach (var number in list.Where(p => p.Number > 0).Select(p => p.Number).Distinct())
+            lines.Add($"Test {number}: {string.Join(", ", list.Where(p => p.Number == number).Select(p => p.Id))}");
+        lines.AddRange(list.Where(p => p.Number <= 0).Select(p => p.Id));
+        return lines;
+    }
 
-    private static string Describe(string id, int number) => number > 0 ? $"Test {number}: {id}" : id;
+    /// <summary>
+    /// What the suggestion is about, without the catalog's placeholders: the finding's own id for one finding, and for several of
+    /// one kind the id with each placeholder filled in by the values found ("Flip.Goto.(EastToWest, WestToEast).Flipped"). The group
+    /// (first part of the id) is left off. Falls back to the catalog's id when the findings' ids don't line up with it.
+    /// </summary>
+    private static string Label(string? entryKey, IReadOnlySet<string> ids)
+    {
+        static string WithoutGroup(string id) => id[(id.IndexOf('.') + 1)..];
+        if (ids.Count == 1) return WithoutGroup(ids.First());
+        var key = entryKey?.Split('.');
+        var parts = ids.Select(id => id.Split('.')).ToList();
+        if (key is null || parts.Any(p => p.Length != key.Length))
+            return entryKey is null ? WithoutGroup(ids.First()) : WithoutGroup(entryKey.Replace("*}", "}"));
+        var segments = key.Select((k, i) =>
+        {
+            if (!k.StartsWith('{')) return k;
+            var values = parts.Select(p => p[i]).Distinct().Order().ToList();
+            return values.Count == 1 ? values[0] : values.Count <= 3 ? $"({string.Join(", ", values)})" : $"({values.Count} values)";
+        });
+        return WithoutGroup(string.Join('.', segments));
+    }
+    private static string KindOf(CheckResult r) => TestCatalog.For(r.Id)?.Key ?? r.Id;
 
     /// <summary>The reason with every test number it refers to (those of <paramref name="related"/>, from "Test 1159: …") listed at the end.</summary>
     private static string WithNumbers(string why, IReadOnlyList<string> related)
