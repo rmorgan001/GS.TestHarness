@@ -15,9 +15,9 @@
  *@
 
 @page "/test-weights"
-@page "/conformu/test-weights"
 @implements IDisposable
 @inject WeightStore Weights
+@inject IJSRuntime JS
 
 <PageTitle>Weights · GS Test Harness</PageTitle>
 
@@ -39,6 +39,24 @@
         <label class="check"><input type="checkbox" @bind="_onlyAdjusted" /><span>Only the ones I changed</span></label>
         <button type="button" class="btn" disabled="@(!Weights.HasChanges)" @onclick="ResetAll">Reset everything to the built-in weights</button>
     </div>
+    @* Every weight and the limit as JSON: a backup, or the same weights on another machine. Import replaces what is set now. *@
+    <div style="display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .6rem;">
+        <button type="button" class="btn" @onclick="ExportAsync"><Icon Kind="Download" Size="16" /> Export all as JSON</button>
+        <label class="btn" title="Replaces every weight and the limit with those in the file">
+            Import from JSON…
+            <InputFile OnChange="ImportAsync" accept=".json,application/json" style="display: none;" aria-label="Weights JSON file" />
+        </label>
+    </div>
+    @if (_message is { } message)
+    {
+        <p class="@(_messageIsProblem ? "conformu-error" : "muted") small" role="status">@message</p>
+        @if (_skipped.Count > 0)
+        {
+            <details><summary class="small">Left out (@_skipped.Count)</summary>
+                <ul class="small">@foreach (var s in _skipped.Take(50)) { <li class="mono">@s</li> }@if (_skipped.Count > 50) { <li>and @(_skipped.Count - 50) more</li> }</ul>
+            </details>
+        }
+    }
 </section>
 
 @foreach (var group in Groups)
@@ -103,6 +121,42 @@
     }
 
     private void ResetAll() => Weights.ResetAll();
+
+    private string? _message;
+    private bool _messageIsProblem;
+    private IReadOnlyList<string> _skipped = [];
+
+    private const long MaxImportBytes = 1_000_000;
+
+    private async Task ExportAsync()
+    {
+        try { await JS.InvokeVoidAsync("gsDownload", "test-weights.json", Weights.Export(), "application/json;charset=utf-8"); }
+        catch (Exception) { /* the browser went away */ }
+    }
+
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        _skipped = [];
+        try
+        {
+            if (e.File.Size > MaxImportBytes)
+            {
+                (_message, _messageIsProblem) = ($"{e.File.Name} is too big for a weights file (over {MaxImportBytes / 1000} KB).", true);
+                return;
+            }
+            using var reader = new StreamReader(e.File.OpenReadStream(MaxImportBytes));
+            var result = Weights.Import(await reader.ReadToEndAsync());
+            _skipped = result.Skipped;
+            (_message, _messageIsProblem) = result.Ok
+                ? ($"Imported {e.File.Name}: {result.Applied} weight{(result.Applied == 1 ? "" : "s")} set, limit {Weights.Limit}" +
+                   (result.Skipped.Count > 0 ? $", {result.Skipped.Count} left out." : "."), false)
+                : (result.Error, true);
+        }
+        catch (Exception ex)
+        {
+            (_message, _messageIsProblem) = ($"{e.File.Name} couldn't be read: {ex.Message}", true);
+        }
+    }
 
     public void Dispose() => Weights.Changed -= OnChanged;
 }

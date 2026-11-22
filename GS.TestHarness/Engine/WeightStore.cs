@@ -120,6 +120,82 @@ public sealed class WeightStore
         Changed?.Invoke();
     }
 
+    /// <summary>The format name written into an export, so an import can tell a weights file from another JSON file.</summary>
+    public const string Format = "gs-testharness-weights";
+
+    /// <summary>
+    /// Every test's weight as it is now (not just the changed ones) and the limit, as JSON that <see cref="Import"/> reads back: for
+    /// a backup, or to give the same weights to another person or machine. Each test is keyed by its catalog key (Group.Id).
+    /// </summary>
+    public string Export()
+    {
+        lock (_gate)
+        {
+            var weights = new Dictionary<string, int>();
+            foreach (var e in TestCatalog.Entries.OrderBy(e => e.Number))
+                weights[e.Key] = TestWeights.Of(e.Key);
+            return JsonSerializer.Serialize(new { format = Format, version = 1, limit = _limit, weights }, ReportStore.Json);
+        }
+    }
+
+    /// <summary>What an <see cref="Import"/> did: how many weights it set, what it left out and why, and the limit it set (if the file had one).</summary>
+    public sealed record ImportResult(int Applied, IReadOnlyList<string> Skipped, int? Limit, string? Error)
+    {
+        public bool Ok => Error is null;
+    }
+
+    /// <summary>
+    /// Replaces the weights and limit with those in <paramref name="json"/> (an <see cref="Export"/>, or a file with the same
+    /// "limit" and "weights"): a test the file doesn't list goes back to its built-in weight. A test that isn't in the catalog,
+    /// or a weight that isn't a whole number from 1 to 10, is left out and listed in <see cref="ImportResult.Skipped"/>. Nothing
+    /// changes if the file can't be read at all.
+    /// </summary>
+    public ImportResult Import(string json)
+    {
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            root = doc.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            return new ImportResult(0, [], null, $"That isn't JSON: {ex.Message}");
+        }
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("weights", out var list) || list.ValueKind != JsonValueKind.Object)
+            return new ImportResult(0, [], null, "That isn't a weights file: it has no \"weights\" object.");
+        if (root.TryGetProperty("format", out var format) && format.ValueKind == JsonValueKind.String && format.GetString() != Format)
+            return new ImportResult(0, [], null, $"That is a \"{format.GetString()}\" file, not a weights file.");
+
+        int? limit = null;
+        var skipped = new List<string>();
+        if (root.TryGetProperty("limit", out var l))
+        {
+            if (l.ValueKind == JsonValueKind.Number && l.TryGetInt32(out var n) && n is >= 1 and <= 10_000) limit = n;
+            else skipped.Add("limit: not a whole number from 1 to 10000");
+        }
+
+        var imported = new Dictionary<string, int>();
+        foreach (var item in list.EnumerateObject())
+        {
+            if (TestCatalog.Entry(item.Name) is null) skipped.Add($"{item.Name}: not a test");
+            else if (item.Value.ValueKind != JsonValueKind.Number || !item.Value.TryGetInt32(out var w) || w is < TestWeights.Min or > TestWeights.Max)
+                skipped.Add($"{item.Name}: not a whole number from {TestWeights.Min} to {TestWeights.Max}");
+            else if (w != TestWeights.Default(item.Name)) imported[item.Name] = w;
+            else imported.Remove(item.Name);
+        }
+
+        lock (_gate)
+        {
+            _weights.Clear();
+            foreach (var (key, weight) in imported) _weights[key] = weight;
+            _limit = limit ?? TestWeights.DefaultLimit;
+            Commit();
+        }
+        Changed?.Invoke();
+        return new ImportResult(list.EnumerateObject().Count() - skipped.Count(s => !s.StartsWith("limit:")), skipped, limit, null);
+    }
+
     /// <summary>Applies and saves (called with the lock held).</summary>
     private void Commit()
     {

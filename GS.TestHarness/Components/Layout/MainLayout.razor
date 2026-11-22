@@ -107,7 +107,8 @@
     [
         (RunPageTab.Conformance, "ASCOM Conformance Check", "ListChecks"),
         (RunPageTab.ConformU, "ConformU Debug Log Test", "FileDocument"),
-        (RunPageTab.Options, "Options", "Pencil")
+        (RunPageTab.Options, "Options", "Pencil"),
+        (RunPageTab.Weights, "Weights", "Compare")
     ];
 
     private static readonly (string Href, string Label, string Icon) Run = ("", "Run", "Play"),
@@ -115,13 +116,11 @@
         Recommendations = ("recommendations", "Reviews", "Lightbulb"),
         AiSummary = ("ai-summary", "Summary", "Lightbulb"),
         Suggested = ("suggested-tests", "Suggested Tests", "ListChecks"),
-        Weights = ("test-weights", "Weights", "Pencil"),
         // The ConformU Debug Log Test's own lists, at their own addresses: they show only its runs.
         ConformUReports = (RunPageState.ConformUPrefix + "reports", "Reports", "FileDocument"),
         ConformURecommendations = (RunPageState.ConformUPrefix + "recommendations", "Reviews", "Lightbulb"),
         ConformUAiSummary = (RunPageState.ConformUPrefix + "ai-summary", "Summary", "Lightbulb"),
-        ConformUSuggested = (RunPageState.ConformUPrefix + "suggested-tests", "Suggested Tests", "ListChecks"),
-        ConformUWeights = (RunPageState.ConformUPrefix + "test-weights", "Weights", "Pencil");
+        ConformUSuggested = (RunPageState.ConformUPrefix + "suggested-tests", "Suggested Tests", "ListChecks");
 
     /// <summary>
     /// The pages under each top tab. Each test has its own Reports, Reviews and Summary, which show only its runs: the
@@ -129,8 +128,8 @@
     /// </summary>
     private static (string Href, string Label, string Icon)[] SubPages(RunPageTab tab) => tab switch
     {
-        RunPageTab.Conformance => [Run, Reports, Recommendations, AiSummary, Suggested, Weights],
-        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations, ConformUAiSummary, ConformUSuggested, ConformUWeights],
+        RunPageTab.Conformance => [Run, Reports, Recommendations, AiSummary, Suggested],
+        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations, ConformUAiSummary, ConformUSuggested],
         _ => []
     };
 
@@ -144,17 +143,24 @@
 
     /// <summary>
     /// The top tab the page open belongs to. The address says it for every page but the Run page (whose panel is the
-    /// tab picked) and a single report (whose page set the tab from the report): conformu/... is the ConformU Debug Log
+    /// tab picked) and a single report (whose page set the tab from the report): test-weights is the Weights tab; conformu/... is the ConformU Debug Log
     /// Test's; anything else (Reports, Reviews, Help) the conformance check's.
     /// </summary>
     private RunPageTab ActiveTop
         => OnRunPage ? State.Tab
+            : PathNow.Equals("test-weights", StringComparison.OrdinalIgnoreCase) ? RunPageTab.Weights
             : RunPageState.IsConformUPage(PathNow) ? RunPageTab.ConformU
             : OnReportPage && State.Tab == RunPageTab.ConformU ? RunPageTab.ConformU
             : RunPageTab.Conformance;
 
     private void Show(RunPageTab tab)
     {
+        // Weights is a page of its own, not a panel of the Run page: the tab opens it, and State.Tab stays what it was.
+        if (tab == RunPageTab.Weights)
+        {
+            Nav.NavigateTo("test-weights");
+            return;
+        }
         // The page open, by its label: Reports (a single report counts as its list) or Reviews.
         var label = OnReportPage ? "Reports"
             : SubPages(ActiveTop).FirstOrDefault(p => p.Href.Length > 0 && p.Href.Equals(PathNow, StringComparison.OrdinalIgnoreCase)).Label;

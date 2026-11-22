@@ -29,7 +29,10 @@ public enum RunPageTab
     ConformU,
 
     /// <summary>What a run may do, and how long it waits.</summary>
-    Options
+    Options,
+
+    /// <summary>How much each test matters (its own page, test-weights, not a panel of the Run page).</summary>
+    Weights
 }
 
 /// <summary>

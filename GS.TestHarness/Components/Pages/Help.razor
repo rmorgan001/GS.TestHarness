@@ -433,12 +433,16 @@
                     </tbody>
                 </table>
                 <h3>Adjusting the weights</h3>
-                <p>The built-in weights are a starting point. On the <strong>Weights</strong> page (under either test's tabs) every test has its weight in a box: type
+                <p>The built-in weights are a starting point. On the <strong>Weights</strong> tab (one set of weights, used by both the ASCOM Conformance Check and the ConformU Debug Log Test) every test has its weight in a box: type
                     another from 1 to 10 and it is saved at once and used from the next run. The <strong>Limit</strong> at the top (built in: @TestWeights.DefaultLimit)
                     is what a tier's failed weights may add up to before the next tier isn't run. A weight you changed shows the built-in one beside it and a
                     <strong>Reset</strong> button; <strong>Reset everything</strong> puts them all back. Only what you changed is kept (in <code>test-weights.json</code>
                     beside the reports folder), so a weight you left alone follows the built-in one if a later version improves it. The table above shows the weights
                     as they are now.</p>
+                <p><strong>Export all as JSON</strong> on the Weights page downloads every test's weight and the limit as <code>test-weights.json</code>: a backup, or a way to
+                    give the same weights to someone else. <strong>Import from JSON</strong> reads such a file back and <em>replaces</em> the weights and limit with it (a test the file
+                    doesn't list goes back to its built-in weight). A test that isn't in the catalog, or a weight that isn't a whole number from 1 to 10, is left out and listed
+                    under the buttons; a file that isn't a weights file changes nothing.</p>
                 <p>The built-in weights are in <span class="mono">Engine/TestWeights.cs</span>: one table for the individual tests and one for the groups.</p>
             </section>
 

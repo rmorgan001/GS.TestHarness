@@ -25,6 +25,14 @@ namespace GS.TestHarness.Tests;
 public class CatalogTests
 {
     [Fact]
+    public void A_ConformU_diagnosis_weighs_the_same_as_the_conformance_checks()
+    {
+        var pairs = TestCatalog.Entries.Where(e => e.Key.StartsWith("ConformU.Diagnose.", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(pairs);
+        foreach (var e in pairs)
+            Assert.Equal(TestWeights.Default("Diagnose." + e.Key["ConformU.Diagnose.".Length..]), TestWeights.Default(e.Key));
+    }
+    [Fact]
     public void EveryTestHasAWeightFromOneToTen()
     {
         foreach (var e in TestCatalog.Entries)

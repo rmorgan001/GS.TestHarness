@@ -108,4 +108,67 @@ public class WeightStoreTests
         }
         finally { Cleanup(root); }
     }
+
+    [Fact]
+    public void An_export_lists_every_test_and_imports_back_the_same()
+    {
+        var (store, root) = Open();
+        try
+        {
+            var builtIn = TestWeights.Default(Key);
+            var other = builtIn == 9 ? 8 : 9;
+            store.SetWeight(Key, other);
+            store.SetLimit(77);
+            var json = store.Export();
+            using (var doc = System.Text.Json.JsonDocument.Parse(json))
+            {
+                Assert.Equal(WeightStore.Format, doc.RootElement.GetProperty("format").GetString());
+                Assert.Equal(TestCatalog.Entries.Count, doc.RootElement.GetProperty("weights").EnumerateObject().Count());
+                Assert.Equal(other, doc.RootElement.GetProperty("weights").GetProperty(Key).GetInt32());
+            }
+
+            store.ResetAll();
+            var result = store.Import(json);
+            Assert.True(result.Ok);
+            Assert.Empty(result.Skipped);
+            Assert.Equal(TestCatalog.Entries.Count, result.Applied);
+            Assert.Equal(other, TestWeights.Of(Key));
+            Assert.Equal(77, TestWeights.Limit);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void An_import_leaves_out_what_it_cant_use_and_replaces_the_rest()
+    {
+        var (store, root) = Open();
+        try
+        {
+            store.SetWeight("Performance.Hangs", TestWeights.Default("Performance.Hangs") == 9 ? 8 : 9); // not in the file: goes back
+            var result = store.Import($$"""{ "weights": { "{{Key}}": 10, "Not.ATest": 5, "Performance.Hangs": 0 }, "limit": 20 }""");
+            Assert.True(result.Ok);
+            Assert.Equal(2, result.Skipped.Count);
+            Assert.Equal(1, result.Applied);
+            Assert.Equal(10, TestWeights.Of(Key));
+            Assert.False(TestWeights.IsAdjusted("Performance.Hangs"));
+            Assert.Equal(20, TestWeights.Limit);
+        }
+        finally { Cleanup(root); }
+    }
+
+    [Fact]
+    public void A_file_that_isnt_a_weights_file_changes_nothing()
+    {
+        var (store, root) = Open();
+        try
+        {
+            store.SetWeight(Key, TestWeights.Default(Key) == 9 ? 8 : 9);
+            var before = TestWeights.Of(Key);
+            Assert.False(store.Import("not json").Ok);
+            Assert.False(store.Import("""{ "weights": 5 }""").Ok);
+            Assert.False(store.Import("""{ "format": "something-else", "weights": {} }""").Ok);
+            Assert.Equal(before, TestWeights.Of(Key));
+        }
+        finally { Cleanup(root); }
+    }
 }

@@ -160,6 +160,9 @@ public static class TestWeights
     /// <summary>The built-in weight of the catalog entry with this key, whatever the user has set.</summary>
     public static int Default(string key)
     {
+        // A ConformU run's diagnosis is the same test as the conformance check's (ConformU.Diagnose.X is Diagnose.X for the log's
+        // problems), so it weighs the same.
+        if (key.StartsWith("ConformU.Diagnose.", StringComparison.Ordinal)) return Default(key["ConformU.".Length..]);
         if (ByKey.TryGetValue(key, out var weight)) return weight;
         foreach (var (fits, w) in Rules)
             if (fits(key)) return w;

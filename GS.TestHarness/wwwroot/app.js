@@ -73,9 +73,9 @@ window.gsNotify = {
     }
 };
 
-// Hands a text file to the browser as a download (the AI Summary's Markdown); the text is made in the page, so no request is needed.
-window.gsDownload = (fileName, text) => {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+// Hands a text file to the browser as a download (the AI Summary's Markdown; type for another kind, such as JSON); the text is made in the page, so no request is needed.
+window.gsDownload = (fileName, text, type) => {
+    const url = URL.createObjectURL(new Blob([text], { type: type || 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
     link.download = fileName;
