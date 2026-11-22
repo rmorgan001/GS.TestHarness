@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan
+﻿/* Copyright(C) 2026  Rob Morgan
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -85,27 +85,55 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
     /// <summary>When the copy was downloaded, or null.</summary>
     public DateTime? Downloaded => File.Exists(Path.Combine(Cache, Marker)) ? File.GetLastWriteTime(Path.Combine(Cache, Marker)) : null;
 
+    /// <summary>The access used for the cached download, or null for an older copy with no record.</summary>
+    public GitHubAccess? DownloadAccess
+    {
+        get
+        {
+            var marker = Path.Combine(Cache, Marker);
+            return File.Exists(marker) && Enum.TryParse<GitHubAccess>(File.ReadLines(marker).Skip(2).FirstOrDefault(), out var access)
+                && Enum.IsDefined(access) ? access : null;
+        }
+    }
+
+    public static GitHubAccess InitialAccess => Environment.GetEnvironmentVariable("GITHUB_TOKEN") is { Length: > 0 }
+        ? GitHubAccess.Token : GitHubAccess.Anonymous;
+
+    public static string AccessDescription(GitHubAccess access) => access switch
+    {
+        GitHubAccess.Token => "GitHub access: using a private token from GITHUB_TOKEN.",
+        GitHubAccess.Anonymous => "GitHub access: anonymous (no token).",
+        GitHubAccess.AnonymousRetry => "GitHub access: anonymous retry after the private-token request failed.",
+        _ => throw new ArgumentOutOfRangeException(nameof(access))
+    };
+
     /// <summary>
     /// Downloads the repository (its default branch, or the branch, tag or commit given) and replaces the copy kept
-    /// here. Returns why it couldn't, or null.
+    /// here. Retries a failed token-authenticated HTTP request once anonymously. Returns why it couldn't, or null.
     /// </summary>
-    public async Task<string?> DownloadAsync(CancellationToken token = default)
+    public async Task<string?> DownloadAsync(CancellationToken token = default, Action<GitHubAccess>? reportAccess = null)
     {
         var url = $"https://api.github.com/repos/{Uri.EscapeDataString(Owner)}/{Uri.EscapeDataString(Repo)}/zipball{(Ref is null ? "" : "/" + Uri.EscapeDataString(Ref))}";
         var work = Path.Combine(CacheRoot, ".work-" + Guid.NewGuid().ToString("N"));
+        var access = InitialAccess;
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (Environment.GetEnvironmentVariable("GITHUB_TOKEN") is { Length: > 0 } githubToken)
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", githubToken);
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+            using var response = await SendAsync(url, token, mode =>
+            {
+                access = mode;
+                reportAccess?.Invoke(mode);
+            });
             if (!response.IsSuccessStatusCode)
-                return response.StatusCode switch
+            {
+                var problem = response.StatusCode switch
                 {
-                    HttpStatusCode.NotFound => $"GitHub has no {Display} (or it's private: set a token in GITHUB_TOKEN).",
-                    HttpStatusCode.Forbidden or (HttpStatusCode)429 => "GitHub refused the download (its rate limit for downloads without a token): try again later, or set GITHUB_TOKEN.",
+                    HttpStatusCode.Unauthorized => "GitHub rejected anonymous access (401 Unauthorized). Check whether a proxy requires authentication.",
+                    HttpStatusCode.NotFound => $"GitHub has no {Display}, or it's private and needs a valid GITHUB_TOKEN with access to the repository.",
+                    HttpStatusCode.Forbidden or (HttpStatusCode)429 => "GitHub refused the anonymous download (access denied or rate limited): try again later, or set a valid GITHUB_TOKEN.",
                     _ => $"GitHub answered {(int)response.StatusCode} {response.ReasonPhrase}."
                 };
+                return $"{problem} {AccessDescription(access)}";
+            }
             Directory.CreateDirectory(work);
             var zip = Path.Combine(work, "repo.zip");
             await using (var file = File.Create(zip))
@@ -118,13 +146,13 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
             if (Directory.Exists(Cache)) Directory.Delete(Cache, recursive: true);
             Directory.CreateDirectory(Cache);
             Directory.Move(top, Path.Combine(Cache, "src"));
-            await File.WriteAllTextAsync(Path.Combine(Cache, Marker), $"{url}\n{DateTime.UtcNow:O}\n", token);
-            if (SubPath is not null && LocalFolder is null) return $"The repository has no folder {SubPath}.";
+            await File.WriteAllTextAsync(Path.Combine(Cache, Marker), $"{url}\n{DateTime.UtcNow:O}\n{access}\n", token);
+            if (SubPath is not null && LocalFolder is null) return $"The repository has no folder {SubPath}. {AccessDescription(access)}";
             return null;
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or InvalidDataException or TaskCanceledException)
         {
-            return $"Couldn't download {Display} from GitHub: {ex.Message}";
+            return $"Couldn't download {Display} from GitHub: {ex.Message} {AccessDescription(access)}";
         }
         finally
         {
@@ -133,4 +161,28 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
             catch (UnauthorizedAccessException) { }
         }
     }
+
+    private static async Task<HttpResponseMessage> SendAsync(string url, CancellationToken token, Action<GitHubAccess> reportAccess)
+    {
+        var githubToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+        var hasToken = githubToken is { Length: > 0 };
+        reportAccess(hasToken ? GitHubAccess.Token : GitHubAccess.Anonymous);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (hasToken) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", githubToken);
+        var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        if (!hasToken || response.IsSuccessStatusCode) return response;
+
+        response.Dispose();
+        token.ThrowIfCancellationRequested();
+        reportAccess(GitHubAccess.AnonymousRetry);
+        using var anonymousRequest = new HttpRequestMessage(HttpMethod.Get, url);
+        return await Http.SendAsync(anonymousRequest, HttpCompletionOption.ResponseHeadersRead, token);
+    }
+}
+
+public enum GitHubAccess
+{
+    Anonymous,
+    Token,
+    AnonymousRetry
 }

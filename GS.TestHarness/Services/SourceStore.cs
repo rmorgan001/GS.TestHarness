@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -49,11 +49,28 @@ public sealed class SourceStore
             if (GitHubSource.Parse(folder) is { LocalFolder: null } repo)
                 _ = Task.Run(async () =>
                 {
-                    if (await repo.DownloadAsync() is { } problem) _log?.LogWarning("{Repo}: {Problem}", repo.Display, problem);
+                    if (await DownloadAsync(codebase, folder, repo) is { } problem) _log?.LogWarning("{Repo}: {Problem}", repo.Display, problem);
                     // Only if nothing has set another folder meanwhile (CLI --source, or the person on the Run page).
                     else if (string.Equals(_locator.FolderSetFor(codebase), folder.Trim(), StringComparison.OrdinalIgnoreCase))
                         _locator.SetFolder(codebase, folder);
                 });
+    }
+
+    public event Action? AccessChanged;
+
+    private readonly Dictionary<Codebase, (string Folder, GitHubAccess Access)> _access = [];
+
+    /// <summary>The latest request's access mode, or the mode recorded for the cached copy.</summary>
+    public GitHubAccess? AccessOf(Codebase codebase)
+    {
+        string folder;
+        lock (_gate)
+        {
+            folder = _folders.GetValueOrDefault(codebase, "");
+            if (_access.TryGetValue(codebase, out var last) && string.Equals(last.Folder, folder, StringComparison.OrdinalIgnoreCase))
+                return last.Access;
+        }
+        return GitHubSource.Parse(folder)?.DownloadAccess;
     }
 
     /// <summary>The GitHub repositories being downloaded now, by codebase.</summary>
@@ -86,21 +103,32 @@ public sealed class SourceStore
         }
         if (GitHubSource.Parse(folder) is { } repo && (refresh || repo.LocalFolder is null))
         {
-            lock (_gate) _downloading.Add(codebase);
-            try
+            if (await DownloadAsync(codebase, folder, repo, token) is { } problem)
             {
-                if (await repo.DownloadAsync(token) is { } problem)
-                {
-                    _locator.SetFolder(codebase, folder);
-                    return problem;
-                }
-            }
-            finally
-            {
-                lock (_gate) _downloading.Remove(codebase);
+                _locator.SetFolder(codebase, folder);
+                return problem;
             }
         }
         return _locator.SetFolder(codebase, folder);
+    }
+
+    private async Task<string?> DownloadAsync(Codebase codebase, string folder, GitHubSource repo, CancellationToken token = default)
+    {
+        lock (_gate) _downloading.Add(codebase);
+        try
+        {
+            return await repo.DownloadAsync(token, access =>
+            {
+                lock (_gate) _access[codebase] = (folder, access);
+                _log?.LogInformation("{Repo}: {Access}", repo.Display, GitHubSource.AccessDescription(access));
+                AccessChanged?.Invoke();
+            });
+        }
+        finally
+        {
+            lock (_gate) _downloading.Remove(codebase);
+            AccessChanged?.Invoke();
+        }
     }
 
     private Dictionary<Codebase, string> Load()

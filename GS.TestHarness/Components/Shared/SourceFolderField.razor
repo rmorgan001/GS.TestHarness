@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -84,6 +84,23 @@
     {
         <p class="muted small">@(set.Length == 0 ? "Blank: no code review, and findings won't name a file." : "Not found: findings won't name a file.")</p>
     }
+    @if (repo is not null)
+    {
+        <p class="muted small" role="status" aria-live="polite">
+            @if (Store.AccessOf(Codebase) is { } access)
+            {
+                @GitHubSource.AccessDescription(access)
+            }
+            else
+            {
+                @if (repo.Downloaded is not null)
+                {
+                    <span>Cached copy: access mode was not recorded. </span>
+                }
+                <span>Next download: @GitHubSource.AccessDescription(GitHubSource.InitialAccess)</span>
+            }
+        </p>
+    }
 </div>
 
 @code {
@@ -96,7 +113,11 @@
     private string? _problem;
     private bool _downloading;
 
-    protected override void OnInitialized() => Locator.Changed += OnChanged;
+    protected override void OnInitialized()
+    {
+        Locator.Changed += OnChanged;
+        Store.AccessChanged += OnChanged;
+    }
 
     // A folder set earlier that has since gone (or never held the driver) says so.
     protected override void OnParametersSet()
@@ -128,5 +149,9 @@
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Locator.Changed -= OnChanged;
+    public void Dispose()
+    {
+        Locator.Changed -= OnChanged;
+        Store.AccessChanged -= OnChanged;
+    }
 }
