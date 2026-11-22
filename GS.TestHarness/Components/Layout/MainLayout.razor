@@ -114,10 +114,12 @@
         Reports = ("reports", "Reports", "FileDocument"),
         Recommendations = ("recommendations", "Reviews", "Lightbulb"),
         AiSummary = ("ai-summary", "Summary", "Lightbulb"),
+        Suggested = ("suggested-tests", "Suggested Tests", "ListChecks"),
         // The ConformU Debug Log Test's own lists, at their own addresses: they show only its runs.
         ConformUReports = (RunPageState.ConformUPrefix + "reports", "Reports", "FileDocument"),
         ConformURecommendations = (RunPageState.ConformUPrefix + "recommendations", "Reviews", "Lightbulb"),
-        ConformUAiSummary = (RunPageState.ConformUPrefix + "ai-summary", "Summary", "Lightbulb");
+        ConformUAiSummary = (RunPageState.ConformUPrefix + "ai-summary", "Summary", "Lightbulb"),
+        ConformUSuggested = (RunPageState.ConformUPrefix + "suggested-tests", "Suggested Tests", "ListChecks");
 
     /// <summary>
     /// The pages under each top tab. Each test has its own Reports, Reviews and Summary, which show only its runs: the
@@ -125,8 +127,8 @@
     /// </summary>
     private static (string Href, string Label, string Icon)[] SubPages(RunPageTab tab) => tab switch
     {
-        RunPageTab.Conformance => [Run, Reports, Recommendations, AiSummary],
-        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations, ConformUAiSummary],
+        RunPageTab.Conformance => [Run, Reports, Recommendations, AiSummary, Suggested],
+        RunPageTab.ConformU => [Run, ConformUReports, ConformURecommendations, ConformUAiSummary, ConformUSuggested],
         _ => []
     };
 

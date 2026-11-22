@@ -47,7 +47,7 @@
                 <li style="margin-bottom: .5rem;">
                     <label class="check">
                         <input type="checkbox" checked="@_picked.Contains(s)" @onchange="e => Toggle(s, e.Value is true)" />
-                        <span><b>@s.Title</b><br /><span class="safety-small">@s.Why</span>
+                        <span><b>@s.Title</b> <span class="muted small">priority @s.Weight of 10 · proposed test @s.Spec.Number@(s.SeenBefore > 0 ? $" · suggested in {s.SeenBefore} earlier run{(s.SeenBefore == 1 ? "" : "s")}" : "")</span><br /><span class="safety-small">@s.Why</span>
                             @if (s.Related.Count > 0)
                             {
                                 <br /><span class="safety-small"><b>Related tests:</b> @string.Join("; ", s.Related)</span>
@@ -63,6 +63,7 @@
             </button>
         </div>
     }
+    <p class="muted small">They are kept on the <a href="suggested-tests" @onclick="() => Model.Close(true)">Suggested Tests</a> page, where each can be marked done or dismissed@(Model.Info.HiddenDismissed > 0 ? $" ({Model.Info.HiddenDismissed} you dismissed earlier {(Model.Info.HiddenDismissed == 1 ? "is" : "are")} not shown)" : "").</p>
 </section>
 
 <div class="dialog-buttons">
@@ -91,28 +92,11 @@
     /// <summary>A Markdown file of the ticked suggestions, in the order listed, for whoever writes the tests.</summary>
     private string Markdown()
     {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("# Suggested new tests").AppendLine();
-        var reports = string.Join(", ", Model.Info.Reports.Select(r => $"tier {r.Options.Tier} ({r.Reference})"));
-        if (Model.Info.Reports.Count > 0)
-        {
-            sb.AppendLine($"From the GS Test Harness run on {Model.Info.Reports[0].Target.Display}: {reports}.").AppendLine();
-        }
-        foreach (var s in Model.Info.Suggestions.Where(_picked.Contains))
-        {
-            sb.AppendLine($"## {s.Title}").AppendLine();
-            sb.AppendLine($"- Tier: {s.Tier}");
-            sb.AppendLine($"- Why: {s.Why}");
-            if (s.Related.Count > 0)
-            {
-                sb.AppendLine("- Related earlier tests:");
-                foreach (var r in s.Related) sb.AppendLine($"  - {r}");
-            }
-            sb.AppendLine();
-        }
-        return sb.ToString();
+        var from = Model.Info.Reports.Count == 0 ? null
+            : $"From the GS Test Harness run on {Model.Info.Reports[0].Target.Display}: " +
+              string.Join(", ", Model.Info.Reports.Select(r => $"tier {r.Options.Tier} ({r.Reference})")) + ".";
+        return SuggestedTests.ToMarkdown(Model.Info.Suggestions.Where(_picked.Contains), from);
     }
-
     private async Task DownloadAsync()
     {
         if (_picked.Count == 0) return;

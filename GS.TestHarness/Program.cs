@@ -51,6 +51,7 @@ builder.Services.AddSingleton(_ =>
 });
 builder.Services.AddSingleton<TestRunner>();
 builder.Services.AddSingleton(new ReportStore(builder.Configuration["ReportsFolder"] is { Length: > 0 } folder ? folder : ReportStore.DefaultFolder));
+builder.Services.AddSingleton<SuggestionStore>();
 builder.Services.AddSingleton<RunService>();
 builder.Services.AddSingleton<TargetStore>();
 // Each person's own source folders (the Options tab), applied to the SourceLocator when created.

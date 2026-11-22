@@ -1,0 +1,133 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/suggested-tests"
+@page "/conformu/suggested-tests"
+@inject SuggestionStore Store
+@inject IJSRuntime JS
+
+<PageTitle>Suggested Tests · GS Test Harness</PageTitle>
+
+@* Every test a finished run suggested, kept between runs: how often each was suggested, and whether it is still to do. *@
+<header class="page-head">
+    <h1>Suggested Tests</h1>
+    <p class="muted">The tests the runs found missing, heaviest first, kept from run to run. Mark one <b>Done</b> when you have added it (it comes
+        back as open if a later run suggests it again, since the test didn't cover it) or <b>Dismiss</b> it to stop it being shown after runs.</p>
+</header>
+
+@if (_all is null)
+{
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <div class="summary">
+        @foreach (var (status, label) in Filters)
+        {
+            var count = status is null ? _all.Count : _all.Count(s => s.Status == status);
+            <button type="button" class="chip @(_filter == status ? "active" : null)" @onclick="() => _filter = status">
+                <span class="chip-count">@count</span> @label
+            </button>
+        }
+    </div>
+
+    @if (Listed.Count == 0)
+    {
+        <div class="empty-state"><Icon Kind="Lightbulb" Size="32" /><p>No suggested tests here.</p></div>
+    }
+    else
+    {
+        <section class="card">
+            <ul class="safety-list" style="list-style: none; padding-left: 0;">
+                @foreach (var s in Listed)
+                {
+                    var x = s.Suggestion;
+                    <li style="margin-bottom: .9rem;">
+                        <label class="check">
+                            <input type="checkbox" checked="@_picked.Contains(x.Key)" @onchange="e => Toggle(x.Key, e.Value is true)" />
+                            <span><b>@x.Title</b>
+                                <span class="muted small">priority @x.Weight of 10 · proposed test @x.Spec.Number ·
+                                    suggested in @s.Chains.Count run@(s.Chains.Count == 1 ? "" : "s") · last @s.LastSeen.LocalDateTime.ToString("g") · @s.Status</span><br />
+                                <span class="safety-small">@x.Why</span>
+                                @if (x.Related.Count > 0)
+                                {
+                                    <br /><span class="safety-small"><b>Related tests:</b> @string.Join("; ", x.Related)</span>
+                                }
+                            </span>
+                        </label>
+                        <div style="display: flex; gap: .4rem; margin: .3rem 0 0 1.6rem;">
+                            @if (s.Status != SuggestionStatus.Done) { <button type="button" class="btn" @onclick="() => SetAsync(x.Key, SuggestionStatus.Done)">Done</button> }
+                            @if (s.Status != SuggestionStatus.Dismissed) { <button type="button" class="btn" @onclick="() => SetAsync(x.Key, SuggestionStatus.Dismissed)">Dismiss</button> }
+                            @if (s.Status != SuggestionStatus.Open) { <button type="button" class="btn" @onclick="() => SetAsync(x.Key, SuggestionStatus.Open)">Reopen</button> }
+                        </div>
+                    </li>
+                }
+            </ul>
+            <div style="display: flex; gap: .5rem; flex-wrap: wrap;">
+                <button type="button" class="btn" @onclick="SelectAll">@(Listed.All(s => _picked.Contains(s.Suggestion.Key)) ? "Select none" : "Select all")</button>
+                <button type="button" class="btn" disabled="@(_picked.Count == 0)" @onclick="DownloadAsync">
+                    <Icon Kind="Download" Size="16" /> Download selected (@_picked.Count) as Markdown
+                </button>
+            </div>
+        </section>
+    }
+}
+
+@code {
+    private static readonly (SuggestionStatus? Status, string Label)[] Filters =
+    [
+        (SuggestionStatus.Open, "To do"), (SuggestionStatus.Done, "Done"), (SuggestionStatus.Dismissed, "Dismissed"), (null, "All")
+    ];
+
+    private List<StoredSuggestion>? _all;
+    private SuggestionStatus? _filter = SuggestionStatus.Open;
+    private readonly HashSet<string> _picked = [];
+
+    private List<StoredSuggestion> Listed => [.. _all!.Where(s => _filter is null || s.Status == _filter)];
+
+    protected override async Task OnInitializedAsync() => _all = await Store.ListAsync();
+
+    private void Toggle(string key, bool on)
+    {
+        if (on) _picked.Add(key);
+        else _picked.Remove(key);
+    }
+
+    private void SelectAll()
+    {
+        var keys = Listed.Select(s => s.Suggestion.Key).ToList();
+        if (keys.All(_picked.Contains)) foreach (var k in keys) _picked.Remove(k);
+        else foreach (var k in keys) _picked.Add(k);
+    }
+
+    private async Task SetAsync(string key, SuggestionStatus status)
+    {
+        await Store.SetStatusAsync(key, status);
+        _all = await Store.ListAsync();
+    }
+
+    private async Task DownloadAsync()
+    {
+        var chosen = _all!.Where(s => _picked.Contains(s.Suggestion.Key)).Select(s => s.Suggestion).ToList();
+        if (chosen.Count == 0) return;
+        try
+        {
+            await JS.InvokeVoidAsync("gsDownload", $"suggested-tests-{DateTime.Now:yyyyMMdd-HHmmss}.md",
+                SuggestedTests.ToMarkdown(chosen, "From the GS Test Harness Suggested Tests page."));
+        }
+        catch (Exception) { /* the browser went away */ }
+    }
+}

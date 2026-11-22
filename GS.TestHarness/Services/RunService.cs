@@ -23,7 +23,7 @@ namespace GS.TestHarness.Services;
 /// and a tab opened or refreshed mid-run sees its progress. Each finished run is saved to the
 /// <see cref="ReportStore"/>.
 /// </summary>
-public sealed class RunService(TestRunner runner, ReportStore store, HomeService home, ILogger<RunService> log)
+public sealed class RunService(TestRunner runner, ReportStore store, HomeService home, SuggestionStore suggestionStore, ILogger<RunService> log)
 {
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
@@ -52,63 +52,6 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
 
     private readonly List<SuggestedTest> _suggestions = [];
     private readonly List<RunReport> _reports = [];
-
-    /// <summary>
-    /// Looks at a finished tier for tests that are missing. Tier 1: each problem no tier 2 test follows up (so the only
-    /// thing to do about it is read the finding). Tier 2 or 3: a diagnosis that couldn't measure what it was after.
-    /// </summary>
-    private void EvaluateTests(RunReport report)
-    {
-        var tier = report.Options.Tier;
-        var found = new List<SuggestedTest>();
-        if (tier == 1)
-        {
-            // Only what is worth a test of its own: a Fail or Error, or a Warning of a test that matters (a deprecated method
-            // being implemented, say, is a Warning of weight 2 that no diagnosis would add anything to).
-            foreach (var r in Tiers.OutlookFor(report).Uncovered
-                         .Where(r => r.Outcome is Outcome.Fail or Outcome.Error || (r.Outcome == Outcome.Warning && TestWeights.Of(r) >= MinWarningWeight)))
-            {
-                // The finding that called for it, then the member's other tier 1 problems: the new test should explain them too.
-                var related = new List<string> { Describe(r.Id, r.Number) };
-                related.AddRange(report.Results.Where(x => x.IsProblem && x.Member == r.Member && x.Id != r.Id && !Tiers.IsDiagnosis(x))
-                    .Select(x => x.Id).Distinct().Take(5).Select(id => Describe(id, TestNumbers.Of(id))));
-                found.Add(new SuggestedTest(2,
-                    $"Tier 2 diagnosis for {r.Member} ({r.Id})",
-                    WithNumbers($"Tier 1 found: {r.Message} No tier 2 test follows it up, so there's nothing that narrows it to a cause in the code.", related),
-                    related));
-            }
-        }
-        else
-        {
-            foreach (var r in report.Results.Where(r => Tiers.IsDiagnosis(r) && r.Outcome == Outcome.Error))
-            {
-                // The diagnosis that couldn't measure, and the tier below's tests it follows up.
-                var related = new List<string> { Describe(r.Id, r.Number) };
-                if (TestCatalog.For(r.Id) is { } entry)
-                    related.AddRange(entry.FollowsUp.Select(k => Describe(k, TestNumbers.For(k))));
-                found.Add(new SuggestedTest(tier,
-                    $"A tier {tier} measurement for {r.Member} that works where {r.Id} couldn't",
-                    WithNumbers($"{r.Id} couldn't measure it: {r.Message}", related),
-                    related));
-            }
-        }
-        lock (_gate)
-            foreach (var s in found)
-                if (!_suggestions.Any(x => x.Title == s.Title)) _suggestions.Add(s);
-    }
-
-    /// <summary>A tier 1 Warning only brings a suggested test when its test weighs at least this (<see cref="TestWeights"/>).</summary>
-    private const int MinWarningWeight = 5;
-
-    private static string Describe(string id, int number) => number > 0 ? $"Test {number}: {id}" : id;
-
-    /// <summary>The reason with every test number it refers to (those of <paramref name="related"/>, from "Test 1159: …") listed at the end.</summary>
-    private static string WithNumbers(string why, IReadOnlyList<string> related)
-    {
-        var numbers = related.Select(s => System.Text.RegularExpressions.Regex.Match(s, @"^Test (\d+):"))
-            .Where(m => m.Success).Select(m => m.Groups[1].Value).Distinct().ToList();
-        return numbers.Count == 0 ? why : $"{why} Test numbers referred to: {string.Join(", ", numbers)}.";
-    }
 
     private TaskCompletionSource<GateDecision>? _gateTcs;
 
@@ -275,10 +218,19 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         }
         finally
         {
+            // Kept for the Suggested Tests page, and marked with how often they were suggested before; dismissed ones aren't shown again.
+            List<SuggestedTest> shown;
+            var hidden = 0;
+            lock (_gate) shown = [.. _suggestions];
+            if (chain && shown.Count > 0 && _reports.Count > 0)
+            {
+                try { (shown, hidden) = await suggestionStore.RecordAsync(shown, _reports[0].Id); }
+                catch (Exception ex) { log.LogWarning(ex, "Suggested tests not saved: {Error}", ex.Message); }
+            }
             lock (_gate)
             {
                 if (chain && _reports.Count > 0)
-                    Finished = new FinishedInfo(Status ?? "The run has ended.", !completed, [.. _reports], [.. _suggestions], safetyNote);
+                    Finished = new FinishedInfo(Status ?? "The run has ended.", !completed, [.. _reports], shown, safetyNote, hidden);
                 LastReport = report;
                 IsRunning = false;
                 _cts?.Dispose();
@@ -291,7 +243,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     private void Collect(RunReport report)
     {
         lock (_gate) _reports.Add(report);
-        EvaluateTests(report);
+        var found = SuggestedTests.Evaluate(report);
+        lock (_gate) SuggestedTests.Merge(_suggestions, found);
     }
 
     /// <summary>
@@ -380,12 +333,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     }
 }
 
-/// <summary>A test the user should add: <see cref="Title"/> says what to add, <see cref="Why"/> what in the run called for it.</summary>
-/// <param name="Related">The earlier tests it should be tied to (each "Test 1159: ParkHome.FindHome"): the ones whose findings called for it.</param>
-public sealed record SuggestedTest(int Tier, string Title, string Why, IReadOnlyList<string> Related);
-
 /// <summary>What the finished dialog shows at the end of all testing (a new instance each time, so a page can tell it has shown it).</summary>
-public sealed record FinishedInfo(string Message, bool Stopped, IReadOnlyList<RunReport> Reports, IReadOnlyList<SuggestedTest> Suggestions, string? SafetyNote = null);
+public sealed record FinishedInfo(string Message, bool Stopped, IReadOnlyList<RunReport> Reports, IReadOnlyList<SuggestedTest> Suggestions, string? SafetyNote = null, int HiddenDismissed = 0);
 
 /// <summary>The warnings a run is asking the user about before it moves the mount.</summary>
 public sealed record GateRequest(IReadOnlyList<string> Warnings);
