@@ -207,6 +207,11 @@ public sealed partial class ConformUChecks : ICheckGroup
                 ctx.Report($"{id}.Explained", area.Member, Outcome.Warning,
                     $"Explained: {causes}{also}", expected: conformU, actual: actual, fix: fix, sourceMember: area.Member);
                 break;
+            case Outcome.Info when worst.Message.StartsWith("The rate is right", StringComparison.Ordinal):
+                // The diagnosis explained ConformU's result as the readings' resolution, which isn't a fault in the driver.
+                ctx.Report($"{id}.Explained", area.Member, Outcome.Info,
+                    $"Explained, not a fault: {causes}{also}", expected: conformU, actual: actual);
+                break;
             default:
                 ctx.Report($"{id}.NotReproduced", area.Member, Outcome.Info,
                     $"Not reproduced: the {area.Member} diagnosis found it within tolerance. Either it has been fixed since the ConformU run, " +

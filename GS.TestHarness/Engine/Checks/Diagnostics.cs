@@ -272,7 +272,10 @@ internal static class Diagnostics
             var rateRight = $"The rate is right (the 40\"/s offsets track within {fittedDev * 100:0.0}%, and ConformU's small one fitted over every " +
                             "reading is too), but measured as ConformU does, from one reading at each end, " +
                             $"{area.Member} = {Show(worstSmall.Value)} is off by {Math.Abs(worstSmall.TwoPoint!.Value - 1) * 100:0}%: ";
-            ctx.Report(id, area.Member, Outcome.Warning,
+            // On a real mount, readings too coarse for ConformU's 0.05"/s over 10 s are the hardware's step size, not a driver
+            // fault: Info, so it stays off the fix list. A stray reading, or the simulator (whose 20 ms tick can be fixed), stays a Warning.
+            var hardwareLimit = !stray && ctx.Options.Mount == MountKind.RealMount;
+            ctx.Report(id, area.Member, hardwareLimit ? Outcome.Info : Outcome.Warning,
                 rateRight + (stray
                     ? $"one of those two readings was {Amount(worstSmall.EndOff)} out of line with the readings around it (which scatter by only " +
                       $"{Amount(worstSmall.Scatter)}), against a movement of {moveText} in {seconds:0} s. A single stray reading, not the rate."
@@ -437,7 +440,7 @@ internal static class Diagnostics
         }
         if (!drifts && devShort > 0.05 && devLong <= 0.1 && devLong < 0.5 * devShort)
         {
-            ctx.Report(id, area.Member, Outcome.Warning,
+            ctx.Report(id, area.Member, ctx.Options.Mount == MountKind.RealMount ? Outcome.Info : Outcome.Warning,
                 $"The rate is right: measured for longer ({longS:0} s) ConformU's offset comes within {devLong * 100:0}% each way, where over " +
                 $"{shortS:0} s it was up to {devShort * 100:0}% out, and the mount holds still with no offset. An error in the readings is bounded, " +
                 "so it shows less the longer the measurement; a wrong rate would be as wrong for longer. ConformU's result comes from the readings.",
@@ -659,9 +662,12 @@ internal static class Diagnostics
                                   "Recommendation: when the simulator answers a position request (the \"degrees\" command in Controllers.cs), add the movement " +
                                   "since _lastUpdateTime (each rate × the time elapsed), so it reports where the axis is now rather than at the last 20 ms tick.");
                     if (real)
-                        lines.Add("Real mount: the axis position is a motor step count, and one step is a fraction of an arc-second. Recommendation: " +
-                                  "take the sidereal time for the RA conversion from when the step counts were read, not when they are converted, so " +
-                                  "the reading doesn't jump between samples.");
+                        lines.Add(ra
+                            ? "Real mount: the axis position is a motor step count, and one step is a fraction of an arc-second. Recommendation: " +
+                              "take the sidereal time for the RA conversion from when the step counts were read, not when they are converted, so " +
+                              "the reading doesn't jump between samples."
+                            : "Real mount: Declination comes straight from the Dec axis step count (no sidereal time is involved), so its scatter is " +
+                              "the encoder's step size and the mount's own motion. There is nothing in the server to change.");
                     lines.Add("To confirm, run ConformU again with a longer rate offset test if your ConformU version has that setting: the error " +
                               "shrinks as the test gets longer if it's the readings.");
                 }
