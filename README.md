@@ -1,4 +1,4 @@
-# GS Test Harness
+﻿# GS Test Harness
 
 Checks GSServer builds for ASCOM compliance and, for each problem, tells you what is wrong, what ASCOM expects,
 how to fix it and where the code to change probably is.
@@ -126,6 +126,11 @@ folders holding the driver file are marked). It's each person's own setting, sav
 reports folder. It may be any server's code, or a GitHub URL (downloaded and read from a copy here). Left blank, there
 is no code review: findings don't name files and tier 2 says the code wasn't reviewed. Findings then name the code to
 check, such as `Driver/Telescope.cs:1265`.
+
+Public GitHub repositories need no token. If `GITHUB_TOKEN` is set, the download uses it first and retries a failed
+HTTP request once anonymously. Private repositories require a valid token with repository access. The source card
+and CLI identify token or anonymous access, including retries, without displaying the token. Cached downloads record
+the access mode; older copies identify that it was not recorded.
 
 Reports are saved to `Documents\GS.TestHarness\Reports` (setting `ReportsFolder`), as JSON, and can be downloaded
 as Markdown (ready to paste into an issue), JSON or CSV, or printed / saved as PDF from the browser.
