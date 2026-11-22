@@ -309,8 +309,9 @@
                     is tier 1); tiers 2 and 3 then run by themselves, only for
                     problems the tier below found that have a deeper test. Each tier makes its own report, and they are grouped together.</p>
                 <p>The mount is sent home after every tier and at the end. Each test has a <a href="help#weights">weight</a> from 1 to 10 (10: a test that can't fail, such as the connection or
-                    stopping the mount). A tier is not followed by the next if one of those weight-10 tests failed, or if its failed tests' weights add up to more than
-                    @Tiers.MaxProblemsToContinue; the finished dialog then says it stopped for safety. To check a fix, run the tests again.
+                    stopping the mount). While a tier runs, the <strong>Run Status</strong> bar shows the <strong>failed weight</strong> so far against the limit. If one of those weight-10 tests fails, or the failed tests'
+                    weights add up to more than @Tiers.MaxProblemsToContinue, the tier is stopped there and then (its report holds what was found), the mount is sent home and no deeper tier runs;
+                    the finished dialog says it stopped for safety. To check a fix, run the tests again.
                     A tier 2 or 3 report is named with its tier first, such as <strong>2-RAC0013</strong>.</p>
                 <table>
                     <thead><tr><th>Tier</th><th>ASCOM Conformance Check</th><th>ConformU Debug Log Test</th></tr></thead>
@@ -410,9 +411,10 @@
                     10 is a test the run can't go on after failing, such as the connection or being able to stop the mount; a 1 or 2 is a nicety, such as
                     the format of a version string. Weights decide two things:</p>
                 <ul>
-                    <li><strong>Whether the next tier runs.</strong> When a tier finishes, its failed tests (Fail or Error, not Warning) are added up by weight.
-                        If any weight-@TestWeights.Critical test failed, or the total is more than @Tiers.MaxProblemsToContinue, the next tier is not run for
-                        safety, and the finished dialog says why and names the heaviest failures.</li>
+                    <li><strong>Whether a tier goes on, and whether the next one runs.</strong> As a tier runs, its failed tests (Fail or Error, not Warning) are added up by weight,
+                        and the total is shown in the Run Status bar (<em>Failed weight: 14 of @Tiers.MaxProblemsToContinue</em>, in red when it is close or a critical test has failed). If any
+                        weight-@TestWeights.Critical test fails, or the total passes @Tiers.MaxProblemsToContinue, the tier is stopped at once, the mount is sent home and no deeper tier
+                        runs. The finished dialog says why and names the heaviest failures; the stopped tier's report keeps what it found up to then.</li>
                     <li><strong>The priority of a suggested new test</strong> (the heaviest weight among the tests it relates to), which also sets the order
                         they are listed in.</li>
                 </ul>

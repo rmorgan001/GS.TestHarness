@@ -370,6 +370,17 @@ else
         {
             <span class="run-status-step">@status</span>
         }
+        @* A chained run stops a tier itself when the failed tests' weights pass the limit or an important one fails: how close it is. *@
+        @if (Runs.IsChained && (Runs.IsRunning || Runs.Results.Count > 0))
+        {
+            var score = Runs.LiveScore;
+            var critical = Runs.LiveCritical;
+            var close = critical > 0 || score * 4 >= Runs.ScoreLimit * 3;
+            <span class="run-status-step" style="@(close ? "color: var(--fail); font-weight: 600;" : null)"
+                  title="Each failed test counts for its weight (1 to 10). A failed weight-@TestWeights.Critical test, or a total over @Runs.ScoreLimit, stops the tier for safety. Weights are on the Weights tab.">
+                Failed weight: @score of @Runs.ScoreLimit@(critical > 0 ? $" · {critical} critical test{(critical == 1 ? "" : "s")} failed" : "")
+            </span>
+        }
     </div>
     @if (Runs.IsRunning)
     {

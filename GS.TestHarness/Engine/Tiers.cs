@@ -104,6 +104,23 @@ public static class Tiers
     /// <summary>How worrying a run's problems are: the weights of its Fail and Error findings added up. Warnings don't count.</summary>
     public static int ProblemScore(RunReport report) => WeightedProblems(report).Sum(x => x.Weight);
 
+    /// <summary>
+    /// Whether a tier under way should be stopped for safety, given its findings so far and the one that just came in: why, or null.
+    /// A Fail or Error of a weight-<see cref="TestWeights.Critical"/> test stops it, or failed weights adding up to more than
+    /// <see cref="MaxProblemsToContinue"/>. Other findings never do.
+    /// </summary>
+    public static string? SafetyReason(IReadOnlyList<CheckResult> soFar, CheckResult latest)
+    {
+        if (latest.Outcome is not (Outcome.Fail or Outcome.Error)) return null;
+        var weight = TestWeights.Of(latest);
+        if (weight >= TestWeights.Critical) return $"{latest.Id} failed (weight {weight}), a test the run can't go on after";
+        var failed = soFar.Where(r => r.Outcome is Outcome.Fail or Outcome.Error).ToList();
+        var score = failed.Sum(TestWeights.Of);
+        if (score <= MaxProblemsToContinue) return null;
+        var worst = string.Join("; ", failed.OrderByDescending(TestWeights.Of).Take(3).Select(x => $"{x.Id} (weight {TestWeights.Of(x)})"));
+        return $"the failed tests add up to {score} (the limit is {MaxProblemsToContinue}); the heaviest: {worst}";
+    }
+
     /// <summary>The failed tests so important (<see cref="TestWeights.Critical"/>) that a run can't go on after one.</summary>
     public static List<CheckResult> CriticalFailures(RunReport report)
         => [.. WeightedProblems(report).Where(x => x.Weight >= TestWeights.Critical).Select(x => x.Finding)];

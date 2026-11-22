@@ -171,4 +171,41 @@ public class WeightStoreTests
         }
         finally { Cleanup(root); }
     }
+
+    private static CheckResult F(string id, Outcome outcome = Outcome.Fail, string group = "Motion")
+        => new() { Id = id, Group = group, Member = "m", Outcome = outcome, Message = id };
+
+    [Fact]
+    public void A_failed_critical_test_stops_a_tier_at_once_but_a_pass_or_warning_never_does()
+    {
+        var critical = F("Motion.AbortSlew.DuringSlew");
+        Assert.NotNull(Tiers.SafetyReason([critical], critical));
+        var error = F("Motion.AbortSlew.DuringSlew", Outcome.Error);
+        Assert.NotNull(Tiers.SafetyReason([error], error));
+        var warning = F("Motion.AbortSlew.DuringSlew", Outcome.Warning);
+        Assert.Null(Tiers.SafetyReason([warning], warning));
+        var pass = F("Motion.AbortSlew.DuringSlew", Outcome.Pass);
+        Assert.Null(Tiers.SafetyReason([pass], pass));
+    }
+
+    [Fact]
+    public void Failed_weights_stop_a_tier_when_they_pass_the_limit()
+    {
+        try
+        {
+            TestWeights.Apply(new Dictionary<string, int>(), 10);
+            var minor = F("Protocol.Reply.Json", group: "Protocol"); // weight 2
+            var failed = new List<CheckResult>();
+            string? reason = null;
+            for (var i = 0; i < 10 && reason is null; i++)
+            {
+                failed.Add(minor);
+                reason = Tiers.SafetyReason(failed, minor);
+            }
+            Assert.NotNull(reason);
+            Assert.Equal(6, failed.Count); // 6 x 2 = 12, the first total over 10
+            Assert.Contains("limit is 10", reason);
+        }
+        finally { TestWeights.Apply(new Dictionary<string, int>(), TestWeights.DefaultLimit); }
+    }
 }

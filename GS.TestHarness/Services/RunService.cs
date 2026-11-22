@@ -51,6 +51,51 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     public FinishedInfo? Finished { get; private set; }
 
     private readonly List<SuggestedTest> _suggestions = [];
+
+    /// <summary>The run under way carries on through the tiers (and so stops itself when too many important tests fail).</summary>
+    public bool IsChained { get; private set; }
+
+    /// <summary>The weights of the failed tests (Fail or Error) of the tier under way so far: what is compared with <see cref="ScoreLimit"/>.</summary>
+    public int LiveScore
+    {
+        get { lock (_gate) return ScoreOf(_results); }
+    }
+
+    /// <summary>How many failed tests of the tier under way are ones the run can't go on after (weight <see cref="TestWeights.Critical"/>).</summary>
+    public int LiveCritical
+    {
+        get { lock (_gate) return _results.Count(r => r.Outcome is Outcome.Fail or Outcome.Error && TestWeights.Of(r) >= TestWeights.Critical); }
+    }
+
+    /// <summary>What the failed tests' weights may add up to in a tier before it is stopped.</summary>
+    public int ScoreLimit => TestWeights.Limit;
+
+    /// <summary>Why the tier under way was stopped for safety (null while it hasn't been).</summary>
+    private string? _earlyStop;
+
+    private CancellationTokenSource? _tierCts;
+
+    private static int ScoreOf(IEnumerable<CheckResult> results)
+        => results.Where(r => r.Outcome is Outcome.Fail or Outcome.Error).Sum(TestWeights.Of);
+
+    /// <summary>
+    /// Called with each finding of a chained run: stops the tier under way (the mount is put home afterwards, as for Stop) as soon as a
+    /// test of weight <see cref="TestWeights.Critical"/> fails or the failed weights pass <see cref="ScoreLimit"/>, rather than leaving
+    /// it to the end of the tier.
+    /// </summary>
+    private void CheckSafety(CheckResult r)
+    {
+        if (!IsChained || r.Outcome is not (Outcome.Fail or Outcome.Error)) return;
+        lock (_gate)
+        {
+            if (_earlyStop is not null) return;
+            var why = Tiers.SafetyReason(_results, r);
+            if (why is null) return;
+            _earlyStop = why;
+            Status = "Stopping for safety: " + why;
+            _tierCts?.Cancel();
+        }
+    }
     private readonly List<RunReport> _reports = [];
 
     private TaskCompletionSource<GateDecision>? _gateTcs;
@@ -134,6 +179,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
             StartedAt = DateTimeOffset.Now;
             PreviousReport = null;
             Finished = null;
+            IsChained = chain;
+            _earlyStop = null;
             _suggestions.Clear();
             _reports.Clear();
             _results.Clear();
@@ -167,17 +214,23 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
             if (report is not null) Collect(report);
             // Chained tiers: after each tier the mount goes home and the next tier (for what this one found) starts, with no
             // second safety dialog (the user accepted it at tier 1). IsRunning stays true throughout, so Stop stays at hand.
-            while (chain && report is { Cancelled: false } && !token.IsCancellationRequested)
+            while (chain && report is not null && (!report.Cancelled || _earlyStop is not null) && !token.IsCancellationRequested)
             {
-                var next = Tiers.Next(report);
-                var last = next is null;
+                var stoppedEarly = _earlyStop;
+                var next = stoppedEarly is null ? Tiers.Next(report) : null;
+                var last = next is null && stoppedEarly is null;
                 // Too many failures: a mount in this state may not be safe to keep moving, so the deeper tiers aren't run.
                 // Each failed test counts for its weight (1 to 10): one that can't fail (the connection, stopping the mount)
                 // ends the tiers at once, and the rest add up.
                 var score = Tiers.ProblemScore(report);
                 var critical = Tiers.CriticalFailures(report);
-                var unsafeToGoOn = !last && (critical.Count > 0 || score > Tiers.MaxProblemsToContinue);
-                if (unsafeToGoOn)
+                var unsafeToGoOn = stoppedEarly is not null || (!last && (critical.Count > 0 || score > Tiers.MaxProblemsToContinue));
+                if (stoppedEarly is not null)
+                {
+                    safetyNote = $"Tier {report.Options.Tier} was stopped part way for safety concerns: {stoppedEarly}. Its report holds what was found up to then, " +
+                                 "no deeper tier was run and the mount was sent home. Fix the problems in the report and run the tests again.";
+                }
+                else if (unsafeToGoOn)
                 {
                     var worst = string.Join("; ", Tiers.WeightedProblems(report).Take(3).Select(x => $"{x.Finding.Id} (weight {x.Weight})"));
                     safetyNote = (critical.Count > 0
@@ -187,7 +240,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                          $"Tier {next!.Tier} was not run for safety concerns: the mount may not be behaving as it should. " +
                          "Fix the problems in the report and run the tests again.";
                 }
-                if (!await GoHomeAsync(target, options, last ? "All tests finished" : $"Tier {report.Options.Tier} finished", token)) break;
+                if (!await GoHomeAsync(target, options, last ? "All tests finished" : stoppedEarly is not null ? $"Tier {report.Options.Tier} stopped for safety" : $"Tier {report.Options.Tier} finished", token)) break;
                 if (unsafeToGoOn)
                 {
                     Status = "Testing stopped for safety concerns" + (options.AllowMotion ? "; the mount is at the home position." : ".");
@@ -267,9 +320,14 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     }
 
     private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
-        CancellationToken token)
+        CancellationToken outer)
     {
         RunReport? report = null;
+        // This tier's own token: the user's Stop cancels it (it is linked to the run's), and so does the safety check (CheckSafety)
+        // without ending the whole run, so the mount can still be sent home afterwards.
+        using var tierCts = CancellationTokenSource.CreateLinkedTokenSource(outer);
+        lock (_gate) _tierCts = tierCts;
+        var token = tierCts.Token;
         try
         {
             log.LogInformation("Run started: {Target}, tier {Tier}, motion {Motion}", target.Display, options.Tier, options.AllowMotion);
@@ -282,6 +340,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                 r =>
                 {
                     lock (_gate) _results.Add(r);
+                    CheckSafety(r);
                     Changed?.Invoke();
                 },
                 p =>
@@ -313,6 +372,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                 });
             }
         }
+        lock (_gate) _tierCts = null; // the tier is over: nothing more to stop (tierCts is disposed on leaving)
         if (report is not null)
         {
             // Saved apart from the run: a failed save keeps the findings on screen and says so, not "couldn't open".

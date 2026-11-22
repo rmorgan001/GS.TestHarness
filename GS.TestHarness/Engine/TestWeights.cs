@@ -171,5 +171,10 @@ public static class TestWeights
     }
 
     /// <summary>The weight of a finding: its catalog entry's, or <see cref="Unknown"/> for one with none.</summary>
-    public static int Of(CheckResult r) => TestCatalog.For(r.Id) is { } entry ? entry.Weight : Unknown;
+    public static int Of(CheckResult r) => KeyOf(r.Id) is { } key ? Of(key) : Unknown;
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> Keys = new();
+
+    /// <summary>The catalog key of the test a finding's id belongs to (cached: the catalog is searched by pattern), or null.</summary>
+    private static string? KeyOf(string findingId) => Keys.GetOrAdd(findingId, id => TestCatalog.For(id)?.Key);
 }
