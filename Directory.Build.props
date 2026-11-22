@@ -3,7 +3,7 @@
   <!-- Shared by every project in the repository. -->
   <PropertyGroup>
     <!-- The release workflow (.github/workflows/release.yml) sets this to the tag's version after each release, so local builds match. -->
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <Product>GS Test Harness</Product>
     <Copyright>Copyright (C) Rob Morgan</Copyright>
     <!-- GNU GPL version 3 or later (LICENSE), as the source headers say. -->
