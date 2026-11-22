@@ -132,8 +132,33 @@ public static class TestWeights
         ["Disconnected"] = 4,
     };
 
-    /// <summary>The weight (1 to 10) of the catalog entry with this key (Group.Id).</summary>
-    public static int Of(string key)
+    /// <summary>What a tier's failed tests may add up to before the next tier isn't run, unless the user has set another (<see cref="Limit"/>).</summary>
+    public const int DefaultLimit = 40;
+
+    private static volatile IReadOnlyDictionary<string, int> _adjusted = new Dictionary<string, int>();
+    private static int _limit = DefaultLimit;
+
+    /// <summary>What a tier's failed tests may add up to (<see cref="Tiers.ProblemScore"/>) before the next tier isn't run.</summary>
+    public static int Limit => Volatile.Read(ref _limit);
+
+    /// <summary>
+    /// The weights the user has changed from the built-in ones (by key), and the limit: set by the <see cref="WeightStore"/> when
+    /// the app starts and whenever they are changed. Used by every run from then on.
+    /// </summary>
+    public static void Apply(IReadOnlyDictionary<string, int> adjusted, int limit)
+    {
+        _adjusted = new Dictionary<string, int>(adjusted);
+        Volatile.Write(ref _limit, Math.Clamp(limit, 1, 10_000));
+    }
+
+    /// <summary>Whether the user has changed this test's weight from the built-in one.</summary>
+    public static bool IsAdjusted(string key) => _adjusted.ContainsKey(key);
+
+    /// <summary>The weight (1 to 10) of the catalog entry with this key (Group.Id): the user's own if they have changed it.</summary>
+    public static int Of(string key) => _adjusted.TryGetValue(key, out var weight) ? Math.Clamp(weight, Min, Max) : Default(key);
+
+    /// <summary>The built-in weight of the catalog entry with this key, whatever the user has set.</summary>
+    public static int Default(string key)
     {
         if (ByKey.TryGetValue(key, out var weight)) return weight;
         foreach (var (fits, w) in Rules)

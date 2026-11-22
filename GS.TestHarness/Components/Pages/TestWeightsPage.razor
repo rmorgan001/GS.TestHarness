@@ -1,0 +1,108 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@page "/test-weights"
+@page "/conformu/test-weights"
+@implements IDisposable
+@inject WeightStore Weights
+
+<PageTitle>Weights · GS Test Harness</PageTitle>
+
+@* How much each test matters (1 to 10) and how much failing may add up to before the next tier isn't run. Saved as soon as changed. *@
+<header class="page-head">
+    <h1>Test Weights</h1>
+    <p class="muted">Each test has a weight from 1 to 10: how much it matters that it passes (see <a href="help#weights">Test weights</a>). After a tier, the weights of its
+        failed tests are added up; a failed test of weight @TestWeights.Critical, or a total over the limit below, stops the next tier. Changes are saved as you make them
+        and apply to the next run.</p>
+</header>
+
+<section class="card">
+    <label class="mount-field" title="A tier's failed tests may add up to this before the next tier isn't run.">
+        <span>Limit <small class="muted">what failed tests may add up to (built in: @TestWeights.DefaultLimit)</small></span>
+        <input type="number" min="1" max="10000" class="narrow-input" value="@Weights.Limit" @onchange="SetLimit" />
+    </label>
+    <div style="display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-top: .6rem;">
+        <input type="search" placeholder="Find a test: number, group or name" @bind="_filter" @bind:event="oninput" style="min-width: 18rem;" />
+        <label class="check"><input type="checkbox" @bind="_onlyAdjusted" /><span>Only the ones I changed</span></label>
+        <button type="button" class="btn" disabled="@(!Weights.HasChanges)" @onclick="ResetAll">Reset everything to the built-in weights</button>
+    </div>
+</section>
+
+@foreach (var group in Groups)
+{
+    <section class="card">
+        <h2>@group.Key <small class="muted">@group.Count() test@(group.Count() == 1 ? "" : "s")</small></h2>
+        <table class="results">
+            <thead><tr><th>No.</th><th>Test</th><th>Weight</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var e in group)
+                {
+                    var adjusted = TestWeights.IsAdjusted(e.Key);
+                    <tr>
+                        <td><a href="help#test-@e.Number">@e.Number</a></td>
+                        <td><span class="mono small">@e.DisplayId</span><br /><span class="muted small">@e.Objective</span></td>
+                        <td style="white-space: nowrap;">
+                            <input type="number" min="@TestWeights.Min" max="@TestWeights.Max" class="narrow-input" value="@e.Weight"
+                                   @onchange="args => SetWeight(e.Key, args)" aria-label="Weight of test @e.Number" />
+                            @if (adjusted) { <small class="muted">built in: @TestWeights.Default(e.Key)</small> }
+                        </td>
+                        <td>@if (adjusted) { <button type="button" class="btn" @onclick="() => Weights.Reset(e.Key)">Reset</button> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+}
+
+@if (!Groups.Any())
+{
+    <div class="empty-state"><Icon Kind="Pencil" Size="32" /><p>No tests match.</p></div>
+}
+
+@code {
+    private string _filter = "";
+    private bool _onlyAdjusted;
+
+    protected override void OnInitialized() => Weights.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private IEnumerable<IGrouping<string, CatalogEntry>> Groups
+        => TestCatalog.Entries
+            .Where(e => !_onlyAdjusted || TestWeights.IsAdjusted(e.Key))
+            .Where(e => string.IsNullOrWhiteSpace(_filter)
+                        || e.Key.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase)
+                        || e.Number.ToString() == _filter.Trim()
+                        || e.Objective.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.Number)
+            .GroupBy(e => e.Group);
+
+    private void SetWeight(string key, ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var weight)) Weights.SetWeight(key, weight);
+        else StateHasChanged(); // not a number: show the weight it has
+    }
+
+    private void SetLimit(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var limit)) Weights.SetLimit(limit);
+        else StateHasChanged();
+    }
+
+    private void ResetAll() => Weights.ResetAll();
+
+    public void Dispose() => Weights.Changed -= OnChanged;
+}

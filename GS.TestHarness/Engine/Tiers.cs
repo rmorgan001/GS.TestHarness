@@ -92,9 +92,9 @@ public static class Tiers
 
     /// <summary>
     /// A chained run goes no deeper when a tier's <see cref="ProblemScore"/> is more than this: that many problems may mean
-    /// the mount isn't safe to keep testing. (Ten failures of tests weighing 4 would be enough.)
+    /// the mount isn't safe to keep testing. (Ten failures of tests weighing 4 would be enough.) The user can change it: see <see cref="WeightStore"/>.
     /// </summary>
-    public const int MaxProblemsToContinue = 40;
+    public static int MaxProblemsToContinue => TestWeights.Limit;
 
     /// <summary>The Fail and Error findings of a run, each with its test's weight (<see cref="TestWeights"/>, 1 to 10), heaviest first.</summary>
     public static List<(CheckResult Finding, int Weight)> WeightedProblems(RunReport report)

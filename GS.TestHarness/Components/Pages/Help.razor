@@ -41,6 +41,7 @@
                 <li><a href="help#server-settings">Server settings</a></li>
                 <li><a href="help#conformu">ConformU Debug Log Test</a></li>
                 <li><a href="help#tiers">Diagnostic tiers</a></li>
+                <li><a href="help#weights">Test weights</a></li>
                 <li><a href="help#options">Options</a></li>
                 <li><a href="help#results">Reading the results</a></li>
                 <li><a href="help#reports">The Reports tab</a></li>
@@ -307,7 +308,7 @@
                 <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>, on either test,
                     is tier 1); tiers 2 and 3 then run by themselves, only for
                     problems the tier below found that have a deeper test. Each tier makes its own report, and they are grouped together.</p>
-                <p>The mount is sent home after every tier and at the end. Each test has a weight from 1 to 10 (10: a test that can't fail, such as the connection or
+                <p>The mount is sent home after every tier and at the end. Each test has a <a href="help#weights">weight</a> from 1 to 10 (10: a test that can't fail, such as the connection or
                     stopping the mount). A tier is not followed by the next if one of those weight-10 tests failed, or if its failed tests' weights add up to more than
                     @Tiers.MaxProblemsToContinue; the finished dialog then says it stopped for safety. To check a fix, run the tests again.
                     A tier 2 or 3 report is named with its tier first, such as <strong>2-RAC0013</strong>.</p>
@@ -322,8 +323,8 @@
                 </table>
                 <p>Tier 3 ends with a <strong>Summary</strong> finding for each member: whether it confirms or overturns tier 2's
                     diagnosis and recommendation, the final analysis, and the recommended fix.</p>
-                <p>A tier 2 or 3 run can't be started any other way: it follows up the run just below it (same device,
-                    the options as set now), and its report says which run that was. Its findings are the
+                <p>Tiers 2 and 3 are never started by hand: each follows up the run just below it (same device,
+                    the options as set for the run), and its report says which run that was. Its findings are the
                     <strong>Diagnose…</strong> group for a conformance run, <strong>ConformU.Diagnose…</strong> for a ConformU
                     run. Reviews add each tier 1 run's deeper findings, the deepest tier's
                     where a check was made at more than one.</p>
@@ -401,6 +402,44 @@
                     </table>
                 }
                 <p class="muted">Every other tier 1 test has no deeper tier yet.</p>
+            </section>
+
+            <section id="weights">
+                <h2>Test weights</h2>
+                <p>Every test has a <strong>weight</strong> from 1 to 10: how much it matters that it passes. It is not how likely it is to fail. A
+                    10 is a test the run can't go on after failing, such as the connection or being able to stop the mount; a 1 or 2 is a nicety, such as
+                    the format of a version string. Weights decide two things:</p>
+                <ul>
+                    <li><strong>Whether the next tier runs.</strong> When a tier finishes, its failed tests (Fail or Error, not Warning) are added up by weight.
+                        If any weight-@TestWeights.Critical test failed, or the total is more than @Tiers.MaxProblemsToContinue, the next tier is not run for
+                        safety, and the finished dialog says why and names the heaviest failures.</li>
+                    <li><strong>The priority of a suggested new test</strong> (the heaviest weight among the tests it relates to), which also sets the order
+                        they are listed in.</li>
+                </ul>
+                <p>A weight is found in this order: the test's own weight, set one by one for the tests that matter most (the connection, stopping the mount,
+                    slews, park and home, restoring settings); then a rule for a kind of test (an invalid-value or not-implemented check is 3 or 4, a
+                    deprecated one 2, since they are about the driver's manners, not safety); then its group's weight. So most tests have their group's weight and
+                    only the important ones are individual. A finding with no test of its own counts as @TestWeights.Unknown. The tests at weight 8 and above (with any changes you made):</p>
+                <table>
+                    <thead><tr><th>Weight</th><th>Tests</th></tr></thead>
+                    <tbody>
+                        @foreach (var level in TestCatalog.Entries.Where(e => e.Weight >= 8).GroupBy(e => e.Weight).OrderByDescending(g => g.Key))
+                        {
+                            <tr>
+                                <td>@level.Key</td>
+                                <td class="mono small">@foreach (var e in level.OrderBy(e => e.Number)) { <div><a href="help#test-@e.Number">@e.Number</a> @e.Group.@e.DisplayId</div> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <h3>Adjusting the weights</h3>
+                <p>The built-in weights are a starting point. On the <strong>Weights</strong> page (under either test's tabs) every test has its weight in a box: type
+                    another from 1 to 10 and it is saved at once and used from the next run. The <strong>Limit</strong> at the top (built in: @TestWeights.DefaultLimit)
+                    is what a tier's failed weights may add up to before the next tier isn't run. A weight you changed shows the built-in one beside it and a
+                    <strong>Reset</strong> button; <strong>Reset everything</strong> puts them all back. Only what you changed is kept (in <code>test-weights.json</code>
+                    beside the reports folder), so a weight you left alone follows the built-in one if a later version improves it. The table above shows the weights
+                    as they are now.</p>
+                <p>The built-in weights are in <span class="mono">Engine/TestWeights.cs</span>: one table for the individual tests and one for the groups.</p>
             </section>
 
             <section id="themes">
@@ -626,6 +665,9 @@ GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                     <dt>Servers</dt>
                     <dd><code>servers.json</code> beside the reports folder. Alpaca passwords
                         are saved encrypted (with DPAPI on Windows) and never written into reports.</dd>
+                    <dt>Suggested tests and test weights</dt>
+                    <dd><code>suggested-tests.json</code> (the tests runs suggested, see Suggested Tests) and <code>test-weights.json</code> (the weights and
+                        limit you changed, see <a href="help#weights">Test weights</a>) beside the reports folder.</dd>
                     <dt>Source folders and options</dt>
                     <dd><code>source-folders.json</code> (each server's source code, see <a href="help#source">Where to check the code</a>)
                         and <code>last-run.json</code> (the server and options last used) beside the reports folder.</dd>
