@@ -23,7 +23,7 @@ namespace GS.TestHarness.Services;
 /// and a tab opened or refreshed mid-run sees its progress. Each finished run is saved to the
 /// <see cref="ReportStore"/>.
 /// </summary>
-public sealed class RunService(TestRunner runner, ReportStore store, ILogger<RunService> log)
+public sealed class RunService(TestRunner runner, ReportStore store, HomeService home, ILogger<RunService> log)
 {
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
@@ -46,6 +46,69 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
 
     /// <summary>What the run is waiting on the user for before it moves the mount (null when it isn't waiting).</summary>
     public GateRequest? PendingGate { get; private set; }
+
+    /// <summary>Set when a chained run has ended (all tiers done, stopped, or couldn't go on); cleared when the next run starts.</summary>
+    public FinishedInfo? Finished { get; private set; }
+
+    private readonly List<SuggestedTest> _suggestions = [];
+    private readonly List<RunReport> _reports = [];
+
+    /// <summary>
+    /// Looks at a finished tier for tests that are missing. Tier 1: each problem no tier 2 test follows up (so the only
+    /// thing to do about it is read the finding). Tier 2 or 3: a diagnosis that couldn't measure what it was after.
+    /// </summary>
+    private void EvaluateTests(RunReport report)
+    {
+        var tier = report.Options.Tier;
+        var found = new List<SuggestedTest>();
+        if (tier == 1)
+        {
+            // Only what is worth a test of its own: a Fail or Error, or a Warning of a test that matters (a deprecated method
+            // being implemented, say, is a Warning of weight 2 that no diagnosis would add anything to).
+            foreach (var r in Tiers.OutlookFor(report).Uncovered
+                         .Where(r => r.Outcome is Outcome.Fail or Outcome.Error || (r.Outcome == Outcome.Warning && TestWeights.Of(r) >= MinWarningWeight)))
+            {
+                // The finding that called for it, then the member's other tier 1 problems: the new test should explain them too.
+                var related = new List<string> { Describe(r.Id, r.Number) };
+                related.AddRange(report.Results.Where(x => x.IsProblem && x.Member == r.Member && x.Id != r.Id && !Tiers.IsDiagnosis(x))
+                    .Select(x => x.Id).Distinct().Take(5).Select(id => Describe(id, TestNumbers.Of(id))));
+                found.Add(new SuggestedTest(2,
+                    $"Tier 2 diagnosis for {r.Member} ({r.Id})",
+                    WithNumbers($"Tier 1 found: {r.Message} No tier 2 test follows it up, so there's nothing that narrows it to a cause in the code.", related),
+                    related));
+            }
+        }
+        else
+        {
+            foreach (var r in report.Results.Where(r => Tiers.IsDiagnosis(r) && r.Outcome == Outcome.Error))
+            {
+                // The diagnosis that couldn't measure, and the tier below's tests it follows up.
+                var related = new List<string> { Describe(r.Id, r.Number) };
+                if (TestCatalog.For(r.Id) is { } entry)
+                    related.AddRange(entry.FollowsUp.Select(k => Describe(k, TestNumbers.For(k))));
+                found.Add(new SuggestedTest(tier,
+                    $"A tier {tier} measurement for {r.Member} that works where {r.Id} couldn't",
+                    WithNumbers($"{r.Id} couldn't measure it: {r.Message}", related),
+                    related));
+            }
+        }
+        lock (_gate)
+            foreach (var s in found)
+                if (!_suggestions.Any(x => x.Title == s.Title)) _suggestions.Add(s);
+    }
+
+    /// <summary>A tier 1 Warning only brings a suggested test when its test weighs at least this (<see cref="TestWeights"/>).</summary>
+    private const int MinWarningWeight = 5;
+
+    private static string Describe(string id, int number) => number > 0 ? $"Test {number}: {id}" : id;
+
+    /// <summary>The reason with every test number it refers to (those of <paramref name="related"/>, from "Test 1159: …") listed at the end.</summary>
+    private static string WithNumbers(string why, IReadOnlyList<string> related)
+    {
+        var numbers = related.Select(s => System.Text.RegularExpressions.Regex.Match(s, @"^Test (\d+):"))
+            .Where(m => m.Success).Select(m => m.Groups[1].Value).Distinct().ToList();
+        return numbers.Count == 0 ? why : $"{why} Test numbers referred to: {string.Join(", ", numbers)}.";
+    }
 
     private TaskCompletionSource<GateDecision>? _gateTcs;
 
@@ -104,7 +167,9 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
 
     /// <summary>Starts a run; false if one is already under way.</summary>
     /// <param name="followsUp">For a tier 2 or 3 run, the run it follows up (<see cref="Tiers.Options"/> made the options from it).</param>
-    public bool Start(TestTarget target, RunOptions options, ConformULog? conformU = null, RunReport? followsUp = null)
+    /// <param name="chain">Carry on through the deeper tiers for what each finds: the mount goes home after every tier, the next
+    /// tier starts by itself, and the mount goes home again at the end.</param>
+    public bool Start(TestTarget target, RunOptions options, ConformULog? conformU = null, RunReport? followsUp = null, bool chain = false)
     {
         // Tier 1 always first: a deeper run only follows up the tier below's findings.
         if (Tiers.Problem(options, followsUp, conformU is not null) is { } problem)
@@ -125,11 +190,14 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             Status = $"Connecting to {target.Display}…";
             StartedAt = DateTimeOffset.Now;
             PreviousReport = null;
+            Finished = null;
+            _suggestions.Clear();
+            _reports.Clear();
             _results.Clear();
             _cts = new CancellationTokenSource();
         }
         Changed?.Invoke();
-        _ = Task.Run(() => RunOneAsync(target, options, conformU, followsUp, _cts.Token));
+        _ = Task.Run(() => RunOneAsync(target, options, conformU, followsUp, _cts.Token, chain));
         return true;
     }
 
@@ -145,17 +213,72 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
     }
 
     private async Task RunOneAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
-        CancellationToken token)
+        CancellationToken token, bool chain)
     {
         RunReport? report = null;
+        var completed = false;
+        string? safetyNote = null;
         try
         {
             report = await RunAsync(target, options, conformU, followsUp, token);
+            if (report is not null) Collect(report);
+            // Chained tiers: after each tier the mount goes home and the next tier (for what this one found) starts, with no
+            // second safety dialog (the user accepted it at tier 1). IsRunning stays true throughout, so Stop stays at hand.
+            while (chain && report is { Cancelled: false } && !token.IsCancellationRequested)
+            {
+                var next = Tiers.Next(report);
+                var last = next is null;
+                // Too many failures: a mount in this state may not be safe to keep moving, so the deeper tiers aren't run.
+                // Each failed test counts for its weight (1 to 10): one that can't fail (the connection, stopping the mount)
+                // ends the tiers at once, and the rest add up.
+                var score = Tiers.ProblemScore(report);
+                var critical = Tiers.CriticalFailures(report);
+                var unsafeToGoOn = !last && (critical.Count > 0 || score > Tiers.MaxProblemsToContinue);
+                if (unsafeToGoOn)
+                {
+                    var worst = string.Join("; ", Tiers.WeightedProblems(report).Take(3).Select(x => $"{x.Finding.Id} (weight {x.Weight})"));
+                    safetyNote = (critical.Count > 0
+                            ? $"Tier {report.Options.Tier} failed {critical.Count} test{(critical.Count == 1 ? "" : "s")} the run can't go on after (weight {TestWeights.Critical}): " +
+                              string.Join(", ", critical.Take(5).Select(c => c.Id)) + ". "
+                            : $"Tier {report.Options.Tier}'s failed tests add up to {score} (the limit is {Tiers.MaxProblemsToContinue}); the heaviest: {worst}. ") +
+                         $"Tier {next!.Tier} was not run for safety concerns: the mount may not be behaving as it should. " +
+                         "Fix the problems in the report and run the tests again.";
+                }
+                if (!await GoHomeAsync(target, options, last ? "All tests finished" : $"Tier {report.Options.Tier} finished", token)) break;
+                if (unsafeToGoOn)
+                {
+                    Status = "Testing stopped for safety concerns" + (options.AllowMotion ? "; the mount is at the home position." : ".");
+                    break;
+                }
+                if (last)
+                {
+                    completed = true;
+                    Status = options.AllowMotion
+                        ? "All tests are finished. The mount is at the home position."
+                        : "All tests are finished.";
+                    break;
+                }
+                lock (_gate)
+                {
+                    LastReport = report;
+                    options = Tiers.Options(options, next!);
+                    Options = options;
+                    Progress = null;
+                    Status = $"Starting tier {next!.Tier}…";
+                    StartedAt = DateTimeOffset.Now;
+                    _results.Clear();
+                }
+                Changed?.Invoke();
+                report = await RunAsync(target, options, conformU, next!.From, token);
+                if (report is not null) Collect(report);
+            }
         }
         finally
         {
             lock (_gate)
             {
+                if (chain && _reports.Count > 0)
+                    Finished = new FinishedInfo(Status ?? "The run has ended.", !completed, [.. _reports], [.. _suggestions], safetyNote);
                 LastReport = report;
                 IsRunning = false;
                 _cts?.Dispose();
@@ -163,6 +286,31 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
             }
             Changed?.Invoke();
         }
+    }
+
+    private void Collect(RunReport report)
+    {
+        lock (_gate) _reports.Add(report);
+        EvaluateTests(report);
+    }
+
+    /// <summary>
+    /// Between chained tiers and at the end: sends the mount home (a run that doesn't move the mount has nothing to send).
+    /// False if it couldn't get there, so the chain stops with the reason in <see cref="Status"/> rather than going on from elsewhere.
+    /// </summary>
+    private async Task<bool> GoHomeAsync(TestTarget target, RunOptions options, string after, CancellationToken token)
+    {
+        if (!options.AllowMotion) return true;
+        lock (_gate) Status = $"{after}. Sending the mount home…";
+        Changed?.Invoke();
+        await using var session = home.Open(target, options);
+        var status = await session.GoHomeAsync();
+        if (token.IsCancellationRequested) return false;
+        if (status.Error is null && status.Problem is null && status.AtHome) return true;
+        var why = status.Error ?? status.Problem ?? "the mount isn't reporting that it is at home.";
+        log.LogWarning("Chained run stopped: couldn't send {Target} home: {Why}", target.Display, why);
+        lock (_gate) Status = $"{after}, but the mount couldn't be sent home ({why}) so the remaining tiers were not run.";
+        return false;
     }
 
     private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
@@ -231,6 +379,13 @@ public sealed class RunService(TestRunner runner, ReportStore store, ILogger<Run
         return report;
     }
 }
+
+/// <summary>A test the user should add: <see cref="Title"/> says what to add, <see cref="Why"/> what in the run called for it.</summary>
+/// <param name="Related">The earlier tests it should be tied to (each "Test 1159: ParkHome.FindHome"): the ones whose findings called for it.</param>
+public sealed record SuggestedTest(int Tier, string Title, string Why, IReadOnlyList<string> Related);
+
+/// <summary>What the finished dialog shows at the end of all testing (a new instance each time, so a page can tell it has shown it).</summary>
+public sealed record FinishedInfo(string Message, bool Stopped, IReadOnlyList<RunReport> Reports, IReadOnlyList<SuggestedTest> Suggestions, string? SafetyNote = null);
 
 /// <summary>The warnings a run is asking the user about before it moves the mount.</summary>
 public sealed record GateRequest(IReadOnlyList<string> Warnings);

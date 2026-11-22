@@ -90,6 +90,24 @@ public static class Tiers
 {
     public const int Max = 3;
 
+    /// <summary>
+    /// A chained run goes no deeper when a tier's <see cref="ProblemScore"/> is more than this: that many problems may mean
+    /// the mount isn't safe to keep testing. (Ten failures of tests weighing 4 would be enough.)
+    /// </summary>
+    public const int MaxProblemsToContinue = 40;
+
+    /// <summary>The Fail and Error findings of a run, each with its test's weight (<see cref="TestWeights"/>, 1 to 10), heaviest first.</summary>
+    public static List<(CheckResult Finding, int Weight)> WeightedProblems(RunReport report)
+        => [.. report.Results.Where(r => r.Outcome is Outcome.Fail or Outcome.Error)
+            .Select(r => (r, TestWeights.Of(r))).OrderByDescending(x => x.Item2)];
+
+    /// <summary>How worrying a run's problems are: the weights of its Fail and Error findings added up. Warnings don't count.</summary>
+    public static int ProblemScore(RunReport report) => WeightedProblems(report).Sum(x => x.Weight);
+
+    /// <summary>The failed tests so important (<see cref="TestWeights.Critical"/>) that a run can't go on after one.</summary>
+    public static List<CheckResult> CriticalFailures(RunReport report)
+        => [.. WeightedProblems(report).Where(x => x.Weight >= TestWeights.Critical).Select(x => x.Finding)];
+
     private static readonly string[] Rate = ["Diagnose.{member}", "ConformU.Diagnose.{member}"];
     private static readonly string[] RateCause =
         ["Diagnose.{member}.Cause", "ConformU.Diagnose.{member}.Cause", "Diagnose.{member}.Summary", "ConformU.Diagnose.{member}.Summary"];

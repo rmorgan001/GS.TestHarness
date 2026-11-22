@@ -49,6 +49,9 @@ public sealed record CatalogEntry(string Group, string Id, string Objective, str
     /// <summary>The test's number (<see cref="TestNumbers"/>): its first digit is its tier, and it never changes.</summary>
     public int Number => TestNumbers.For(Key);
 
+    /// <summary>How much it matters that the test passes, 1 to 10 (<see cref="TestWeights"/>): 10 is one a run can't go on after failing.</summary>
+    public int Weight => TestWeights.Of(Key);
+
     /// <summary>The ID as shown: placeholders without their <c>*</c>.</summary>
     public string DisplayId => Id.Replace("*}", "}");
 

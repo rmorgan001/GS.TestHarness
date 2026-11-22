@@ -25,6 +25,21 @@ namespace GS.TestHarness.Tests;
 public class CatalogTests
 {
     [Fact]
+    public void EveryTestHasAWeightFromOneToTen()
+    {
+        foreach (var e in TestCatalog.Entries)
+            Assert.InRange(e.Weight, TestWeights.Min, TestWeights.Max);
+    }
+
+    [Fact]
+    public void TheConnectionAndStoppingTheMountCannotFail()
+    {
+        Assert.Equal(TestWeights.Critical, TestCatalog.Entry("Connection.Connected.Read")!.Weight);
+        Assert.Equal(TestWeights.Critical, TestCatalog.Entry("Motion.AbortSlew.DuringSlew")!.Weight);
+        Assert.True(TestCatalog.Entry("Protocol.Reply.Json")!.Weight < TestCatalog.Entry("Motion.SlewToCoordinates")!.Weight);
+    }
+
+    [Fact]
     public void Every_entry_is_complete_and_cites_known_references()
     {
         var keys = TestCatalog.References.Select(r => r.Key).ToHashSet();

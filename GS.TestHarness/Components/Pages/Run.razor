@@ -359,10 +359,6 @@ else
     var tier = Runs.Options?.Tier ?? 1;
     var outlook = showTiers && !Runs.IsRunning ? RunOutlook() : null;
     var next = outlook?.Next;
-    // The re-run button (Re-run tier N, of the run just made): beside Run tier N+1 when that is offered, else on its own.
-    RenderFragment rerun = @<RunSummary Results="Runs.Results" Running="Runs.IsRunning" Rerun="RerunProblems"
-                                        RerunBusy="_rerunBusy" CanRerun="CanRerunProblems"
-                                        RerunText="@RerunText" RerunTitle="@RerunTitle" />;
 }
 @if (Runs.IsRunning || (runsHere && (Runs.Status is not null || Runs.LastReport is not null)))
 {
@@ -442,17 +438,9 @@ else
                         @if (next.Members.All(MovesMount)) { <p class="tier-note">The tests move the mount: turn on <b>Move the mount</b> under Options first.</p> }
                         else { <p class="tier-note">Some of the tests move the mount: without <b>Move the mount</b> (under Options) they are skipped.</p> }
                     }
-                    else if (NeedsLog(next)) { <p class="tier-note">Drop the ConformU log this run followed up again first.</p> }
-                </div>
-                <div class="tier-next-buttons">
-                    <button class="btn primary" disabled="@((!_motion && next.Members.All(MovesMount)) || NeedsLog(next) || _starting)" @onclick="() => StartNextTier(next)">
-                        <Icon Kind="Play" Size="18" /> Run tier @next.Tier
-                    </button>
-                    @rerun
                 </div>
             </div>
         }
-        @if (next is null) { @rerun }
         </div>
     }
 </div>
@@ -652,7 +640,7 @@ else
         var options = CurrentOptions();
         if (!await ConfirmStartAsync("Safety Warning!", server.RunTarget, options) || Runs.IsRunning) return;
         Saved.SaveOptions(options);
-        Runs.Start(server.RunTarget, options);
+        Runs.Start(server.RunTarget, options, chain: true);
     }
 
     // ---------- ConformU log ----------
@@ -742,7 +730,7 @@ else
         Saved.SaveOptions(options);
         // Only the log's problem members: the groups skip the sections that don't touch them, and only findings about them are kept.
         options = options with { Groups = plan.Groups, Members = plan.Members, Extended = options.Extended || plan.NeedsExtended };
-        Runs.Start(server.RunTarget, options, log);
+        Runs.Start(server.RunTarget, options, log, chain: true);
     }
 
     // ---------- Tiers 2 and 3 ----------
@@ -769,13 +757,6 @@ else
         _ => $"After tier {step - 1}"
     };
 
-    /// <summary>A ConformU run's deeper tier diagnoses its log's problems, so it needs the log still loaded.</summary>
-    private bool NeedsLog(NextTier next) => next.From.ConformULog is not null && Runs.ConformU is null;
-
-    /// <summary>
-    /// Runs the next tier for the members the last run found problems with, on the same device,
-    /// with the options as ticked now (not saved: tiers are chosen run by run).
-    /// </summary>
     /// <summary>The numbers of the tests the next tier makes for its members (ConformU.Diagnose… or Diagnose…).</summary>
     private static IEnumerable<int> NextNumbers(NextTier next, bool conformU)
         => next.Members.Select(m => Tiers.Diagnosis(m, next.Tier)).OfType<Diagnosis>()
@@ -785,76 +766,6 @@ else
     private static bool MovesMount(string member) => GS.TestHarness.Engine.Checks.AreaDiagnostics.MovesMount(member);
 
     private static bool NeedsMotion(NextTier next) => next.Members.Any(MovesMount);
-
-    /// <summary>
-    /// Runs again only the groups the last run had problems with, with the options as ticked now: to
-    /// check a fix without waiting for the whole run. The same warnings come first as for any run.
-    /// </summary>
-    private bool _rerunBusy;
-
-    /// <summary>Whether the last run can be run again from the button: a tier 1 run (all its tests again), or a tier 2 or 3 run's own diagnosis.</summary>
-    private bool CanRerunProblems
-        => Runs.LastReport is { } last && (last.Options.Tier == 1 || last.Options.FollowsUp is not null);
-
-    private string RerunText => $"Re-run tier {Runs.LastReport?.Options.Tier ?? 1}";
-
-    private string RerunTitle => Runs.LastReport is { Options.Tier: > 1 }
-        ? "Run this tier's diagnosis again, to check a fix without waiting for the whole run"
-        : "Run all the tests again, to check a fix";
-
-    private async Task RerunProblems()
-    {
-        if (_rerunBusy || _starting) return;
-        if (Runs.IsRunning) return;
-        if (Runs.LastReport is not { } last || Runs.Target is not { } target) return;
-        RunOptions options;
-        ConformULog? conformU = null;
-        RunReport? followsUp = null;
-        if (last.Options.Tier > 1)
-        {
-            // A tier 2 or 3 run is its diagnosis again, of what the run below it found, not a full check's groups.
-            var followed = last.Options.FollowsUp is { } id ? await Store.LoadAsync(id) : null;
-            if (RerunPlan.SameTier(last, followed) is not { } next) return;
-            if (next.From.ConformULog is not null && Runs.ConformU is null) return;
-            options = Tiers.Options(CurrentOptions(), next) with { RerunOf = last.Id };
-            conformU = next.From.ConformULog is null ? null : Runs.ConformU;
-            followsUp = next.From;
-        }
-        else if (Runs.ConformU is { } log)
-        {
-            // A ConformU Debug Log Test run: the same follow-up of the same log again.
-            var plan = log.Plan();
-            var current = CurrentOptions();
-            options = current with { Groups = plan.Groups, Members = plan.Members, Extended = current.Extended || plan.NeedsExtended, RerunOf = last.Id };
-            conformU = log;
-        }
-        else
-        {
-            // A full check: all the tests again.
-            options = CurrentOptions() with { RerunOf = last.Id };
-        }
-        // Connecting and reading the mount can take a while: show it, the way the Start button does.
-        _rerunBusy = true;
-        try
-        {
-            if (!await ConfirmStartAsync("Safety Warning!", target, options)) return;
-        }
-        finally
-        {
-            _rerunBusy = false;
-        }
-        if (Runs.IsRunning) return;
-        Runs.Start(target, options, conformU, followsUp);
-    }
-
-    private async Task StartNextTier(NextTier next)
-    {
-        if (Runs.IsRunning || NeedsLog(next)) return;
-        var target = Runs.Target ?? next.From.Target;
-        var tierOptions = Tiers.Options(CurrentOptions(), next);
-        if (!await ConfirmStartAsync($"Run tier {next.Tier}", target, tierOptions) || Runs.IsRunning) return;
-        Runs.Start(target, tierOptions, next.From.ConformULog is null ? null : Runs.ConformU, next.From);
-    }
 
     private static string SeverityCss(ConformUSeverity s) => s switch
     {

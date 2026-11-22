@@ -146,6 +146,12 @@ public sealed class StartDialogModel(string title, string message, HomeSession? 
     }
 }
 
+/// <summary>Shown when a chained run has ended: what happened, the reports it made and the tests the user should add.</summary>
+public sealed class FinishedDialogModel(FinishedInfo info) : DialogModel
+{
+    public FinishedInfo Info { get; } = info;
+}
+
 /// <summary>
 /// The warnings before the mount moves: Proceed, Skip (the groups that move the mount) or Stop. Closing it any other way
 /// (Escape) is Stop.

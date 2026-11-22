@@ -1,0 +1,122 @@
+@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *@
+
+@* The end of all testing: what happened, the report of each tier, and the tests the run found missing. *@
+<h2 class="dialog-title">@(Model.Info.Stopped ? "Testing ended early" : "Testing finished")</h2>
+<p class="dialog-message">@Model.Info.Message</p>
+@if (Model.Info.SafetyNote is { } note)
+{
+    <div class="safety-card bad"><b>Stopped for safety concerns.</b> <span class="safety-small">@note</span></div>
+}
+
+<section class="safety-section">
+    <h3 class="safety-h">Reports</h3>
+    <ul class="safety-list">
+        @foreach (var r in Model.Info.Reports)
+        {
+            <li>Tier @r.Options.Tier: <a href="reports/@r.Id" @onclick="() => Model.Close(true)">@r.Reference</a>
+                (@r.Count(Outcome.Fail) failed, @r.Count(Outcome.Warning) warnings)</li>
+        }
+    </ul>
+</section>
+
+<section class="safety-section">
+    <h3 class="safety-h">Suggested new tests</h3>
+    @if (Model.Info.Suggestions.Count == 0)
+    {
+        <p class="muted">None: every problem the run found has a test that follows it up.</p>
+    }
+    else
+    {
+        <ul class="safety-list" style="list-style: none; padding-left: 0;">
+            @foreach (var s in Model.Info.Suggestions)
+            {
+                <li style="margin-bottom: .5rem;">
+                    <label class="check">
+                        <input type="checkbox" checked="@_picked.Contains(s)" @onchange="e => Toggle(s, e.Value is true)" />
+                        <span><b>@s.Title</b><br /><span class="safety-small">@s.Why</span>
+                            @if (s.Related.Count > 0)
+                            {
+                                <br /><span class="safety-small"><b>Related tests:</b> @string.Join("; ", s.Related)</span>
+                            }</span>
+                    </label>
+                </li>
+            }
+        </ul>
+        <div style="display: flex; gap: .5rem; flex-wrap: wrap;">
+            <button type="button" class="btn" @onclick="SelectAll">@(_picked.Count == Model.Info.Suggestions.Count ? "Select none" : "Select all")</button>
+            <button type="button" class="btn" disabled="@(_picked.Count == 0)" @onclick="DownloadAsync">
+                <Icon Kind="Download" Size="16" /> Download selected (@_picked.Count) as Markdown
+            </button>
+        </div>
+    }
+</section>
+
+<div class="dialog-buttons">
+    <button type="button" class="btn primary" autofocus @onclick="() => Model.Close(true)">OK</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FinishedDialogModel Model { get; set; } = default!;
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private readonly HashSet<SuggestedTest> _picked = [];
+
+    private void Toggle(SuggestedTest s, bool on)
+    {
+        if (on) _picked.Add(s);
+        else _picked.Remove(s);
+    }
+
+    private void SelectAll()
+    {
+        if (_picked.Count == Model.Info.Suggestions.Count) _picked.Clear();
+        else foreach (var s in Model.Info.Suggestions) _picked.Add(s);
+    }
+
+    /// <summary>A Markdown file of the ticked suggestions, in the order listed, for whoever writes the tests.</summary>
+    private string Markdown()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("# Suggested new tests").AppendLine();
+        var reports = string.Join(", ", Model.Info.Reports.Select(r => $"tier {r.Options.Tier} ({r.Reference})"));
+        if (Model.Info.Reports.Count > 0)
+        {
+            sb.AppendLine($"From the GS Test Harness run on {Model.Info.Reports[0].Target.Display}: {reports}.").AppendLine();
+        }
+        foreach (var s in Model.Info.Suggestions.Where(_picked.Contains))
+        {
+            sb.AppendLine($"## {s.Title}").AppendLine();
+            sb.AppendLine($"- Tier: {s.Tier}");
+            sb.AppendLine($"- Why: {s.Why}");
+            if (s.Related.Count > 0)
+            {
+                sb.AppendLine("- Related earlier tests:");
+                foreach (var r in s.Related) sb.AppendLine($"  - {r}");
+            }
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_picked.Count == 0) return;
+        try { await JS.InvokeVoidAsync("gsDownload", $"suggested-tests-{DateTime.Now:yyyyMMdd-HHmmss}.md", Markdown()); }
+        catch (Exception) { /* the browser went away */ }
+    }
+}

@@ -711,7 +711,7 @@ internal static class Diagnostics
                     if (real) lines.Add("Real mount: GS.SkyWatcher works the motor speed out with CalculateSpeed: check the units it's given.");
                 }
                 if (cause == Cause.Inconsistent && ctx.Options.Tier < Tiers.Max)
-                    lines.Add("Run tier 3 to tell a drift with no offset, readings that wander and a rounded small offset apart.");
+                    lines.Add("Tier 3 (it follows on by itself) tells a drift with no offset, readings that wander and a rounded small offset apart.");
                 break;
 
             case Cause.Drift:

@@ -120,10 +120,12 @@
                     <div class="flow-phase phase-d">
                         <h3><span class="flow-letter">D</span> Find the cause <small>deeper tiers</small></h3>
                         <ol class="flow-steps">
-                            <li><span class="flow-n">9</span><b>Run tier 2</b>
-                                <span>In the <b>Run Status</b> bar, beside the tiers. It measures the problems tier 1 found and narrows down the cause.</span></li>
-                            <li><span class="flow-n">10</span><b>Run tier 3</b>
-                                <span>The deepest tier: it confirms the cause and gives the fix, with the code to change. Not every problem has a deeper test.</span></li>
+                            <li><span class="flow-n">9</span><b>Tier 2 starts by itself</b>
+                                <span>When tier 1 finishes the mount goes home and tier 2 begins, with no second warning. It measures the problems tier 1 found and narrows down the cause.</span></li>
+                            <li><span class="flow-n">10</span><b>Tier 3 follows</b>
+                                <span>After tier 2 the mount goes home again. The deepest tier confirms the cause and gives the fix, with the code to change. Not every problem has a deeper test. A tier with too many (or too important) failures is not followed by the next one, for safety.</span></li>
+                            <li><span class="flow-n">&#10003;</span><b>The finished dialog</b>
+                                <span>At the end the mount goes home and a dialog lists each tier's report and the <b>suggested new tests</b>; tick the ones you want and download them as Markdown.</span></li>
                         </ol>
                     </div>
 
@@ -250,8 +252,8 @@
                 <p><strong>Start run</strong> sits beside the server; a <a href="help#safety">safety warning</a> comes first. While a run goes, the
                     <strong>Run Status</strong> bar shows its status beside the title, with <strong>Stop</strong> to end it early (the mount is still put back), the progress, the time
                     it has been going and how long the last run of the device took. Under that, the three tiers show where the run is, and what can come next (see
-                    <a href="help#tiers">Diagnostic tiers</a>): <strong>Run tier 2</strong> (or 3), and <strong>Re-run tier N</strong> to run the tier just made again.
-                    <strong>Re-run tier 1</strong> runs all the tests again.</p>
+                    <a href="help#tiers">Diagnostic tiers</a>). Tiers 2 and 3 start by themselves, with the mount sent home between them and at the end. When
+                    everything is done a dialog says so and lists the suggested new tests.</p>
                 <p>The <strong>Report</strong> section below it holds the findings as they come in, with their filters. When the run is done, <strong>Open report</strong> and
                     <strong>Markdown</strong> at the top of it open or download the report.</p>
             </section>
@@ -303,11 +305,12 @@
             <section id="tiers">
                 <h2>Diagnostic tiers</h2>
                 <p>Both tests go in tiers, each deeper than the one before. Tier 1 always runs first (<strong>Start run</strong>, on either test,
-                    is tier 1); tiers 2 and 3 are offered in the bar above the results, only for
-                    problems the tier below found that have a deeper test.</p>
-                <p>Under the tiers, <strong>Re-run tier N</strong> sits beside <strong>Run tier N+1</strong>: <strong>Re-run tier 1</strong> runs all the tests again, and
-                    <strong>Re-run tier 2</strong> or <strong>3</strong> runs that tier's diagnosis again of what the tier below found, to check a fix without
-                    waiting for the whole run. A tier 2 or 3 report is named with its tier first, such as <strong>2-RAC0013</strong>.</p>
+                    is tier 1); tiers 2 and 3 then run by themselves, only for
+                    problems the tier below found that have a deeper test. Each tier makes its own report, and they are grouped together.</p>
+                <p>The mount is sent home after every tier and at the end. Each test has a weight from 1 to 10 (10: a test that can't fail, such as the connection or
+                    stopping the mount). A tier is not followed by the next if one of those weight-10 tests failed, or if its failed tests' weights add up to more than
+                    @Tiers.MaxProblemsToContinue; the finished dialog then says it stopped for safety. To check a fix, run the tests again.
+                    A tier 2 or 3 report is named with its tier first, such as <strong>2-RAC0013</strong>.</p>
                 <table>
                     <thead><tr><th>Tier</th><th>ASCOM Conformance Check</th><th>ConformU Debug Log Test</th></tr></thead>
                     <tbody>
