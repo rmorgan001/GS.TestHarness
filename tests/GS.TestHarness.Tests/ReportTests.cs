@@ -63,7 +63,7 @@ public class ReportTests
         Assert.Equal(System.Text.Encoding.UTF8.GetPreamble(), bytes[..3]);
         var text = System.Text.Encoding.UTF8.GetString(bytes[3..]);
         var lines = text.Split("\r\n");
-        Assert.StartsWith("No,Id,Group,Member,Outcome,Message", lines[0]);
+        Assert.StartsWith("No,Id,Group,Member,Outcome,Weight,Message", lines[0]);
         Assert.Contains("\"says \"\"no\"\", twice\nthen stops\"", text);
         // A leading apostrophe makes the formula text; the quotes inside it force quoting.
         Assert.Contains(",\"'=HYPERLINK(\"\"x\"\")\",", text);
@@ -227,5 +227,31 @@ public class ReportTests
         {
             Directory.Delete(root, true);
         }
+    }
+
+    [Fact]
+    public void A_finding_made_by_a_run_keeps_the_weight_the_run_used()
+    {
+        // The fake mount's run: every finding is stamped with its test's weight when it is made.
+        var report = EngineTests.RunAsync(new FakeTelescope()).GetAwaiter().GetResult();
+        Assert.NotEmpty(report.Results);
+        Assert.All(report.Results, r => Assert.InRange(r.Weight, TestWeights.Min, TestWeights.Max));
+        Assert.Equal(TestWeights.Limit, report.WeightLimit);
+    }
+
+    [Fact]
+    public void The_markdown_and_the_csv_list_the_weights_used()
+    {
+        var failed = Result("Connection.Connect", Outcome.Fail) with { Weight = 10 };
+        var passed = Result("Protocol.Reply.Json", Outcome.Pass) with { Weight = 2 };
+        var report = Report(failed, passed) with { WeightLimit = 40, AdjustedWeights = new() { ["Connection.Connect"] = 10 } };
+        Assert.Equal(10, report.FailedWeight);
+        var md = ReportStore.ToMarkdown(report);
+        Assert.Contains("failed tests add up to 10 (limit 40)", md);
+        Assert.Contains("`Connection.Connect` = 10", md);
+        Assert.Contains("(weight 10 of 10)", md);
+        var csv = System.Text.Encoding.UTF8.GetString(ReportCsv.Report(report)[3..]);
+        Assert.Contains(",Fail,10,", csv);
+        Assert.Contains(",Pass,2,", csv);
     }
 }

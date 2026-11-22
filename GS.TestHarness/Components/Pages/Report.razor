@@ -35,6 +35,7 @@ else if (_report is { } r)
     <div class="stats">
         <div class="stat fail"><span class="stat-value">@(r.Count(Outcome.Fail) + r.Count(Outcome.Error))</span><span class="stat-label">Fail or error</span></div>
         <div class="stat warning"><span class="stat-value">@r.Count(Outcome.Warning)</span><span class="stat-label">Warnings</span></div>
+        <div class="stat" title="The failed tests' weights added up (each test is weighted 1 to 10)"><span class="stat-value">@r.FailedWeight@(r.WeightLimit is { } wl ? $" / {wl}" : "")</span><span class="stat-label">Failed weight</span></div>
         <div class="stat pass"><span class="stat-value">@r.Count(Outcome.Pass)</span><span class="stat-label">Pass</span></div>
         <div class="stat"><span class="stat-value">@((r.Finished - r.Started)?.TotalSeconds.ToString("0") ?? "–") s</span><span class="stat-label">Duration</span></div>
     </div>
@@ -71,6 +72,20 @@ else if (_report is { } r)
                 <dt>Motion</dt><dd>@(r.Options.AllowMotion ? "allowed" : "not allowed")</dd>
                 <dt>Settings writes</dt><dd>@(r.Options.AllowSettingsWrites ? "allowed" : "not allowed")</dd>
                 <dt>Duration</dt><dd>@((r.Finished - r.Started)?.TotalSeconds.ToString("0")) s</dd>
+                <dt>Weights</dt>
+                <dd>
+                    @if (r.Results.Any(x => x.Weight > 0))
+                    {
+                        <span>Failed tests add up to @r.FailedWeight@(r.WeightLimit is { } lim ? $" (limit {lim})" : "").</span>
+                        @if (r.AdjustedWeights is { Count: > 0 } changed)
+                        {
+                            <span class="muted small">@changed.Count weight@(changed.Count == 1 ? "" : "s") changed from the built-in:</span>
+                            <div class="mono small">@foreach (var (key, w) in changed.OrderBy(c => c.Key)) { <div>@key = @w <span class="muted">(built in @TestWeights.Default(key))</span></div> }</div>
+                        }
+                        else { <span class="muted small">All built-in.</span> }
+                    }
+                    else { <span class="muted small">Not recorded: this report was made before weights were kept.</span> }
+                </dd>
                 <dt>Harness</dt><dd class="mono">@r.HarnessVersion</dd>
             </dl>
             <div class="row-actions">
@@ -120,7 +135,7 @@ else if (_report is { } r)
     }
 
     <section class="card">
-        <ResultsTable Results="r.Results" />
+        <ResultsTable Results="r.Results" Limit="r.WeightLimit" Adjusted="r.AdjustedWeights?.Count ?? 0" />
     </section>
 }
 else

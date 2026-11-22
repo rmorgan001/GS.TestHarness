@@ -70,6 +70,9 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     /// <summary>What the failed tests' weights may add up to in a tier before it is stopped.</summary>
     public int ScoreLimit => TestWeights.Limit;
 
+    /// <summary>How many weights have been changed from the built-in ones (for the report section).</summary>
+    public int AdjustedCount => TestWeights.AdjustedSnapshot()?.Count ?? 0;
+
     /// <summary>Why the tier under way was stopped for safety (null while it hasn't been).</summary>
     private string? _earlyStop;
 

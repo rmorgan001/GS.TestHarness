@@ -445,6 +445,10 @@
                     give the same weights to someone else. <strong>Import from JSON</strong> reads such a file back and <em>replaces</em> the weights and limit with it (a test the file
                     doesn't list goes back to its built-in weight). A test that isn't in the catalog, or a weight that isn't a whole number from 1 to 10, is left out and listed
                     under the buttons; a file that isn't a weights file changes nothing.</p>
+                <p><strong>Reports keep the weights used.</strong> Every finding records its test's weight when the run made it, so a report still shows what the run used after
+                    you change the weights. The findings table (on the Run page and in a report) has a <strong>Wt</strong> column and a line giving the failed tests' total against
+                    the limit; a report's page, Markdown, CSV and print version list the weights, the limit and any weights that had been changed from the built-in ones. A report
+                    made before weights were kept shows the weights as they are now, marked as such.</p>
                 <p>The built-in weights are in <span class="mono">Engine/TestWeights.cs</span>: one table for the individual tests and one for the groups.</p>
             </section>
 

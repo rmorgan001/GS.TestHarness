@@ -84,6 +84,7 @@ public sealed class TestRunner(SourceLocator locator)
         var report = new RunReport
         {
             Target = target, Options = options, ConformULog = conformU?.FileName,
+            WeightLimit = TestWeights.Limit, AdjustedWeights = TestWeights.AdjustedSnapshot(),
             FollowsUpNumber = followsUp is { Number: > 0 } up ? up.Number : null
         };
         void Add(CheckResult r)

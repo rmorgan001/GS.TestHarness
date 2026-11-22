@@ -50,6 +50,7 @@
             <b>@r.Count(Outcome.Fail) failed, @r.Count(Outcome.Error) errors, @r.Count(Outcome.Warning) warnings</b>;
             @r.Count(Outcome.Pass) passed, @r.Count(Outcome.Info) info, @r.Count(Outcome.Skipped) skipped.
         </p>
+        <p class="print-summary">Test weights (1 to 10) used: the failed tests add up to <b>@r.FailedWeight</b>@(r.WeightLimit is { } wl ? $" (limit {wl})" : "")@(r.AdjustedWeights is { Count: > 0 } ch ? $"; {ch.Count} changed from the built-in: " + string.Join(", ", ch.OrderBy(c => c.Key).Select(c => $"{c.Key} = {c.Value}")) : "; all built-in").</p>
 
         @foreach (var (outcome, title) in new[] { (Outcome.Fail, "Failures"), (Outcome.Error, "Errors"), (Outcome.Warning, "Warnings") })
         {
@@ -60,7 +61,7 @@
             {
                 <section class="print-finding">
                     <h3>@x.Member: @x.Message</h3>
-                    <div class="mono">Test @x.Number: @x.Id</div>
+                    <div class="mono">Test @x.Number: @x.Id (weight @x.WeightUsed of 10)</div>
                     <dl>
                         @if (x.Expected is not null) { <dt>Expected</dt><dd>@x.Expected</dd> }
                         @if (x.Actual is not null) { <dt>Actual</dt><dd style="white-space: pre-wrap">@x.Actual.TrimEnd()</dd> }
@@ -77,11 +78,11 @@
         {
             <h2>Everything else (@other.Count)</h2>
             <table class="print-table">
-                <thead><tr><th>Outcome</th><th>No.</th><th>Check</th><th>Result</th></tr></thead>
+                <thead><tr><th>Outcome</th><th>No.</th><th>Weight</th><th>Check</th><th>Result</th></tr></thead>
                 <tbody>
                     @foreach (var x in other)
                     {
-                        <tr><td>@x.Outcome</td><td class="mono">@x.Number</td><td class="mono">@x.Id</td><td>@x.Message</td></tr>
+                        <tr><td>@x.Outcome</td><td class="mono">@x.Number</td><td class="mono">@x.WeightUsed</td><td class="mono">@x.Id</td><td>@x.Message</td></tr>
                     }
                 </tbody>
             </table>

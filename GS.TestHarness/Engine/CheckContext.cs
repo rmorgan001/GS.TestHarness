@@ -277,6 +277,8 @@ public sealed class CheckContext(
             Reference = reference ?? (IsInterfaceMember(member) ? DocsBase + member : null),
             DurationMs = Math.Round(ms, 1)
         };
+        // The weight in force now is the one this run used: kept with the finding.
+        result = result with { Weight = TestWeights.Of(result) };
         if (Keeps(result)) report(result);
     }
 

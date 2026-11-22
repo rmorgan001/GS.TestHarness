@@ -249,6 +249,9 @@ public sealed class ReportStore(string folder)
         sb.AppendLine();
         sb.AppendLine($"**{r.Count(Outcome.Fail)} failed, {r.Count(Outcome.Error)} errors, {r.Count(Outcome.Warning)} warnings**, " +
                       $"{r.Count(Outcome.Pass)} passed, {r.Count(Outcome.Info)} info, {r.Count(Outcome.Skipped)} skipped.");
+        sb.AppendLine();
+        sb.AppendLine($"Test weights (1 to 10) used: the failed tests add up to {r.FailedWeight}{(r.WeightLimit is { } wl ? $" (limit {wl})" : "")}" +
+                      $"{(r.AdjustedWeights is { Count: > 0 } ch ? $"; {ch.Count} changed from the built-in: " + string.Join(", ", ch.OrderBy(c => c.Key).Select(c => $"`{c.Key}` = {c.Value}")) : "; all built-in")}.");
 
         foreach (var outcome in new[] { Outcome.Fail, Outcome.Error, Outcome.Warning })
         {
@@ -260,7 +263,7 @@ public sealed class ReportStore(string folder)
             {
                 sb.AppendLine();
                 sb.AppendLine($"### {x.Member}: {x.Message}");
-                sb.AppendLine($"Test {x.Number}: `{x.Id}`");
+                sb.AppendLine($"Test {x.Number}: `{x.Id}` (weight {x.WeightUsed} of 10)");
                 sb.AppendLine();
                 // Expected and Fix on one line, so each stays one list item; Actual whole, as a code block when it runs to several lines.
                 if (x.Expected is not null) sb.AppendLine($"- Expected: {RecommendationBuilder.Inline(x.Expected)}");
@@ -277,9 +280,9 @@ public sealed class ReportStore(string folder)
             sb.AppendLine();
             sb.AppendLine(includePasses ? "## Everything else" : "## Notes");
             sb.AppendLine();
-            sb.AppendLine("| Outcome | No. | Check | Result |");
-            sb.AppendLine("|---|---|---|---|");
-            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | {x.Number} | `{x.Id}` | {x.Message.Replace("|", "\\|")} |");
+            sb.AppendLine("| Outcome | No. | Weight | Check | Result |");
+            sb.AppendLine("|---|---|---|---|---|");
+            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | {x.Number} | {x.WeightUsed} | `{x.Id}` | {x.Message.Replace("|", "\\|")} |");
         }
         return sb.ToString();
     }
@@ -291,9 +294,9 @@ public static class ReportCsv
     public static byte[] Report(RunReport r)
     {
         var sb = new StringBuilder();
-        Row(sb, "No", "Id", "Group", "Member", "Outcome", "Message", "Expected", "Actual", "Fix", "Source", "Reference", "DurationMs");
+        Row(sb, "No", "Id", "Group", "Member", "Outcome", "Weight", "Message", "Expected", "Actual", "Fix", "Source", "Reference", "DurationMs");
         foreach (var x in r.Results)
-            Row(sb, No(x.Id), x.Id, x.Group, x.Member, x.Outcome.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
+            Row(sb, No(x.Id), x.Id, x.Group, x.Member, x.Outcome.ToString(), x.WeightUsed.ToString(), x.Message, x.Expected, x.Actual, x.Fix, x.Source, x.Reference,
                 x.DurationMs.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture));
         return Bytes(sb);
     }

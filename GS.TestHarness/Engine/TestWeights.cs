@@ -151,6 +151,9 @@ public static class TestWeights
         Volatile.Write(ref _limit, Math.Clamp(limit, 1, 10_000));
     }
 
+    /// <summary>A copy of the weights the user has changed (by test key), or null when there are none: kept in a report to say what the run used.</summary>
+    public static Dictionary<string, int>? AdjustedSnapshot() => _adjusted.Count == 0 ? null : new Dictionary<string, int>(_adjusted);
+
     /// <summary>Whether the user has changed this test's weight from the built-in one.</summary>
     public static bool IsAdjusted(string key) => _adjusted.ContainsKey(key);
 

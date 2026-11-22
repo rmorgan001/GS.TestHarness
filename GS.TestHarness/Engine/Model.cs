@@ -323,6 +323,16 @@ public sealed record CheckResult
 
     public double DurationMs { get; init; }
 
+    /// <summary>
+    /// How much it mattered that the test passed, 1 to 10, as set when the run made the finding (<see cref="TestWeights"/>): kept in
+    /// the report so it shows what the run used even if the weights are changed later. 0 in a report saved before weights were recorded.
+    /// </summary>
+    public int Weight { get; init; }
+
+    /// <summary>The weight the run used, or for a finding made before weights were recorded (or still arriving) the weight now.</summary>
+    [JsonIgnore]
+    public int WeightUsed => Weight > 0 ? Weight : TestWeights.Of(this);
+
     [JsonIgnore]
     public bool IsProblem => Outcome is Outcome.Fail or Outcome.Error or Outcome.Warning;
 
@@ -399,6 +409,16 @@ public sealed record RunReport
     public string? ConformULog { get; init; }
 
     public List<CheckResult> Results { get; init; } = [];
+
+    /// <summary>The most the failed tests' weights could add up to before a chained run stopped a tier (<see cref="TestWeights.Limit"/> at the time); null in an older report.</summary>
+    public int? WeightLimit { get; init; }
+
+    /// <summary>The weights the user had changed from the built-in ones when the run was made (by test key); null when none were.</summary>
+    public Dictionary<string, int>? AdjustedWeights { get; init; }
+
+    /// <summary>The failed tests' (Fail or Error) weights added up, as the run used them.</summary>
+    [JsonIgnore]
+    public int FailedWeight => Results.Where(r => r.Outcome is Outcome.Fail or Outcome.Error).Sum(r => r.WeightUsed);
 
     /// <summary>A short label for the run: device name and version.</summary>
     [JsonIgnore]
