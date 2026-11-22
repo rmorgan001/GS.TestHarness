@@ -52,6 +52,21 @@
         </p>
         <p class="print-summary">Test weights (1 to 10) used: the failed tests add up to <b>@r.FailedWeight</b>@(r.WeightLimit is { } wl ? $" (limit {wl})" : "")@(r.AdjustedWeights is { Count: > 0 } ch ? $"; {ch.Count} changed from the built-in: " + string.Join(", ", ch.OrderBy(c => c.Key).Select(c => $"{c.Key} = {c.Value}")) : "; all built-in").</p>
 
+        @if (_conformU is { } cu)
+        {
+            <h2>What became of the problems in the ConformU log</h2>
+            <p class="print-summary">Log @cu.FileName: @(cu.LogLine is { } line ? line[(line.IndexOf(':') + 1)..].Trim() + " " : "")The harness's verdict: <b>@cu.Headline</b>.</p>
+            <table class="print-table">
+                <thead><tr><th>Area</th><th>What ConformU said</th><th>The harness's last word</th></tr></thead>
+                <tbody>
+                    @foreach (var a in cu.Areas)
+                    {
+                        <tr><td class="mono">@a.Member</td><td>@a.ShortSaid</td><td><b>@a.Label</b> (tier @a.Tier, @a.Reference): @a.Message</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+
         @foreach (var (outcome, title) in new[] { (Outcome.Fail, "Failures"), (Outcome.Error, "Errors"), (Outcome.Warning, "Warnings") })
         {
             var items = r.Results.Where(x => x.Outcome == outcome).ToList();
@@ -98,12 +113,15 @@
     [Parameter] public string Id { get; set; } = "";
     private RunReport? _report;
     private bool _missing;
+    private ConformUSummary? _conformU;
 
     protected override async Task OnParametersSetAsync()
     {
         try { _report = await Store.LoadAsync(Id); }
         catch (ArgumentException) { _report = null; }
         _missing = _report is null;
+        // A ConformU run: what became of the problems in the log, over the tiers of its chain.
+        _conformU = _report is { ConformULog: not null } ? ConformUSummary.Build(Tiers.Chain(_report, await Store.ListAsync())) : null;
     }
 
     private static string OnOff(bool on) => on ? "on" : "off";

@@ -52,6 +52,15 @@ else
 {
     var visible = Visible;
     var chosen = Chosen;
+    @* A ConformU run group: what became of each problem the log reported, even those that need no fixing, so they aren't missing here. *@
+    if (_conformU is { } conformU)
+    {
+        <section class="card" id="conformu-log">
+            <h2>What became of the ConformU log's problems</h2>
+            <ConformUSummaryView Summary="conformU" />
+            <p class="muted small">It is also at the top of the downloaded file, so an agent knows which of ConformU's issues were ruled out and not to change the server for them.</p>
+        </section>
+    }
     <section class="card ai-toolbar">
         <b>@chosen.Count of @_sections.Count selected</b>
         <button type="button" class="btn" @onclick="SelectShown" disabled="@(visible.Count == 0)">Select all shown</button>
@@ -142,6 +151,9 @@ else
     private static readonly Outcome[] Problems = [Outcome.Fail, Outcome.Error, Outcome.Warning];
 
     private RecommendationSet? _set;
+
+    /// <summary>What became of the problems in the ConformU log the picked run group followed up (null for another run group).</summary>
+    private ConformUSummary? _conformU;
     private List<RecommendationSection> _sections = [];
     private readonly HashSet<string> _selected = [];
     private readonly HashSet<Outcome> _outcomes = [];
@@ -193,6 +205,7 @@ else
         _group = RunGroups.Find(RunGroups.Build(runs), State.GroupId);
         _set = _group is null ? RecommendationBuilder.Build(runs) : RecommendationBuilder.BuildFrom([_group.Latest], runs);
         _sections = RecommendationSection.Group(_set.Recommendations);
+        _conformU = _group is null ? null : ConformUSummary.Build(_group.Runs);
         // A selection survives the list being built again, for the areas that are still there.
         _selected.IntersectWith(_sections.Select(s => s.Key));
     }
@@ -226,7 +239,7 @@ else
     /// <summary>The selected areas, in the order they are listed.</summary>
     private List<RecommendationSection> Chosen => [.. _sections.Where(s => _selected.Contains(s.Key))];
 
-    private string Markdown(IReadOnlyList<RecommendationSection> chosen) => AgentBrief.Build(chosen, _set!);
+    private string Markdown(IReadOnlyList<RecommendationSection> chosen) => AgentBrief.Build(chosen, _set!, _conformU);
 
     private void Toggle(Outcome o)
     {

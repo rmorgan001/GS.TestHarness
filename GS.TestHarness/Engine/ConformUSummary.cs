@@ -91,6 +91,24 @@ public sealed record ConformUSummary(string FileName, string? LogLine, IReadOnly
         }
     }
 
+    /// <summary>
+    /// The summary as Markdown (a heading, the log's totals, and a table with one row for each area): for the report's and the fix
+    /// list's downloads. <paramref name="heading"/> is the Markdown heading marker ("##" by default).
+    /// </summary>
+    public string ToMarkdown(string heading = "##")
+    {
+        static string Cell(string s) => s.Replace("|", "\\|").Replace("\r", " ").Replace("\n", " ");
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"{heading} What became of the problems in the ConformU log").AppendLine();
+        var totals = LogLine is { } line ? $" {line[(line.IndexOf(':') + 1)..].Trim()}" : "";
+        sb.AppendLine($"Log `{FileName}`:{totals} The harness's verdict: {Headline}.").AppendLine();
+        sb.AppendLine("| Area | What ConformU said | The harness's last word |");
+        sb.AppendLine("|---|---|---|");
+        foreach (var a in Areas)
+            sb.AppendLine($"| {a.Member} | {Cell(a.ShortSaid)} | **{a.Label}** (tier {a.Tier}, {a.Reference}): {Cell(a.Message)} |");
+        return sb.ToString();
+    }
+
     /// <summary>Whether any area still has a problem.</summary>
     public bool AnyRemain => Areas.Any(a => a.Remains);
 

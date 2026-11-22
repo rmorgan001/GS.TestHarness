@@ -231,7 +231,7 @@ public sealed class ReportStore(string folder)
     /// The report as Markdown: a summary, then every problem with its expected and actual values, fix and source
     /// location, ready to paste into an issue.
     /// </summary>
-    public static string ToMarkdown(RunReport r, bool includePasses = false)
+    public static string ToMarkdown(RunReport r, bool includePasses = false, ConformUSummary? conformU = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# ASCOM compliance: {r.Label}");
@@ -252,6 +252,12 @@ public sealed class ReportStore(string folder)
         sb.AppendLine();
         sb.AppendLine($"Test weights (1 to 10) used: the failed tests add up to {r.FailedWeight}{(r.WeightLimit is { } wl ? $" (limit {wl})" : "")}" +
                       $"{(r.AdjustedWeights is { Count: > 0 } ch ? $"; {ch.Count} changed from the built-in: " + string.Join(", ", ch.OrderBy(c => c.Key).Select(c => $"`{c.Key}` = {c.Value}")) : "; all built-in")}.");
+        // A ConformU run: what became of the problems in the log (over this report's tiers), since the counts above don't say.
+        if (conformU is not null)
+        {
+            sb.AppendLine();
+            sb.Append(conformU.ToMarkdown());
+        }
 
         foreach (var outcome in new[] { Outcome.Fail, Outcome.Error, Outcome.Warning })
         {

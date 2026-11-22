@@ -65,12 +65,22 @@ public sealed record RecommendationSection(
 /// </summary>
 public static class AgentBrief
 {
-    public static string Build(IReadOnlyList<RecommendationSection> sections, RecommendationSet set)
+    public static string Build(IReadOnlyList<RecommendationSection> sections, RecommendationSet set, ConformUSummary? conformU = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# Fix list: ASCOM ITelescopeV4 conformance problems");
         sb.AppendLine();
         AppendBrief(sb, sections);
+        // A ConformU log's problems and what the harness made of them: so the agent knows which were ruled out, and doesn't "fix" them.
+        if (conformU is not null)
+        {
+            sb.Append(conformU.ToMarkdown());
+            sb.AppendLine();
+            sb.AppendLine("Areas marked *Explained: not a fault* or *Not reproduced* were ruled out by the harness's own tests: do not change the server " +
+                          "for them. An area marked *Reproduced* (or *Explained* with a problem still there) is one of the areas below. *Not checked* and " +
+                          "*No check* areas are open: ConformU reported them and the harness could not confirm or rule them out.");
+            sb.AppendLine();
+        }
         AppendServers(sb, sections, set);
         var number = 0;
         foreach (var section in sections)

@@ -102,7 +102,10 @@ app.MapGet("/download/conformu/recommendations.md", async (ReportStore store) =>
 // Report downloads: Markdown (to paste into an issue) and the raw JSON.
 app.MapGet("/download/{id}.md", async (string id, ReportStore store) =>
     await TryLoadAsync(store, id) is { } report
-        ? Results.File(System.Text.Encoding.UTF8.GetBytes(ReportStore.ToMarkdown(report)), "text/markdown; charset=utf-8", $"{id}.md")
+        // A ConformU run also says what became of the log's problems, over the tiers of its chain.
+        ? Results.File(System.Text.Encoding.UTF8.GetBytes(ReportStore.ToMarkdown(report,
+                conformU: report.ConformULog is null ? null : ConformUSummary.Build(Tiers.Chain(report, await store.ListAsync())))),
+            "text/markdown; charset=utf-8", $"{id}.md")
         : Results.NotFound());
 app.MapGet("/download/{id}.csv", async (string id, ReportStore store) =>
     await TryLoadAsync(store, id) is { } report

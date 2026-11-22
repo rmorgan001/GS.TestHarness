@@ -80,4 +80,43 @@ public class ConformUSummaryTests
         Assert.Equal("Reproduced", summary.Areas[0].Label);
         Assert.Equal("1 area: 1 reproduced", summary.Headline);
     }
+
+    private static (RunReport Tier1, ConformUSummary Summary) Real()
+    {
+        var now = DateTimeOffset.Now;
+        var tier1 = Run(1, "log.txt", null, now,
+            new CheckResult { Id = "ConformU.Log", Group = "ConformU", Member = "ConformU", Outcome = Outcome.Info, Message = "ConformU log log.txt: 0 errors, 17 issues, 0 configuration alerts and 0 warnings, in 3 areas." },
+            V("DeclinationRate", "NotReproduced", Outcome.Info, "Not reproduced: the harness's 11 checks all pass.", Rate));
+        var tier2 = Run(2, "log.txt", tier1.Id, now.AddMinutes(2),
+            V("DeclinationRate", "Explained", Outcome.Info, "Explained, not a fault: ConformU's two | readings can be that far out.", Rate));
+        return (tier1, ConformUSummary.Build([tier1, tier2])!);
+    }
+
+    [Fact]
+    public void The_summary_as_markdown_is_a_table_of_areas_that_survives_a_pipe_in_a_message()
+    {
+        var md = Real().Summary.ToMarkdown();
+        Assert.Contains("## What became of the problems in the ConformU log", md);
+        Assert.Contains("17 issues", md);
+        Assert.Contains("| DeclinationRate |", md);
+        Assert.Contains("**Explained: not a fault** (tier 2,", md);
+        Assert.Contains(@"two \| readings", md); // the pipe is escaped, so it does not split the row
+    }
+
+    [Fact]
+    public void A_ConformU_reports_markdown_has_the_summary_and_another_reports_hasnt()
+    {
+        var (tier1, summary) = Real();
+        Assert.Contains("What became of the problems in the ConformU log", ReportStore.ToMarkdown(tier1, conformU: summary));
+        Assert.DoesNotContain("ConformU log", ReportStore.ToMarkdown(Run(1, null, null, DateTimeOffset.Now)));
+    }
+
+    [Fact]
+    public void The_fix_list_says_which_of_the_logs_problems_were_ruled_out()
+    {
+        var text = AgentBrief.Build([], new RecommendationSet([], [], []), Real().Summary);
+        Assert.Contains("What became of the problems in the ConformU log", text);
+        Assert.Contains("do not change the server", text);
+        Assert.DoesNotContain("What became of the problems", AgentBrief.Build([], new RecommendationSet([], [], [])));
+    }
 }
