@@ -54,10 +54,11 @@ public sealed class SuggestionStore(ReportStore reports)
             if (!File.Exists(PathOf)) return [];
             return JsonSerializer.Deserialize<List<StoredSuggestion>>(await File.ReadAllTextAsync(PathOf), ReportStore.Json) ?? [];
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (JsonException)
         {
-            // A damaged file is kept aside, not overwritten, so nothing is lost for good.
-            try { File.Move(PathOf, PathOf + ".bad", overwrite: true); } catch (IOException) { /* leave it */ }
+            // A damaged file is kept aside, not overwritten, so nothing is lost for good. (A file that is only locked
+            // isn't damaged: that error goes to the caller rather than the file being moved and then overwritten.)
+            try { File.Move(PathOf, PathOf + ".bad", overwrite: true); } catch (IOException) { /* leave it */ } catch (UnauthorizedAccessException) { /* leave it */ }
             return [];
         }
     }

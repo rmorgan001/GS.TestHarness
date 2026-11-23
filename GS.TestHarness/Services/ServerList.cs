@@ -179,6 +179,11 @@ public sealed class ServerList
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             _log.LogWarning("Couldn't read the server list {Path}: {Error}", _path, ex.Message);
+            // A damaged file is kept aside: the defaults that replace it would be saved over it at the next change.
+            if (ex is JsonException)
+            {
+                try { File.Move(_path, _path + ".bad", overwrite: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
         }
         return null;
     }
@@ -217,7 +222,7 @@ public sealed class ServerList
         {
             Write(list);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
         {
             _log.LogWarning("Couldn't save the server list {Path}: {Error}", _path, ex.Message);
         }

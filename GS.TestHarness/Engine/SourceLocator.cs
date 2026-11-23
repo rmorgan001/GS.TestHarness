@@ -131,6 +131,12 @@ public sealed class SourceLocator
     private static readonly Regex Skipped = new(@"[\\/](obj|bin|packages|\.git|\.vs)[\\/]|Tests?[\\/]", RegexOptions.IgnoreCase);
 
     /// <summary>
+    /// Whether a file is build output, a package or a test: judged by its path within the folder, so a folder that sits under
+    /// a "Tests" or "bin" folder of its own isn't taken for one.
+    /// </summary>
+    private static bool IsSkipped(string root, string file) => Skipped.IsMatch(Path.DirectorySeparatorChar + Path.GetRelativePath(root, file));
+
+    /// <summary>
     /// A file for another kind of ASCOM device (in a repository of several simulators, say): its path names one and
     /// not the telescope. The code review sticks to the telescope's code and the code every device shares.
     /// </summary>
@@ -151,7 +157,7 @@ public sealed class SourceLocator
         try
         {
             return [.. Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories)
-                .Where(f => !Skipped.IsMatch(f) && !IsOtherDevice(Path.GetRelativePath(folder, f)))
+                .Where(f => !IsSkipped(folder, f) && !IsOtherDevice(Path.GetRelativePath(folder, f)))
                 .Where(f => File.ReadLines(f).Any(DriverClass.IsMatch))
                 .Take(4)];
         }
@@ -318,7 +324,7 @@ public sealed class SourceLocator
             try
             {
                 return [.. Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
-                    .Where(f => !Skipped.IsMatch(f) && !IsOtherDevice(Path.GetRelativePath(root, f)))
+                    .Where(f => !IsSkipped(root, f) && !IsOtherDevice(Path.GetRelativePath(root, f)))
                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
             }
             catch (IOException) { return []; }

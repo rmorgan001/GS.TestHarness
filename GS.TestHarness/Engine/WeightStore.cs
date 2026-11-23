@@ -53,10 +53,14 @@ public sealed class WeightStore
                 if (saved.Limit is { } limit) _limit = Math.Clamp(limit, 1, 10_000);
             }
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (JsonException)
         {
-            // A damaged file is kept aside, not overwritten.
-            try { File.Move(_path, _path + ".bad", overwrite: true); } catch (IOException) { /* leave it */ }
+            // A damaged file is kept aside, not overwritten. (One that is only locked or unreadable is left where it is.)
+            try { File.Move(_path, _path + ".bad", overwrite: true); } catch (IOException) { /* leave it */ } catch (UnauthorizedAccessException) { /* leave it */ }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Built-in weights for now.
         }
         TestWeights.Apply(_weights, _limit);
     }

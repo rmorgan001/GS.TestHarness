@@ -197,7 +197,14 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
             catch (ASCOM.NotImplementedException) { t.Connected = true; }
         }, _timeout);
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        while (watch.Elapsed < ConnectTimeout && await session.RunAsync(t => t.Connecting, _timeout)) await Task.Delay(100);
+        while (watch.Elapsed < ConnectTimeout && await IsConnectingAsync(session)) await Task.Delay(100);
+    }
+
+    /// <summary>Whether a connect is still under way; a driver without Connecting (before V4) has none to wait for.</summary>
+    private async Task<bool> IsConnectingAsync(ITelescopeSession session)
+    {
+        try { return await session.RunAsync(t => t.Connecting, _timeout); }
+        catch (ASCOM.NotImplementedException) { return false; }
     }
 
     /// <summary>The mount couldn't be connected (as opposed to connected but not readable).</summary>
@@ -225,7 +232,7 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
                 }, _timeout);
                 _connectedHere = true;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                while (watch.Elapsed < ConnectTimeout && await session.RunAsync(t => t.Connecting, _timeout)) await Task.Delay(100);
+                while (watch.Elapsed < ConnectTimeout && await IsConnectingAsync(session)) await Task.Delay(100);
                 if (!await session.RunAsync(t => t.Connected, _timeout)) throw new InvalidOperationException("The mount didn't connect.");
             }
             _session = session;

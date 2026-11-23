@@ -74,7 +74,7 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
                 catch (ASCOM.NotImplementedException) { t.Connected = true; }
             }, Timeout);
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.Elapsed < Timeout && await session.RunAsync(t => t.Connecting, Timeout)) await Task.Delay(100);
+            while (watch.Elapsed < Timeout && await IsConnectingAsync(session)) await Task.Delay(100);
             var connected = await session.RunAsync(t => t.Connected, Timeout);
             if (!connected)
             {
@@ -115,7 +115,7 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
                 catch (ASCOM.NotImplementedException) { t.Connected = false; }
             }, Timeout);
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.Elapsed < Timeout && await session.RunAsync(t => t.Connecting, Timeout)) await Task.Delay(100);
+            while (watch.Elapsed < Timeout && await IsConnectingAsync(session)) await Task.Delay(100);
             return await session.RunAsync(t => t.Connected, Timeout);
         }
         finally
@@ -144,6 +144,13 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
             catch { /* stopping: nothing more to do */ }
         }));
         all.Wait(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Whether a connect or disconnect is still under way; a driver without Connecting (before V4) has none to wait for.</summary>
+    private static async Task<bool> IsConnectingAsync(ITelescopeSession session)
+    {
+        try { return await session.RunAsync(t => t.Connecting, Timeout); }
+        catch (ASCOM.NotImplementedException) { return false; }
     }
 
     private bool Begin(string id)

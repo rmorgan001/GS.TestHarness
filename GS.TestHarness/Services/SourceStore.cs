@@ -150,7 +150,8 @@ public sealed class SourceStore
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_folders, ReportStore.Json));
+            File.WriteAllText(_path + ".tmp", JsonSerializer.Serialize(_folders, ReportStore.Json));
+            File.Move(_path + ".tmp", _path, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

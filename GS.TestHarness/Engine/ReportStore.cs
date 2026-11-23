@@ -42,7 +42,8 @@ public sealed class ReportStore(string folder)
 
     private string PathOf(string id)
     {
-        if (!Regex.IsMatch(id, @"^[\w-]+$")) throw new ArgumentException("Not a report ID.", nameof(id));
+        // \z, not $: "$" also matches before a trailing newline, which isn't a valid file name.
+        if (!Regex.IsMatch(id, @"^[\w-]+\z")) throw new ArgumentException("Not a report ID.", nameof(id));
         return Path.Combine(Folder, id + ".json");
     }
 
@@ -64,8 +65,17 @@ public sealed class ReportStore(string folder)
     private async Task WriteAsync(RunReport report)
     {
         var path = PathOf(report.Id);
-        await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(report, Json));
-        File.Move(path + ".tmp", path, overwrite: true);
+        // A temporary name of its own, so two writes of the same report (the app and the command line) don't share one.
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(report, Json));
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
     }
 
     /// <summary>The file that holds the last report number given, so a deleted report's number isn't given again.</summary>
@@ -90,10 +100,13 @@ public sealed class ReportStore(string folder)
                 {
                     await using var file = new FileStream(CounterPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
                     using var reader = new StreamReader(file, leaveOpen: true);
-                    var last = int.TryParse((await reader.ReadToEndAsync()).Trim(), out var n) ? n : 0;
+                    var last = int.TryParse((await reader.ReadToEndAsync()).Trim('\0', ' ', '\r', '\n', '\t'), out var n) ? n : 0;
                     last = Math.Max(last, highest);
                     var numbers = Enumerable.Range(last + 1, count).ToArray();
+                    // Back to the start: after the read the position is at the end, and writing from there would pad the
+                    // file with zero bytes, so the counter could never be read again.
                     file.SetLength(0);
+                    file.Position = 0;
                     await using var writer = new StreamWriter(file);
                     await writer.WriteAsync(numbers[^1].ToString(System.Globalization.CultureInfo.InvariantCulture));
                     return numbers;
@@ -245,7 +258,8 @@ public sealed class ReportStore(string folder)
         sb.AppendLine($"- Run: {r.Started:yyyy-MM-dd HH:mm} ({(r.Finished - r.Started)?.TotalSeconds:0} s){(r.Cancelled ? ", stopped early" : "")}{(r.CommunicationLost ? ", stopped: communication with the device was lost" : "")}, GS.TestHarness {r.HarnessVersion}");
         sb.AppendLine($"- Options: motion {(r.Options.AllowMotion ? "on" : "off")}, settings writes {(r.Options.AllowSettingsWrites ? "on" : "off")}, " +
                       $"SetPark {(r.Options.AllowSetPark ? "on" : "off")}, protocol {(r.Options.IncludeProtocol ? "on" : "off")}");
-        sb.AppendLine($"- {Tiers.Name(r.Options.Tier)}{(r.Options.FollowsUp is { } up ? $", following up report {r.FollowsUpReference}" : "")}");
+        sb.AppendLine($"- {Tiers.Name(r.Options.Tier)}{(r.Options.FollowsUp is not null ? $", following up report {r.FollowsUpReference}" : "")}");
+        static string OneLine(string s) => s.ReplaceLineEndings(" ");
         sb.AppendLine();
         sb.AppendLine($"**{r.Count(Outcome.Fail)} failed, {r.Count(Outcome.Error)} errors, {r.Count(Outcome.Warning)} warnings**, " +
                       $"{r.Count(Outcome.Pass)} passed, {r.Count(Outcome.Info)} info, {r.Count(Outcome.Skipped)} skipped.");
@@ -268,7 +282,7 @@ public sealed class ReportStore(string folder)
             foreach (var x in items)
             {
                 sb.AppendLine();
-                sb.AppendLine($"### {x.Member}: {x.Message}");
+                sb.AppendLine($"### {OneLine(x.Member)}: {OneLine(x.Message)}");
                 sb.AppendLine($"Test {x.Number}: `{x.Id}` (weight {x.WeightUsed} of 10)");
                 sb.AppendLine();
                 // Expected and Fix on one line, so each stays one list item; Actual whole, as a code block when it runs to several lines.
@@ -288,7 +302,7 @@ public sealed class ReportStore(string folder)
             sb.AppendLine();
             sb.AppendLine("| Outcome | No. | Weight | Check | Result |");
             sb.AppendLine("|---|---|---|---|---|");
-            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | {x.Number} | {x.WeightUsed} | `{x.Id}` | {x.Message.Replace("|", "\\|")} |");
+            foreach (var x in other) sb.AppendLine($"| {x.Outcome} | {x.Number} | {x.WeightUsed} | `{x.Id}` | {OneLine(x.Message).Replace("|", "\\|")} |");
         }
         return sb.ToString();
     }

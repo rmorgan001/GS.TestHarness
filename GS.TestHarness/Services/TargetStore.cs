@@ -44,9 +44,16 @@ public sealed class TargetStore(ReportStore reports, ILogger<TargetStore> log)
         return new Saved(null, new RunOptions());
     }
 
-    public void SaveServer(string? serverId) => Write(Load() with { ServerId = serverId });
+    // Read and write under one hold of the lock, so two tabs saving at once don't lose each other's change.
+    public void SaveServer(string? serverId)
+    {
+        lock (_gate) Write(Load() with { ServerId = serverId });
+    }
 
-    public void SaveOptions(RunOptions options) => Write(Load() with { Options = options });
+    public void SaveOptions(RunOptions options)
+    {
+        lock (_gate) Write(Load() with { Options = options });
+    }
 
     private void Write(Saved saved)
     {
@@ -55,7 +62,8 @@ public sealed class TargetStore(ReportStore reports, ILogger<TargetStore> log)
             lock (_gate)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(PathOf)!);
-                File.WriteAllText(PathOf, JsonSerializer.Serialize(saved, ReportStore.Json));
+                File.WriteAllText(PathOf + ".tmp", JsonSerializer.Serialize(saved, ReportStore.Json));
+                File.Move(PathOf + ".tmp", PathOf, overwrite: true);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

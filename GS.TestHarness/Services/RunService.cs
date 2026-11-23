@@ -169,6 +169,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
             Changed?.Invoke();
             return false;
         }
+        CancellationToken runToken;
         lock (_gate)
         {
             if (IsRunning) return false;
@@ -188,9 +189,10 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
             _reports.Clear();
             _results.Clear();
             _cts = new CancellationTokenSource();
+            runToken = _cts.Token;
         }
         Changed?.Invoke();
-        _ = Task.Run(() => RunOneAsync(target, options, conformU, followsUp, _cts.Token, chain));
+        _ = Task.Run(() => RunOneAsync(target, options, conformU, followsUp, runToken, chain));
         return true;
     }
 
@@ -312,8 +314,18 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         if (!options.AllowMotion) return true;
         lock (_gate) Status = $"{after}. Sending the mount home…";
         Changed?.Invoke();
-        await using var session = home.Open(target, options);
-        var status = await session.GoHomeAsync();
+        HomeStatus status;
+        try
+        {
+            await using var session = home.Open(target, options);
+            status = await session.GoHomeAsync();
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Chained run stopped: couldn't send {Target} home: {Error}", target.Display, ex.Message);
+            lock (_gate) Status = $"{after}, but the mount couldn't be sent home ({AscomError.Describe(ex)}) so the remaining tiers were not run.";
+            return false;
+        }
         if (token.IsCancellationRequested) return false;
         if (status.Error is null && status.Problem is null && status.AtHome) return true;
         var why = status.Error ?? status.Problem ?? "the mount isn't reporting that it is at home.";

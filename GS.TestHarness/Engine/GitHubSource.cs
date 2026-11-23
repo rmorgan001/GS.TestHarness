@@ -55,8 +55,15 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
         var m = UrlPattern().Match(text.Trim());
         if (!m.Success) return null;
         var path = m.Groups["path"].Value.Trim('/');
-        return new GitHubSource(m.Groups["owner"].Value, m.Groups["repo"].Value,
-            m.Groups["ref"].Success ? Uri.UnescapeDataString(m.Groups["ref"].Value) : null, path.Length > 0 ? Uri.UnescapeDataString(path) : null);
+        var owner = m.Groups["owner"].Value;
+        var repo = m.Groups["repo"].Value;
+        var gitRef = m.Groups["ref"].Success ? Uri.UnescapeDataString(m.Groups["ref"].Value) : null;
+        var subPath = path.Length > 0 ? Uri.UnescapeDataString(path) : null;
+        // "." and ".." match the name pattern but would walk out of the cache folder (which is deleted when downloading again).
+        if (IsDotName(owner) || IsDotName(repo) || (gitRef is not null && IsDotName(gitRef))
+            || (subPath is not null && subPath.Split('/', '\\').Any(IsDotName)))
+            return null;
+        return new GitHubSource(owner, repo, gitRef, subPath);
     }
 
     /// <summary>Whether <paramref name="text"/> is a URL (of GitHub or not) rather than a folder.</summary>
@@ -67,6 +74,8 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
     public string Display => $"{Owner}/{Repo}{(Ref is null ? "" : "@" + Ref)}{(SubPath is null ? "" : "/" + SubPath)}";
 
     private string Cache => Path.Combine(CacheRoot, Safe(Owner), Safe(Repo), Safe(Ref ?? "default-branch"));
+
+    private static bool IsDotName(string name) => name is "." or "..";
 
     private static string Safe(string name) => string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
 
@@ -150,7 +159,7 @@ public sealed partial record GitHubSource(string Owner, string Repo, string? Ref
             if (SubPath is not null && LocalFolder is null) return $"The repository has no folder {SubPath}. {AccessDescription(access)}";
             return null;
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or InvalidDataException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or TaskCanceledException)
         {
             return $"Couldn't download {Display} from GitHub: {ex.Message} {AccessDescription(access)}";
         }
