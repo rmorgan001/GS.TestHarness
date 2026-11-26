@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -40,6 +40,59 @@ public static class TelescopeSessionExtensions
 {
     public static Task RunAsync(this ITelescopeSession session, Action<ITelescopeV4> call, TimeSpan timeout)
         => session.RunAsync(t => { call(t); return true; }, timeout);
+
+    public static async Task ConnectClientAsync(this ITelescopeSession session, TimeSpan timeout)
+    {
+        await session.RunAsync(t =>
+        {
+            try { t.Connect(); }
+            catch (ASCOM.NotImplementedException) { t.Connected = true; }
+        }, timeout);
+        await WaitForConnectionAsync(session, timeout);
+        if (!await session.RunAsync(t => t.Connected, timeout))
+            throw new InvalidOperationException("The mount didn't connect.");
+    }
+
+    /// <summary>Releases this client's connection; true means the hardware is still connected, possibly by another client.</summary>
+    public static async Task<bool> DisconnectClientAsync(this ITelescopeSession session, TimeSpan timeout)
+    {
+        await session.RunAsync(t =>
+        {
+            try { t.Disconnect(); }
+            catch (ASCOM.NotImplementedException) { t.Connected = false; }
+        }, timeout);
+        await WaitForConnectionAsync(session, timeout);
+        return await session.RunAsync(t => t.Connected, timeout);
+    }
+
+    /// <summary>Always attempts both disconnect and disposal, and reports either failure to the owner.</summary>
+    public static async Task<bool> ReleaseAsync(this ITelescopeSession session, TimeSpan timeout)
+    {
+        var errors = new List<Exception>();
+        var connected = false;
+        try { connected = await session.DisconnectClientAsync(timeout); }
+        catch (Exception ex) { errors.Add(ex); }
+        try { await session.DisposeAsync(); }
+        catch (Exception ex) { errors.Add(ex); }
+        if (errors.Count > 0) throw new AggregateException("Connection cleanup failed.", errors);
+        return connected;
+    }
+
+    private static async Task WaitForConnectionAsync(ITelescopeSession session, TimeSpan timeout)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (watch.Elapsed < timeout)
+        {
+            var remaining = timeout - watch.Elapsed;
+            if (remaining <= TimeSpan.Zero) break;
+            bool connecting;
+            try { connecting = await session.RunAsync(t => t.Connecting, remaining); }
+            catch (ASCOM.NotImplementedException) { return; }
+            if (!connecting) return;
+            await Task.Delay(50);
+        }
+        throw new TimeoutException($"Connecting stayed true for {timeout.TotalSeconds:0.#} s.");
+    }
 }
 
 /// <summary>
@@ -177,10 +230,6 @@ public sealed class ComSession : ITelescopeSession
                 _telescope = null;
                 return true;
             }).WaitAsync(TimeSpan.FromSeconds(10));
-        }
-        catch
-        {
-            // a stuck driver: give up on it
         }
         finally
         {

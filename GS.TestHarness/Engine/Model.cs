@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -156,6 +156,9 @@ public sealed record RunOptions
 
     /// <summary>Disconnect at the end and check that the mount then refuses to answer.</summary>
     public bool IncludeDisconnected { get; init; } = true;
+
+    /// <summary>Keep one harness connection after testing and final safety operations. Off by default.</summary>
+    public bool KeepConnection { get; init; }
 
     /// <summary>
     /// Ask (Proceed, Skip or Stop) before the mount moves when something looks unsafe (<see cref="MotionGate"/>). On by

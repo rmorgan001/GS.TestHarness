@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -44,6 +44,8 @@ public static class TestWeights
         ["Connection.Connected.Read"] = 10,
         ["Connection.Connect"] = 10,
         ["{group}.CommunicationLost"] = 10,
+        ["{group}.Cleanup"] = 10,
+        ["Run.Connections"] = 10,
         ["Connection.Connect.WhenConnected"] = 9,
         ["Connection.Connected.SetTrueWhenConnected"] = 9,
         ["Connection.Connect.ConnectingOnReturn"] = 8,

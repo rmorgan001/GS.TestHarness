@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -54,6 +54,9 @@ public class HomeSessionTests
 
         Assert.Null(status.Error);
         Assert.True(status.AtHome); // the fake mount starts at home
+        Assert.Equal(2, fake.ClientCount);
+        await home.DisposeAsync();
+        Assert.Equal(1, fake.ClientCount);
     }
 
     [Fact]
@@ -69,5 +72,34 @@ public class HomeSessionTests
         Assert.Null(status.Error);
         Assert.Null(status.Problem);
         Assert.True(status.AtHome);
+        Assert.Equal(2, fake.ClientCount);
+        await home.DisposeAsync();
+        Assert.Equal(1, fake.ClientCount);
+    }
+
+    [Fact]
+    public async Task An_owned_home_check_releases_its_client_when_the_mount_was_initially_disconnected()
+    {
+        var fake = new FakeTelescope();
+        var home = new HomeSession(NullLogger.Instance, new TestTarget(), new RunOptions(),
+            () => Task.FromResult<ITelescopeSession>(new DirectSession(fake, 1)));
+        Assert.Null((await home.CheckAsync()).Error);
+        Assert.Equal(1, fake.ClientCount);
+        await home.DisposeAsync();
+        Assert.Equal(0, fake.ClientCount);
+    }
+
+    [Fact]
+    public async Task A_borrowed_home_check_does_not_release_the_runs_client()
+    {
+        var fake = new FakeTelescope();
+        var session = new DirectSession(fake, 1);
+        var home = new HomeSession(NullLogger.Instance, new TestTarget(), new RunOptions(),
+            () => Task.FromResult<ITelescopeSession>(session), ownsSession: false);
+        Assert.Null((await home.GoHomeAsync()).Error);
+        await home.DisposeAsync();
+        Assert.Equal(1, fake.ClientCount);
+        await session.ReleaseAsync(Short);
+        Assert.Equal(0, fake.ClientCount);
     }
 }

@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -51,9 +51,9 @@
                 <Icon Kind="Telescope" />
             </button>
         }
-        <button type="button" class="icon-btn @(Highlighted is { } h && Connections.IsConnected(h.Id) ? "active" : null)"
+        <button type="button" class="icon-btn @(Highlighted is { } h && (Connections.IsConnected(h.Id) || Runs.IsConnectedTo(h.Target)) ? "active" : null)"
                 title="@ConnectText" aria-label="@ConnectText"
-                disabled="@(Highlighted is { } busy && Connections.IsBusy(busy.Id))"
+                disabled="@(Highlighted is { } busy && (Connections.IsBusy(busy.Id) || Runs.IsTesting(busy.Target)))"
                 @onclick="ConnectAsync">
             <Icon Kind="Connection" />
         </button>
@@ -71,8 +71,8 @@
         <ul class="server-list">
             @foreach (var server in _items)
             {
-                var connected = Connections.IsConnected(server.Id);
-                var running = Runs.IsRunning && Bench.Selected?.Id == server.Id;
+                var connected = Connections.IsConnected(server.Id) || Runs.IsConnectedTo(server.Target);
+                var running = Runs.IsTesting(server.Target);
                 <li>
                     <button type="button"
                             class="server-item @(server.Id == Bench.HighlightedId ? "selected" : null) @(server.Id == Bench.Selected?.Id ? "target" : null)"
@@ -112,7 +112,8 @@
 
     private ServerEntry? Highlighted => Servers.Find(Bench.HighlightedId);
 
-    private string ConnectText => Highlighted is { } h && Connections.IsConnected(h.Id) ? "Disconnect" : "Connect";
+    private string ConnectText => Highlighted is { } h && Runs.IsTesting(h.Target) ? "Being tested"
+        : Highlighted is { } connected && Connections.IsConnected(connected.Id) ? "Disconnect" : "Connect";
 
     protected override void OnInitialized()
     {
@@ -175,13 +176,13 @@
             await Dialogs.ShowMessageAsync("Nothing selected");
             return;
         }
-        if (Connections.IsBusy(server.Id)) return;
+        if (Connections.IsBusy(server.Id) || Runs.IsTesting(server.Target)) return;
 
         var disconnecting = Connections.IsConnected(server.Id);
         var question = disconnecting ? $"Disconnect from {server.Name}?" : $"Connect to {server.Name}?";
         if (!await Dialogs.ShowAsync(new ConfirmDialogModel(disconnecting ? "Disconnect" : "Connect", question))) return;
         // Skip if the state changed while the dialog was open (another tab did it).
-        if (Connections.IsConnected(server.Id) != disconnecting || Connections.IsBusy(server.Id)) return;
+        if (Connections.IsConnected(server.Id) != disconnecting || Connections.IsBusy(server.Id) || Runs.IsTesting(server.Target)) return;
 
         try
         {
@@ -220,9 +221,19 @@
     private async Task EditAsync(ServerEntry? server)
     {
         if (server is null) return;
+        if (Runs.IsTesting(server.Target))
+        {
+            await Dialogs.ShowMessageAsync($"{server.Name} is being tested; stop the run first.");
+            return;
+        }
         Bench.Highlight(server);
         var dialog = new ServerDialogModel(Servers, server);
         if (!await Dialogs.ShowAsync(dialog)) return;
+        if (Runs.IsTesting(server.Target))
+        {
+            await Dialogs.ShowMessageAsync($"{server.Name} is being tested; stop the run first.");
+            return;
+        }
         // The dialog edits the name and address: the server keeps its settings.
         var edited = dialog.Entry with { Settings = server.Settings };
         Servers.Update(edited);
@@ -235,12 +246,17 @@
     private async Task DeleteAsync(ServerEntry? server)
     {
         if (server is null) return;
-        if (Runs.IsRunning && Bench.Selected?.Id == server.Id)
+        if (Runs.IsTesting(server.Target))
         {
             await Dialogs.ShowMessageAsync($"{server.Name} is being tested; stop the run first.");
             return;
         }
         if (!await Dialogs.ShowAsync(new ConfirmDialogModel("Delete", $"Delete {server.Name}? Its saved reports are kept.", "Delete", "Cancel", danger: true))) return;
+        if (Runs.IsTesting(server.Target))
+        {
+            await Dialogs.ShowMessageAsync($"{server.Name} is being tested; stop the run first.");
+            return;
+        }
         Servers.Remove(server.Id);
         if (Bench.Selected?.Id == server.Id) Bench.Select(null);
         Bench.Highlight(Servers.Items.LastOrDefault());

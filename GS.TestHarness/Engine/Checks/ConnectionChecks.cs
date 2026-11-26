@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -43,7 +43,7 @@ public sealed class ConnectionChecks : ICheckGroup
         }
         else
         {
-            ctx.Report("Connected.Read", "Connected", Outcome.Pass, $"Connected = {before.Value} before connecting.", ms: before.Ms);
+            ctx.Report("Connected.Read", "Connected", Outcome.Pass, $"Connected = {before.Value} before connecting.", actual: before.Value.ToString(), ms: before.Ms);
         }
         ctx.Facts["WasConnected"] = before is { Ok: true, Value: true };
 

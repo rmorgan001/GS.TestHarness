@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -86,7 +86,11 @@
         </label>
         <label class="check">
             <input type="checkbox" @bind="_disconnected" disabled="@Runs.IsRunning" />
-            <span>Disconnect at the end <small>Checks NotConnected errors (only possible when no other client holds the device).</small></span>
+            <span>Check the disconnected state <small>Checks NotConnected errors (only possible when no other client holds the device). Connections are released after testing even when this is off.</small></span>
+        </label>
+        <label class="check">
+            <input type="checkbox" @bind="_keepConnection" disabled="@Runs.IsRunning" />
+            <span>Keep one connection after testing <small>Off by default: releases this harness's connections to the tested device after the final home operation, including when stopped. Other applications' connections are not closed.</small></span>
         </label>
         <label class="check">
             <input type="checkbox" checked="@_notify" @onchange="SetNotify" />
@@ -169,7 +173,7 @@ else
                 {
                     <ul class="preflight" aria-label="Before you start">
                         <li class="@(Connections.IsConnected(server.Id) ? "ok" : "note")"><span aria-hidden="true">@(Connections.IsConnected(server.Id) ? "✓" : "ℹ")</span>
-                            @(Connections.IsConnected(server.Id) ? "Connected." : "Not connected yet: the run connects for itself.")</li>
+                            @(Connections.IsConnected(server.Id) ? "Connected in the sidebar: testing releases this client and connects for itself." : "Not connected yet: the run connects for itself.")</li>
                         @foreach (var (state, text) in Preflight(server.RunTarget, CurrentOptions()))
                         {
                             <li class="@state.ToString().ToLowerInvariant()"><span aria-hidden="true">@(state == Check.Ok ? "✓" : state == Check.Warn ? "⚠" : "ℹ")</span> @text</li>
@@ -478,7 +482,7 @@ else
 
 @code {
     private bool _motion, _writes = true, _setPark, _protocol = true, _disconnected = true, _extended, _safety = true;
-    private bool _notify;
+    private bool _notify, _keepConnection;
     private int _slewTimeout = 120, _callTimeout = 15, _flipAngle = 0;
     private MountKind _mount = MountKind.Unknown;
     private Hemisphere _hemisphere = Hemisphere.Unknown;
@@ -492,6 +496,7 @@ else
              options.SlewTimeoutSeconds, options.CallTimeoutSeconds);
         _extended = options.Extended;
         _safety = options.SafetyWarnings;
+        _keepConnection = options.KeepConnection;
         _flipAngle = Math.Clamp(options.FlipAngle, 0, 90);
         _mount = options.Mount;
         _hemisphere = options.SiteHemisphere;
@@ -521,6 +526,7 @@ else
     {
         AllowMotion = _motion, AllowSettingsWrites = _writes, AllowSetPark = _motion && _setPark,
         IncludeProtocol = _protocol, IncludeDisconnected = _disconnected, Extended = _extended, SafetyWarnings = _safety,
+        KeepConnection = _keepConnection,
         SlewTimeoutSeconds = Math.Max(10, _slewTimeout), CallTimeoutSeconds = Math.Max(2, _callTimeout),
         FlipAngle = Math.Clamp(_flipAngle, 0, 90), Mount = _mount, SiteHemisphere = _hemisphere
     };
@@ -577,8 +583,8 @@ else
     /// <summary>
     /// The warning before a run. For a run that moves the mount it first connects to the mount and reads whether it's at
     /// the home position; the one dialog then shows the safety warning, plus the "put the mount in the home position"
-    /// section when it isn't home. Start keeps the mount connected (as if connected from the sidebar); Cancel
-    /// disconnects it. Returns whether the user went on.
+    /// section when it isn't home. Closing the dialog releases its client; an accepted run connects for itself.
+    /// Returns whether the user went on.
     /// </summary>
     private enum Check { Ok, Warn, Note }
 
@@ -624,6 +630,8 @@ else
         if (_starting) return false;
         _starting = true;
         HomeSession? home = null;
+        var accepted = false;
+        string? cleanupError = null;
         try
         {
             HomeStatus? status = null;
@@ -632,16 +640,29 @@ else
                 home = Home.Open(target, options);
                 status = await home.CheckAsync();
             }
-            var accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status, SettingsWarnings(target, options)));
-            if (accepted && home is not null && Servers.FindDevice(target)?.Id is { } id)
-                home.TryHandOver(session => Connections.Adopt(id, session));
-            return accepted;
+            accepted = await Dialogs.ShowAsync(new StartDialogModel(title, SafetyWarning, home, status, SettingsWarnings(target, options)));
         }
         finally
         {
-            if (home is not null) await home.DisposeAsync();
-            _starting = false;
+            try
+            {
+                if (home is not null) await home.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                cleanupError = $"The home-check connection could not be released: {AscomError.Describe(ex)}. Check the driver before testing.";
+            }
+            finally
+            {
+                _starting = false;
+            }
         }
+        if (cleanupError is not null)
+        {
+            await Dialogs.ShowMessageAsync(cleanupError);
+            return false;
+        }
+        return accepted;
     }
 
     private async Task Start()
@@ -723,7 +744,7 @@ else
         if (plan.NeedsMotion && !_motion) missing.Add("Move the mount");
         if (plan.NeedsWrites && !_writes) missing.Add("Write settings");
         if (plan.NeedsProtocol && !_protocol && Bench.Selected?.Target.Kind != TargetKind.Com) missing.Add("Alpaca protocol checks");
-        if (plan.NeedsDisconnected && !_disconnected) missing.Add("Disconnect at the end");
+        if (plan.NeedsDisconnected && !_disconnected) missing.Add("Check the disconnected state");
         return missing;
     }
 

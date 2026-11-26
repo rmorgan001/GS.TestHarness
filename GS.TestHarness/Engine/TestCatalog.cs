@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -136,6 +136,8 @@ public static class TestCatalog
         var list = new List<CatalogEntry>
         {
             // ---------- Run and Site ----------
+            E("Run", "Connections", "Release harness connections after testing unless keeping one was explicitly selected.", "After the final safety operation, disconnect and dispose the run client, or hand one connected client to the sidebar.", "Info with the connection policy outcome; Error on cleanup failure. Other applications' clients are never disconnected.", "Harness"),
+            E("{group}", "Cleanup", "Do not leave an extra test client behind.", "Explicitly disconnect and dispose every auxiliary client, attempting all releases even if one fails.", "Error when cleanup fails; retained even in a member-narrowed run.", "Harness"),
             E("{group}", "Group", "Say why a whole group didn't run.", "Each group's skip rule is checked before it runs (motion off, not Alpaca, not COM...).", "Skipped, with the reason. Not a problem.", "Harness"),
             E("{group}", "Stopped", "Record a run that couldn't go on.", "A group raises a stop (e.g. the device can't be reached or won't connect).", "Error: the rest of the run is abandoned and the reason given.", "Harness"),
             E("{group}", "CommunicationLost", "Stop cleanly when the device goes away, instead of failing every remaining check.", "After connecting, a call that fails with a lost-connection error (COM RPC server unavailable or disconnected, Alpaca connection refused or reset), or three timeouts in a row, is followed by a short Connected read to confirm the device has gone.", "Error, with the last call's error and the confirming read's error. The groups that need the device are skipped; Performance still summarises the run; the findings so far are kept.", "Harness"),

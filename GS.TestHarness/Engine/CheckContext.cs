@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -240,7 +240,7 @@ public sealed class CheckContext(
         => Options.Members is not { } only || members.Any(m => only.Contains(m, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>The findings that say why checks didn't run or the run stopped: kept in a narrowed run, too.</summary>
-    private static readonly HashSet<string> Explains = ["Group", "Prepare", "CommunicationLost", "Stopped", "Unexpected"];
+    private static readonly HashSet<string> Explains = ["Group", "Prepare", "CommunicationLost", "Stopped", "Unexpected", "Cleanup"];
 
     /// <summary>
     /// Whether a finding belongs in the run: every one, unless the run is narrowed to some members. Then only the
