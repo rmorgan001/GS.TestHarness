@@ -41,6 +41,8 @@ Conformance Check, as 1-RAC0031) or RCU (ConformU Debug Log Test, as 1-RCU0034).
 
 **Extended checks** (off by default) add a few minutes: tracking drift and several clients at once.
 
+**Connections.** Testing releases the sidebar client for its device and owns one main client across the tiers; final home operations reuse it. By default, all harness clients for the tested device are disconnected and disposed after completion, cancellation or failure. **Keep one connection after testing** explicitly hands one connected client back to the sidebar after a completed run. Other applications' clients are never closed. **Check the disconnected state** controls test coverage, not cleanup; command-line runs also release their client even with `--no-disconnect`. Cleanup outcomes and failures are reported.
+
 **Quick start.** The **Quick start** button at the top opens the help at a picture of the whole job, from adding a server to a clean report.
 
 **Tabs.** Across the top: **ASCOM Conformance Check** (a full check, with Run, Reports, Reviews and Summary under it),

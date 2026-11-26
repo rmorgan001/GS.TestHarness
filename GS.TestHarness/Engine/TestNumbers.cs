@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -241,6 +241,8 @@ public static class TestNumbers
         (1204, "Properties.SiteHemisphere"),
         (1205, "ParkHome.HomePole"),
         (1206, "{group}.Gate"),
+        (1207, "Run.Connections"),
+        (1208, "{group}.Cleanup"),
         (2001, "Diagnose.Readings"),
         (2002, "Diagnose.PulseGuide.{axis}"),
         (2003, "Diagnose.{member}"),

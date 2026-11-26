@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -23,8 +23,11 @@ namespace GS.TestHarness.Services;
 /// and a tab opened or refreshed mid-run sees its progress. Each finished run is saved to the
 /// <see cref="ReportStore"/>.
 /// </summary>
-public sealed class RunService(TestRunner runner, ReportStore store, HomeService home, SuggestionStore suggestionStore, ILogger<RunService> log)
+public sealed class RunService(TestRunner runner, ReportStore store, HomeService home, SuggestionStore suggestionStore,
+    ConnectionService connections, ServerList servers, ILogger<RunService> log)
 {
+    internal Func<TestTarget, RunOptions, Task<ITelescopeSession>> OpenSession { get; init; } = TestRunner.OpenAsync;
+
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private readonly List<CheckResult> _results = [];
@@ -34,6 +37,10 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
 
     public bool IsRunning { get; private set; }
     public TestTarget? Target { get; private set; }
+    private bool _connected;
+    private bool? _wasConnected;
+    public bool IsTesting(TestTarget target) => IsRunning && Target is { } current && TestTarget.SameDevice(current, target);
+    public bool IsConnectedTo(TestTarget target) => IsTesting(target) && _connected;
     public RunOptions? Options { get; private set; }
     public RunProgress? Progress { get; private set; }
     public string? Status { get; private set; }
@@ -174,6 +181,8 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         {
             if (IsRunning) return false;
             IsRunning = true;
+            _connected = false;
+            _wasConnected = null;
             Target = target;
             Options = options;
             ConformU = conformU;
@@ -213,13 +222,25 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         RunReport? report = null;
         var completed = false;
         string? safetyNote = null;
+        ITelescopeSession? session = null;
+        var server = servers.FindDevice(target);
+        var reserved = false;
+        Exception? setupError = null;
         try
         {
-            report = await RunAsync(target, options, conformU, followsUp, token);
+            if (server is not null)
+            {
+                await connections.BeginTestAsync(server.Id);
+                reserved = true;
+            }
+            token.ThrowIfCancellationRequested();
+            session = await OpenSession(target, options);
+            report = await RunAsync(session, target, options, conformU, followsUp, token);
+            completed = !chain && report is { Cancelled: false, CommunicationLost: false };
             if (report is not null) Collect(report);
             // Chained tiers: after each tier the mount goes home and the next tier (for what this one found) starts, with no
             // second safety dialog (the user accepted it at tier 1). IsRunning stays true throughout, so Stop stays at hand.
-            while (chain && report is not null && (!report.Cancelled || _earlyStop is not null) && !token.IsCancellationRequested)
+            while (chain && report is { CommunicationLost: false } && (!report.Cancelled || _earlyStop is not null) && !token.IsCancellationRequested)
             {
                 var stoppedEarly = _earlyStop;
                 var next = stoppedEarly is null ? Tiers.Next(report) : null;
@@ -245,7 +266,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                          $"Tier {next!.Tier} was not run for safety concerns: the mount may not be behaving as it should. " +
                          "Fix the problems in the report and run the tests again.";
                 }
-                if (!await GoHomeAsync(target, options, last ? "All tests finished" : stoppedEarly is not null ? $"Tier {report.Options.Tier} stopped for safety" : $"Tier {report.Options.Tier} finished", token)) break;
+                if (!await GoHomeAsync(session, target, options, last ? "All tests finished" : stoppedEarly is not null ? $"Tier {report.Options.Tier} stopped for safety" : $"Tier {report.Options.Tier} finished", token)) break;
                 if (unsafeToGoOn)
                 {
                     Status = "Testing stopped for safety concerns" + (options.AllowMotion ? "; the mount is at the home position." : ".");
@@ -270,12 +291,80 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                     _results.Clear();
                 }
                 Changed?.Invoke();
-                report = await RunAsync(target, options, conformU, next!.From, token);
+                report = await RunAsync(session, target, options, conformU, next!.From, token);
                 if (report is not null) Collect(report);
             }
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            Status = "Stopped before testing started.";
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Run failed for {Target}", target.Display);
+            Status = $"Couldn't run: {AscomError.Describe(ex)}";
+            if (session is null) setupError = ex;
+            lock (_gate) _results.Add(new CheckResult { Id = "Run.Stopped", Group = "Run", Member = target.Display, Outcome = Outcome.Error, Message = Status, Actual = ex.ToString() });
+            completed = false;
+        }
         finally
         {
+            CheckResult connectionResult;
+            try
+            {
+                var retained = false;
+                var hardwareConnected = false;
+                try
+                {
+                    if (session is not null && options.KeepConnection && completed && !token.IsCancellationRequested && server is not null
+                        && !_reports.Any(r => r.Cancelled || r.CommunicationLost || r.Results.Any(f => f.Outcome == Outcome.Error
+                            && (f.Id.EndsWith(".Cleanup", StringComparison.Ordinal) || f.Id.EndsWith(".Stopped", StringComparison.Ordinal)))))
+                    {
+                        await session.ConnectClientAsync(TimeSpan.FromSeconds(30));
+                        connections.EndTest(server.Id, session);
+                        reserved = false;
+                        retained = true;
+                    }
+                }
+                finally
+                {
+                    if (session is not null && !retained)
+                        hardwareConnected = await session.ReleaseAsync(TimeSpan.FromSeconds(30));
+                    _connected = false;
+                    if (reserved && server is not null) connections.EndTest(server.Id);
+                }
+                if (hardwareConnected && _wasConnected == false)
+                    throw new InvalidOperationException("The driver still reports Connected true after the last harness client was released, although no client held the hardware when testing started.");
+                if (setupError is not null) throw new InvalidOperationException("Connection setup or sidebar release failed; cleanup could not be verified.", setupError);
+                if (_reports.Any(r => r.Results.Any(f => f.Outcome == Outcome.Error && f.Id.EndsWith(".Cleanup", StringComparison.Ordinal))))
+                    throw new InvalidOperationException("An extra test client could not be released; see the Cleanup findings.");
+                var message = retained ? "One connection kept in the sidebar (Keep one connection was selected)."
+                    : hardwareConnected ? "Harness connections released. The driver still reports the hardware connected; another client or the server may hold it."
+                    : "Harness connections released.";
+                connectionResult = new CheckResult { Id = "Run.Connections", Group = "Run", Member = "Disconnect", Outcome = Outcome.Info, Message = message };
+                Status = $"{Status} {message}";
+            }
+            catch (Exception ex)
+            {
+                _connected = false;
+                if (reserved && server is not null) connections.EndTest(server.Id);
+                log.LogWarning(ex, "Connection cleanup failed for {Target}", target.Display);
+                completed = false;
+                var message = $"Connection cleanup failed: {AscomError.Describe(ex)}. Connections may still be active; check the driver.";
+                connectionResult = new CheckResult { Id = "Run.Connections", Group = "Run", Member = "Disconnect", Outcome = Outcome.Error, Message = message, Actual = ex.ToString() };
+                Status = $"{Status} {message}";
+            }
+            lock (_gate) _results.Add(connectionResult);
+            if (report is not null)
+            {
+                lock (report.Results) report.Results.Add(connectionResult);
+                try { await store.SaveAsync(report); }
+                catch (Exception ex)
+                {
+                    log.LogWarning(ex, "Connection cleanup result not saved for {Target}", target.Display);
+                    Status = $"{Status} Cleanup result could not be saved: {ex.Message}";
+                }
+            }
             // Kept for the Suggested Tests page, and marked with how often they were suggested before; dismissed ones aren't shown again.
             List<SuggestedTest> shown;
             var hidden = 0;
@@ -309,7 +398,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
     /// Between chained tiers and at the end: sends the mount home (a run that doesn't move the mount has nothing to send).
     /// False if it couldn't get there, so the chain stops with the reason in <see cref="Status"/> rather than going on from elsewhere.
     /// </summary>
-    private async Task<bool> GoHomeAsync(TestTarget target, RunOptions options, string after, CancellationToken token)
+    private async Task<bool> GoHomeAsync(ITelescopeSession telescope, TestTarget target, RunOptions options, string after, CancellationToken token)
     {
         if (!options.AllowMotion) return true;
         lock (_gate) Status = $"{after}. Sending the mount home…";
@@ -317,8 +406,9 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         HomeStatus status;
         try
         {
-            await using var session = home.Open(target, options);
+            await using var session = home.Open(target, options, telescope);
             status = await session.GoHomeAsync();
+            _connected = status.Error is null;
         }
         catch (Exception ex)
         {
@@ -334,7 +424,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
         return false;
     }
 
-    private async Task<RunReport?> RunAsync(TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
+    private async Task<RunReport?> RunAsync(ITelescopeSession session, TestTarget target, RunOptions options, ConformULog? conformU, RunReport? followsUp,
         CancellationToken outer)
     {
         RunReport? report = null;
@@ -350,10 +440,12 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
             // What the summary compares with and the clock estimates from: a like-for-like run, not just the newest one.
             PreviousReport = (await store.ListAsync()).FirstOrDefault(r => ReportStore.Comparable(r, target, options.Tier, conformU is not null));
             Changed?.Invoke();
-            await using var session = await TestRunner.OpenAsync(target, options);
             report = await runner.RunAsync(session, target, options,
                 r =>
                 {
+                    if (_wasConnected is null && r.Id == "Connection.Connected.Read" && bool.TryParse(r.Actual, out var before)) _wasConnected = before;
+                    if (r.Id is "Connection.Connect" or "Connection.Connected.SetTrueWhenConnected" && r.Outcome is Outcome.Pass or Outcome.Warning) _connected = true;
+                    if (r.Id == "Disconnected.Disconnect" && r.Outcome is Outcome.Pass or Outcome.Info) _connected = false;
                     lock (_gate) _results.Add(r);
                     CheckSafety(r);
                     Changed?.Invoke();
@@ -364,12 +456,7 @@ public sealed class RunService(TestRunner runner, ReportStore store, HomeService
                     Status = (p.Group == "Done" ? "Finishing…" : $"Checking {p.Group} (group {p.GroupIndex + 1} of {p.GroupCount})");
                     Changed?.Invoke();
                 },
-                token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => AskGateAsync(warnings, token));
-        }
-        catch (Exception ex) when (report is not null)
-        {
-            // The run finished; only closing the session failed. Keep the report.
-            log.LogWarning(ex, "Closing the session failed: {Error}", ex.Message);
+                token, openSession: () => OpenSession(target, options), previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => AskGateAsync(warnings, token));
         }
         catch (Exception ex)
         {

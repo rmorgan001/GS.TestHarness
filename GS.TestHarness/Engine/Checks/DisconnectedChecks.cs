@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -105,11 +105,5 @@ public sealed class DisconnectedChecks : ICheckGroup
             again.Ok ? "Disconnect() while disconnected: no error." : "Disconnect() while disconnected raised an error.",
             actual: again.ErrorText, fix: "Disconnect() on a disconnected device must do nothing, without an error.");
 
-        // Put back a connection another client had made before the run.
-        if (ctx.Fact("WasConnected"))
-        {
-            await ctx.TryAsync(t => t.Connect(), TimeSpan.FromSeconds(30));
-            await ctx.WaitUntilAsync(t => !t.Connecting, TimeSpan.FromSeconds(30), 100);
-        }
     }
 }

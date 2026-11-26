@@ -1,4 +1,4 @@
-@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿@* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -501,7 +501,8 @@
                         (put it there, power it off and on, then <strong>Check for home</strong>). <strong>2. Before you start</strong> lists what to check: the OTAs removed, your settings
                         understood, and staying with the mount; and, in red, any setting that looks wrong. Below it, clicking <strong>Start run</strong> accepts responsibility for
                         watching the mount. <strong>Start run</strong> is not available until the mount reports at home. If the mount can't be connected
-                        or read, only <strong>Check for home</strong> and <strong>Cancel</strong> are offered. Cancel disconnects the mount; Start run keeps it connected.</li>
+                        or read, only <strong>Check for home</strong> and <strong>Cancel</strong> are offered. Closing the dialog releases its home-check client;
+                        an accepted run then connects for itself. A cleanup failure is reported and prevents testing.</li>
                     <li><strong>The warnings before the mount moves.</strong> Before the first test that moves the mount, the run looks at what it found so far
                         (the position, time and site) and whether the mount is already slewing, parked or away from home. If anything looks wrong
                         the run pauses and asks: <strong>Proceed</strong> (run the tests that move the mount anyway), <strong>Skip</strong>
@@ -526,8 +527,12 @@
                     <dd>Alpaca Server only: management API, transaction IDs, error replies, HTTP 400 and discovery.</dd>
                     <dt>Extended checks</dt>
                     <dd>Adds a few minutes: tracking drift (on, off, rate offsets), several clients at once, parallel reads and connect cycles.</dd>
-                    <dt>Disconnect at the end</dt>
-                    <dd>Checks NotConnected errors. Only possible when no other client holds the device.</dd>
+                    <dt>Check the disconnected state</dt>
+                    <dd>Checks NotConnected errors. Only possible when no other client holds the device. Turning this off does not turn off connection cleanup.</dd>
+                    <dt>Keep one connection after testing</dt>
+                    <dd>Off by default. Testing releases any sidebar connection to its device, then owns one main client across the tiers. Final home operations reuse that client.
+                        After testing finishes or stops, the harness disconnects and disposes its clients. Select this option to hand one connected client back to the sidebar after a completed run;
+                        stopped runs and cleanup failures still release it. Connections owned by other applications are never closed. Cleanup results are shown and saved with the final report.</dd>
                     <dt>Safety warnings before the mount moves</dt>
                     <dd>On by default. Asks Proceed, Skip or Stop when something looks unsafe before the tests that move the mount. See <a href="help#safety">Safety warnings</a>.</dd>
                     <dt>Tell me when the run finishes or needs my answer</dt>
@@ -705,7 +710,7 @@ GS.TestHarness --run COM [--progid ASCOM.GS.Sky.Telescope]</code></pre>
                     <dd>It's only there on Windows. A COM driver also needs the ASCOM Platform installed.</dd>
                     <dt>The Disconnected checks are skipped</dt>
                     <dd>Another client (a planetarium, a guider, GS Point3D Web) is holding the device. Close it, or
-                        untick <em>Disconnect at the end</em>.</dd>
+                        untick <em>Check the disconnected state</em> to omit those tests. The harness still releases its own connections.</dd>
                     <dt>Slews time out</dt>
                     <dd>Raise the slew timeout, or check that the mount (or simulator) is unparked and can reach the targets.</dd>
                     <dt>Findings don't name a file</dt>

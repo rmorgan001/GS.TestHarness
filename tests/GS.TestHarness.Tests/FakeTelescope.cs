@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -104,6 +104,8 @@ public enum Defect
 
     /// <summary>Disconnect() returns without error but leaves the client connected (ConformU: "Connected Get returned True").</summary>
     ConnectedAfterDisconnect,
+    DisconnectThrows,
+    ConnectingNeverFinishes,
 
     /// <summary>Connected reports the hardware state: true for every client while any client is connected (allowed, as a hub does).</summary>
     ConnectedSharedByClients,
@@ -173,6 +175,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
     private readonly HashSet<Defect> _defects = [.. defects];
     private readonly object _gate = new();
     private readonly HashSet<int> _clients = []; // the clients (DirectSession numbers) connected
+    internal int ClientCount { get { lock (_clients) return _clients.Count; } }
     // Position at _anchor (while tracking): the home position (the pole, RA = LST - 6), where the mount starts with AtHome true.
     private double _ra = Values.Wrap24(Values.LocalSiderealTime(DateTime.UtcNow, -81.4) - 6), _dec = 90;
     private double _ha = 6;                  // hour angle held while not tracking (home is 6 h)
@@ -293,7 +296,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
         get { NeedAlive(); return IsConnected; }
         set { if (value) Connect(); else Disconnect(); }
     }
-    public bool Connecting => false;
+    public bool Connecting => Has(Defect.ConnectingNeverFinishes);
     public void Connect()
     {
         lock (_clients) _clients.Add(Client);
@@ -301,6 +304,7 @@ public sealed class FakeTelescope(params Defect[] defects) : ITelescopeV4
 
     public void Disconnect()
     {
+        if (Has(Defect.DisconnectThrows)) throw new ASCOM.DriverException("Disconnect failed");
         lock (_clients)
         {
             if (Has(Defect.ClientDisconnectDropsAll)) _clients.Clear();

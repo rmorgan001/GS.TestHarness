@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -20,8 +20,8 @@ namespace GS.TestHarness.Services;
 
 /// <summary>
 /// The sidebar's Connect button, as in GS.Point3DWeb: connects a server from the list and keeps it connected until
-/// it is disconnected, deleted or moved, or the app stops. Shared by every tab, so the status dots agree. A run
-/// opens its own session; a server connected here simply counts as another client of it.
+/// it is disconnected, deleted or moved, tested, or the app stops. Shared by every tab, so the status dots agree.
+/// Testing releases the sidebar client first; only an explicit Keep one connection hands a run client back.
 /// </summary>
 public sealed class ConnectionService(ILogger<ConnectionService> log)
 {
@@ -30,6 +30,7 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
     private readonly object _gate = new();
     private readonly Dictionary<string, ITelescopeSession> _sessions = [];
     private readonly HashSet<string> _busy = [];
+    private readonly HashSet<string> _testing = [];
 
     /// <summary>Raised (on any thread) when a server connects, disconnects or starts doing either.</summary>
     public event Action? Changed;
@@ -44,19 +45,45 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
         lock (_gate) return _busy.Contains(id);
     }
 
-    /// <summary>
-    /// Takes over a connection made elsewhere (the start dialog's home check), so the server shows as connected and the
-    /// sidebar's Disconnect closes it. False if the server is already connected here, or is being connected or disconnected (the caller then disconnects what it made).
-    /// </summary>
-    public bool Adopt(string id, ITelescopeSession session)
+    /// <summary>Reserves the server for testing, waits for a sidebar operation, and releases its existing client.</summary>
+    public async Task BeginTestAsync(string id)
     {
         lock (_gate)
         {
-            if (_sessions.ContainsKey(id) || _busy.Contains(id)) return false;
-            _sessions[id] = session;
+            if (!_testing.Add(id)) throw new InvalidOperationException("This server is already being tested.");
         }
         Changed?.Invoke();
-        return true;
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            while (IsBusy(id))
+            {
+                if (watch.Elapsed >= Timeout) throw new TimeoutException("The sidebar connection operation did not finish before testing.");
+                await Task.Delay(50);
+            }
+            await DisconnectAsync(id);
+        }
+        catch
+        {
+            EndTest(id);
+            throw;
+        }
+    }
+
+    /// <summary>Ends testing, optionally taking ownership of its one connected client.</summary>
+    public void EndTest(string id, ITelescopeSession? session = null)
+    {
+        lock (_gate)
+        {
+            if (session is not null)
+            {
+                if (_sessions.ContainsKey(id) || _busy.Contains(id))
+                    throw new InvalidOperationException("The sidebar cannot take over the test connection.");
+                _sessions[id] = session;
+            }
+            _testing.Remove(id);
+        }
+        Changed?.Invoke();
     }
 
     /// <summary>Connects (V4 Connect, falling back to Connected = true); returns whether the device reports connected.</summary>
@@ -68,27 +95,19 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
         {
             var target = server.RunTarget;
             session = await TestRunner.OpenAsync(target, new RunOptions { CallTimeoutSeconds = 15 });
-            await session.RunAsync(t =>
-            {
-                try { t.Connect(); }
-                catch (ASCOM.NotImplementedException) { t.Connected = true; }
-            }, Timeout);
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.Elapsed < Timeout && await IsConnectingAsync(session)) await Task.Delay(100);
-            var connected = await session.RunAsync(t => t.Connected, Timeout);
-            if (!connected)
-            {
-                await session.DisposeAsync();
-                return false;
-            }
+            await session.ConnectClientAsync(Timeout);
             lock (_gate) _sessions[server.Id] = session;
             session = null;
             log.LogInformation("Connected {Server} ({Target})", server.Name, server.Target.Display);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
-            if (session is not null) await session.DisposeAsync();
+            if (session is not null)
+            {
+                try { await session.ReleaseAsync(Timeout); }
+                catch (Exception cleanup) { throw new AggregateException("Connecting failed and cleanup also failed.", ex, cleanup); }
+            }
             throw;
         }
         finally
@@ -109,18 +128,10 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
         Changed?.Invoke();
         try
         {
-            await session.RunAsync(t =>
-            {
-                try { t.Disconnect(); }
-                catch (ASCOM.NotImplementedException) { t.Connected = false; }
-            }, Timeout);
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.Elapsed < Timeout && await IsConnectingAsync(session)) await Task.Delay(100);
-            return await session.RunAsync(t => t.Connected, Timeout);
+            return await session.ReleaseAsync(Timeout);
         }
         finally
         {
-            await session.DisposeAsync();
             End(id);
         }
     }
@@ -146,17 +157,11 @@ public sealed class ConnectionService(ILogger<ConnectionService> log)
         all.Wait(TimeSpan.FromSeconds(5));
     }
 
-    /// <summary>Whether a connect or disconnect is still under way; a driver without Connecting (before V4) has none to wait for.</summary>
-    private static async Task<bool> IsConnectingAsync(ITelescopeSession session)
-    {
-        try { return await session.RunAsync(t => t.Connecting, Timeout); }
-        catch (ASCOM.NotImplementedException) { return false; }
-    }
-
     private bool Begin(string id)
     {
         lock (_gate)
         {
+            if (_testing.Contains(id)) throw new InvalidOperationException("This server is being tested; stop the run before connecting it.");
             if (_sessions.ContainsKey(id) || !_busy.Add(id)) return false;
         }
         Changed?.Invoke();

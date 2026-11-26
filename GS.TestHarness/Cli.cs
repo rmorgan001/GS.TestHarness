@@ -203,10 +203,11 @@ public static class Cli
         Console.CancelKeyPress += onCancel;
 
         RunReport? report = null;
+        ITelescopeSession? session = null;
         try
         {
             var previous = await store.LatestForAsync(target);
-            await using var session = await TestRunner.OpenAsync(target, options);
+            session = await TestRunner.OpenAsync(target, options);
             report = await new TestRunner(locator).RunAsync(session, target, options,
                 r =>
                 {
@@ -219,19 +220,37 @@ public static class Cli
                 },
                 cts.Token, previous: previous, conformU: conformU, followsUp: followsUp, onGate: warnings => Task.FromResult(GateAnswer(warnings, gatePolicy)), unattended: true);
         }
-        catch (Exception ex) when (report is not null)
-        {
-            // The run finished; only closing the session failed. Keep the report.
-            Console.Error.WriteLine($"Closing {target.Display} failed: {AscomError.Describe(ex)}");
-        }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Couldn't open {target.Display}: {AscomError.Describe(ex)}");
+            Console.Error.WriteLine($"Couldn't run {target.Display}: {AscomError.Describe(ex)}");
             return 1;
         }
         finally
         {
-            Console.CancelKeyPress -= onCancel;
+            try
+            {
+                if (session is not null)
+                {
+                    try
+                    {
+                        var hardwareConnected = await session.ReleaseAsync(TimeSpan.FromSeconds(30));
+                        var message = hardwareConnected ? "Harness connection released; the driver still reports the hardware connected."
+                            : "Harness connection released.";
+                        Console.WriteLine(message);
+                        report?.Results.Add(new CheckResult { Id = "Run.Connections", Group = "Run", Member = "Disconnect", Outcome = Outcome.Info, Message = message });
+                    }
+                    catch (Exception ex)
+                    {
+                        var message = $"Connection cleanup failed: {AscomError.Describe(ex)}. Check the driver for active connections.";
+                        Console.Error.WriteLine(message);
+                        report?.Results.Add(new CheckResult { Id = "Run.Connections", Group = "Run", Member = "Disconnect", Outcome = Outcome.Error, Message = message, Actual = ex.ToString() });
+                    }
+                }
+            }
+            finally
+            {
+                Console.CancelKeyPress -= onCancel;
+            }
         }
 
         if (report is null) return 1; // not reached: the run either returned a report or the catch above returned

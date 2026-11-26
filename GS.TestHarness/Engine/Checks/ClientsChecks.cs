@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -50,26 +50,19 @@ public sealed class ClientsChecks : ICheckGroup
     }
 
     internal static async Task DisconnectAsync(ITelescopeSession s)
-    {
-        await s.RunAsync(t => t.Disconnect(), Timeout);
-        var watch = Stopwatch.StartNew();
-        while (watch.Elapsed < Timeout && await s.RunAsync(t => t.Connecting, Timeout)) await Task.Delay(50);
-    }
+        => await s.DisconnectClientAsync(Timeout);
 
     /// <summary>Client B and client C connect; B disconnects; C must still be connected and answering.</summary>
     private static async Task TwoClientsAsync(CheckContext ctx)
     {
         ITelescopeSession? b = null, c = null;
-        var bConnected = false; // B is still connected (to disconnect in the finally): a client left behind fails the Disconnected checks
         try
         {
             b = await ctx.OpenSession!();
             c = await ctx.OpenSession!();
-            bConnected = true;
             await ConnectAsync(b);
             await ConnectAsync(c);
             await DisconnectAsync(b);
-            bConnected = false;
             // B has disconnected while C still holds the device. Connected reports the hardware state: in a hub it stays
             // true until every client has disconnected, and the ASCOM notes say a client that set it false and still reads
             // true is "not an error". So true is allowed here, and false (B's own state) is fine too. ConformU still reports
@@ -105,12 +98,8 @@ public sealed class ClientsChecks : ICheckGroup
         }
         finally
         {
-            if (c is not null) { await Quietly(() => DisconnectAsync(c)); await c.DisposeAsync(); }
-            if (b is not null)
-            {
-                if (bConnected) await Quietly(() => DisconnectAsync(b));
-                await b.DisposeAsync();
-            }
+            if (c is not null) await ReleaseClientAsync(ctx, c);
+            if (b is not null) await ReleaseClientAsync(ctx, b);
         }
     }
 
@@ -165,11 +154,7 @@ public sealed class ClientsChecks : ICheckGroup
         }
         finally
         {
-            foreach (var s in sessions)
-            {
-                await Quietly(() => DisconnectAsync(s));
-                await s.DisposeAsync();
-            }
+            foreach (var s in sessions) await ReleaseClientAsync(ctx, s);
         }
     }
 
@@ -177,7 +162,6 @@ public sealed class ClientsChecks : ICheckGroup
     private static async Task ConnectCyclesAsync(CheckContext ctx)
     {
         ITelescopeSession? s = null;
-        var connected = false; // still connected after a failed cycle: disconnected in the finally, as a client left behind fails the Disconnected checks
         var problems = new List<string>();
         var watch = Stopwatch.StartNew();
         try
@@ -187,11 +171,9 @@ public sealed class ClientsChecks : ICheckGroup
             {
                 try
                 {
-                    connected = true;
                     await ConnectAsync(s);
                     if (!await s.RunAsync(t => t.Connected, Timeout)) problems.Add($"cycle {i}: Connected false after Connect");
                     await DisconnectAsync(s);
-                    connected = false;
                 }
                 catch (Exception ex)
                 {
@@ -208,11 +190,7 @@ public sealed class ClientsChecks : ICheckGroup
         }
         finally
         {
-            if (s is not null)
-            {
-                if (connected) await Quietly(() => DisconnectAsync(s));
-                await s.DisposeAsync();
-            }
+            if (s is not null) await ReleaseClientAsync(ctx, s);
         }
         ctx.Report("ConnectCycles", "Connect", problems.Count == 0 ? Outcome.Pass : Outcome.Fail,
             problems.Count == 0 ? $"10 connect/disconnect cycles worked ({watch.Elapsed.TotalSeconds:0.0} s)." : $"Connect/disconnect cycles had {problems.Count} problem(s).",
@@ -228,9 +206,14 @@ public sealed class ClientsChecks : ICheckGroup
         catch (Exception ex) { return (default!, AscomError.Unwrap(ex)); }
     }
 
-    private static async Task Quietly(Func<Task> call)
+    internal static async Task ReleaseClientAsync(CheckContext ctx, ITelescopeSession session)
     {
-        try { await call(); }
-        catch { /* tidying up */ }
+        try { await session.ReleaseAsync(Timeout); }
+        catch (Exception ex)
+        {
+            ctx.Report("Cleanup", "Disconnect", Outcome.Error,
+                $"An extra client could not be released: {AscomError.Describe(ex)}. A connection may still be active.",
+                actual: ex.ToString(), fix: "Check the driver's connection count and log; cleanup must disconnect and release every client.");
+        }
     }
 }

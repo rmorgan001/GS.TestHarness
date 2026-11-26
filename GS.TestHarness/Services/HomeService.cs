@@ -1,4 +1,4 @@
-/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
+﻿/* Copyright(C) 2026  Rob Morgan (robert.morgan.e@gmail.com)
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published
@@ -32,7 +32,9 @@ public sealed record HomeStatus(bool AtHome, bool AtPark, bool CanFindHome, stri
 /// <summary>Makes the <see cref="HomeSession"/> a run's home check works through.</summary>
 public sealed class HomeService(ILogger<HomeService> log)
 {
-    public HomeSession Open(TestTarget target, RunOptions options) => new(log, target, options);
+    public HomeSession Open(TestTarget target, RunOptions options, ITelescopeSession? session = null)
+        => session is null ? new(log, target, options)
+            : new(log, target, options, () => Task.FromResult(session), ownsSession: false);
 }
 
 /// <summary>
@@ -41,17 +43,16 @@ public sealed class HomeService(ILogger<HomeService> log)
 /// dropped and picked up again at every button. Reading is retried once after reconnecting (the mount was powered off
 /// and on, so the link the server held is dead); a motion command (Unpark, FindHome) never is, so a slow or failed
 /// Go home isn't interrupted and sent again. Calls are one at a time, and disposing waits for the one under way.
-/// Disposing disconnects if this connected it, so the run finds the mount as it was.
+/// Disposing releases an owned client; a borrowed run client remains the run's responsibility.
 /// </summary>
 /// <param name="open">Opens the session to the device (the real transport unless a test gives another).</param>
-public sealed class HomeSession(ILogger log, TestTarget target, RunOptions options, Func<Task<ITelescopeSession>>? open = null) : IAsyncDisposable
+/// <param name="ownsSession">Whether this check must disconnect and dispose the session.</param>
+public sealed class HomeSession(ILogger log, TestTarget target, RunOptions options, Func<Task<ITelescopeSession>>? open = null, bool ownsSession = true) : IAsyncDisposable
 {
-    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
-
     private readonly TimeSpan _timeout = TimeSpan.FromSeconds(Math.Max(2, options.CallTimeoutSeconds));
     private readonly SemaphoreSlim _gate = new(1, 1);
     private ITelescopeSession? _session;
-    private bool _connectedHere, _disposed;
+    private bool _disposed;
 
     /// <summary>Reads AtHome (and AtPark, CanFindHome).</summary>
     public async Task<HomeStatus> CheckAsync()
@@ -148,22 +149,6 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         }
         catch (Exception first)
         {
-            // A driver such as GS Server's reads Connected true for any client while its hardware is connected, but refuses the
-            // commands of a client that hasn't connected itself (NotConnected, 0x407). This client read Connected true, so it never
-            // called Connect: do it now, and read again, before dropping the session and starting over (which would do the same).
-            if (_session is not null && AscomError.Classify(first).Kind == AscomErrorKind.NotConnected)
-            {
-                log.LogInformation("Home check for {Target}: {Error}; this client isn't connected to the driver, connecting it", target.Display, first.Message);
-                try
-                {
-                    await ConnectThisClientAsync();
-                    return await ReadAsync();
-                }
-                catch (Exception second)
-                {
-                    log.LogInformation("Home check for {Target}: still {Error}", target.Display, second.Message);
-                }
-            }
             log.LogInformation("Home check for {Target}: {Error}; connecting again", target.Display, first.Message);
             try
             {
@@ -183,30 +168,6 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         }
     }
 
-    /// <summary>
-    /// Connects this client to the driver although Connected already reads true (the hardware is connected, but not by this client).
-    /// Harmless on a driver that is connected (Connect while connected raises no error). It is left connected: the mount was connected
-    /// before, and this client didn't make that connection, so <see cref="DropAsync"/> doesn't undo it.
-    /// </summary>
-    private async Task ConnectThisClientAsync()
-    {
-        var session = _session!;
-        await session.RunAsync(t =>
-        {
-            try { t.Connect(); }
-            catch (ASCOM.NotImplementedException) { t.Connected = true; }
-        }, _timeout);
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        while (watch.Elapsed < ConnectTimeout && await IsConnectingAsync(session)) await Task.Delay(100);
-    }
-
-    /// <summary>Whether a connect is still under way; a driver without Connecting (before V4) has none to wait for.</summary>
-    private async Task<bool> IsConnectingAsync(ITelescopeSession session)
-    {
-        try { return await session.RunAsync(t => t.Connecting, _timeout); }
-        catch (ASCOM.NotImplementedException) { return false; }
-    }
-
     /// <summary>The mount couldn't be connected (as opposed to connected but not readable).</summary>
     private sealed class NotConnectedException(Exception inner) : Exception(inner.Message, inner);
 
@@ -223,18 +184,7 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         var session = await (open?.Invoke() ?? TestRunner.OpenAsync(target, options));
         try
         {
-            if (!await session.RunAsync(t => t.Connected, _timeout))
-            {
-                await session.RunAsync(t =>
-                {
-                    try { t.Connect(); }
-                    catch (ASCOM.NotImplementedException) { t.Connected = true; }
-                }, _timeout);
-                _connectedHere = true;
-                var watch = System.Diagnostics.Stopwatch.StartNew();
-                while (watch.Elapsed < ConnectTimeout && await IsConnectingAsync(session)) await Task.Delay(100);
-                if (!await session.RunAsync(t => t.Connected, _timeout)) throw new InvalidOperationException("The mount didn't connect.");
-            }
+            await session.ConnectClientAsync(_timeout);
             _session = session;
         }
         catch
@@ -245,43 +195,21 @@ public sealed class HomeSession(ILogger log, TestTarget target, RunOptions optio
         }
     }
 
-    /// <summary>Disconnects (only if this connected it) and closes the session; the next call opens a new one.</summary>
+    /// <summary>Releases an owned client; a borrowed client is only detached from this check.</summary>
     private async Task DropAsync()
     {
         var session = _session;
         _session = null;
-        if (session is null) return;
-        if (_connectedHere)
+        if (session is null || !ownsSession) return;
+        try { await session.ReleaseAsync(_timeout); }
+        catch (Exception ex)
         {
-            try
-            {
-                await session.RunAsync(t =>
-                {
-                    try { t.Disconnect(); }
-                    catch (ASCOM.NotImplementedException) { t.Connected = false; }
-                }, _timeout);
-            }
-            catch { /* the link may already be dead */ }
-            _connectedHere = false;
+            log.LogWarning(ex, "Home check connection cleanup failed for {Target}", target.Display);
+            throw;
         }
-        try { await session.DisposeAsync(); }
-        catch { /* nothing more to do */ }
     }
 
-    /// <summary>
-    /// Hands the connection this made to <paramref name="adopt"/> (the sidebar's connection list), so the mount stays
-    /// connected after the dialog closes. False if there was nothing to hand over (the mount was already connected by
-    /// another client, or the adopter refused): disposing then leaves it as it was, or disconnects what this made.
-    /// </summary>
-    public bool TryHandOver(Func<ITelescopeSession, bool> adopt)
-    {
-        if (_session is null || !_connectedHere || !adopt(_session)) return false;
-        _session = null;
-        _connectedHere = false;
-        return true;
-    }
-
-    /// <summary>Waits for a call under way, then disconnects (if this connected it); nothing reconnects afterwards.</summary>
+    /// <summary>Waits for a call under way, then releases the owned client; nothing reconnects afterwards.</summary>
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
